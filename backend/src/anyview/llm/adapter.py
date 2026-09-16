@@ -188,7 +188,21 @@ class VertexGemini:
         if not project_id:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for Vertex model access")
         self.model = model
-        self._client = genai.Client(vertexai=True, project=project_id, location=region)
+        # Retry transient failures inside the SDK: a 429 "Resource exhausted"
+        # in the middle of a ten-call report is a blip, not a quota problem.
+        # 4 attempts with exponential backoff (1s, 2s, 4s) then give up.
+        retry = types.HttpRetryOptions(
+            attempts=4,
+            initial_delay=1.0,
+            max_delay=8.0,
+            http_status_codes=[429, 500, 502, 503, 504],
+        )
+        self._client = genai.Client(
+            vertexai=True,
+            project=project_id,
+            location=region,
+            http_options=types.HttpOptions(retry_options=retry, timeout=120_000),  # ms
+        )
 
     def _config(
         self,

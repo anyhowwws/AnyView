@@ -108,10 +108,17 @@ Constraints:
 - Every claim must trace to a line in the resume. List those lines in
   `cited_resume_lines`, quoted or closely paraphrased.
 - Do not add achievements, numbers, or context that the resume does not contain.
-  Where a strong answer would need a number the resume lacks, write "[metric not in
-  resume]" in its place.
-- If the resume has no material for this question, set `resume_has_material` to false
-  and make `answer` a single sentence saying what kind of experience is missing.
+  The resume is a summary, so it will rarely spell out the process behind a result.
+  That is expected: build the STAR answer from the experience it does record, and
+  where a detail is missing write a bracketed placeholder in its place, such as
+  "[how I prioritised — not in resume]" or "[metric not in resume]". Placeholders
+  are the gaps the candidate should fill from memory; they are not a reason to
+  refuse.
+- Set `resume_has_material` to true whenever at least one resume line describes the
+  experience the question is about, even if the process details are missing. Set it
+  to false only when nothing in the resume relates to the question's competency or
+  situation; then make `answer` a single sentence saying what kind of experience is
+  missing.
 - Shape the answer as STAR in first person, four to seven sentences.
 
 <question>
