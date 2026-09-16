@@ -1,0 +1,44 @@
+// The in-progress interview survives a reload via sessionStorage. Storage can
+// be unavailable (private mode, blocked site data), so every access is guarded
+// and the app works without it.
+
+import type { Report, Session } from "@/lib/types";
+
+export type Phase = "setup" | "practice" | "report";
+
+export interface Saved {
+  phase: Phase;
+  session: Session | null;
+  report: Report | null;
+  /** Interviewer text already streamed per question id, so a reload doesn't re-ask. */
+  spoken: Record<number, string>;
+}
+
+const KEY = "anyview.phase0";
+
+export const EMPTY: Saved = { phase: "setup", session: null, report: null, spoken: {} };
+
+export function load(): Saved {
+  try {
+    const raw = sessionStorage.getItem(KEY);
+    return raw ? { ...EMPTY, ...(JSON.parse(raw) as Saved) } : EMPTY;
+  } catch {
+    return EMPTY;
+  }
+}
+
+export function save(state: Saved): void {
+  try {
+    sessionStorage.setItem(KEY, JSON.stringify(state));
+  } catch {
+    // storage unavailable; the app keeps working in memory
+  }
+}
+
+export function clear(): void {
+  try {
+    sessionStorage.removeItem(KEY);
+  } catch {
+    // ignore
+  }
+}
