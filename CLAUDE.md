@@ -122,3 +122,9 @@ stored.
   project. Always pass `--project` or rely on `terraform.tfvars`.
 - Frontend is a static export: no server components that fetch at request time,
   no `next/headers`, no route handlers. Client calls the API directly.
+- Don't run `next build` while `next dev` is up — both use `frontend/.next/` and the
+  dev server then throws `__webpack_modules__[moduleId] is not a function`. Stop
+  dev, build, restart dev (or `rm -rf frontend/.next`).
+- Real Vertex calls need the Claude models enabled for the project (Model Garden)
+  and a non-zero `global_online_prediction_requests_per_base_model` quota. A fresh
+  project returns 429 "Quota exceeded" until then; the app maps it to a 503.
