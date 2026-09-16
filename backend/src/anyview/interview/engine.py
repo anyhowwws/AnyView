@@ -67,7 +67,7 @@ def _move(session: Session, to: State) -> Session:
     return session.model_copy(update={"state": to})
 
 
-def _require(session: Session, *states: State) -> None:
+def require_state(session: Session, *states: State) -> None:
     if session.state not in states:
         expected = " or ".join(s.value for s in states)
         raise EngineError(f"This session is in state '{session.state}', expected {expected}.")
@@ -117,7 +117,7 @@ def start(setup: Setup, *, session_id: str, model: Model) -> Session:
 def ask(session: Session, *, model: Model) -> Iterator[str]:
     """Stream what the interviewer says for the current question. Does not change
     state: the session stays in `ask` until an answer arrives."""
-    _require(session, State.ASK)
+    require_state(session, State.ASK)
     question = session.current_question
     if question is None:
         raise EngineError("No question to ask.")
@@ -135,7 +135,7 @@ def ask(session: Session, *, model: Model) -> Iterator[str]:
 def submit_answer(session: Session, answer: Answer) -> Session:
     """ask → answer → next → ask | wrap. Pure: no model call in Phase 0
     (probing is off), so this is where the brief's probe branch will plug in."""
-    _require(session, State.ASK)
+    require_state(session, State.ASK)
     question = session.current_question
     if question is None or answer.question_id != question.id:
         raise EngineError(
@@ -160,7 +160,7 @@ def submit_answer(session: Session, answer: Answer) -> Session:
 def finish(session: Session, *, model: Model) -> Report:
     """wrap → score → report. Two structured calls per answer: the rubric score
     and the resume-grounded ideal answer."""
-    _require(session, State.WRAP)
+    require_state(session, State.WRAP)
     if len(session.answers) != len(session.questions):
         raise EngineError("Every question needs an answer before scoring.")
     session = _move(session, State.SCORE)
