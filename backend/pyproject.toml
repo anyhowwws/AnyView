@@ -10,7 +10,7 @@ dependencies = [
   # ASGI server that runs FastAPI. Cloud Run needs a process listening on $PORT; this is it.
   "uvicorn[standard]>=0.30",
   # Official Anthropic SDK; its AnthropicVertex client is the only model access path (ADR 0004). No API key.
-  "anthropic[vertex]>=0.40",
+  "anthropic[vertex]>=1.6,<2",
 ]
 
 [project.optional-dependencies]

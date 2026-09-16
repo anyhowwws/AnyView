@@ -24,11 +24,12 @@ writes simple scripts). So:
 |---|---|---|
 | Cloud | GCP | 0001 |
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
-| LLM + embeddings | Claude on Vertex AI via `anthropic[vertex]`; IAM only, **no API key exists anywhere** | 0004 |
-| Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK | 0005 |
+| LLM | Claude Opus 5 on Vertex AI (region `global`) via `anthropic[vertex]` 1.x; IAM only, **no API key exists anywhere** | 0004 |
+| Embeddings (Phase 2) | Vertex `gemini-embedding-001` — there is no Claude embedding model. Same project, same IAM, same identity | 0003 |
+| Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
-| Frontend | Next.js App Router, TS, Tailwind v4, shadcn/ui, Framer Motion; static export → Firebase Hosting | brief |
+| Frontend | Next.js App Router, TS, Tailwind v4, shadcn/ui, Framer Motion; static export → Firebase Hosting (static files only) | brief |
 | Files | Cloud Storage, signed URLs (never transit the API) | brief |
 | Async | Cloud Tasks | brief |
 | Auth | Identity Platform (Phase 1) | brief |
@@ -45,17 +46,20 @@ docs, Firestore, scraping Glassdoor/Blind, GKE/HA/multi-region, API keys.
 backend/src/anyview/   FastAPI app. main.py is the entry point.
 backend/tests/         pytest; pythonpath=src set in pyproject.
 frontend/app/          Next.js App Router. output: "export" → frontend/out.
-frontend/firebase.json Hosting config; rewrites /api/** → Cloud Run anyview-api.
+frontend/firebase.json Hosting config: static files + SPA fallback only. No API rewrite (ADR 0006).
 infra/bootstrap/       State bucket only. Local state. Run once.
 infra/                 Main stack. GCS backend, bucket via -backend-config.
 adr/                   Decision records, numbered. Write one *as* a decision is made.
 .github/workflows/     ci.yml (lint/test/validate), deploy.yml (WIF → Artifact Registry → Cloud Run → Hosting)
 ```
 
-Planned modules (not yet written — add as the phase needs them):
-- `anyview/llm/adapter.py` — the only file that imports `anthropic`. `generate()`, `stream()`, `tools=`. Returns plain Python types.
-- `anyview/db/repository.py` — the only file that runs SQL. App-meaningful methods (`stories_for_competency`, `roles_for_user`, `search_brain`).
-- `anyview/interview/engine.py` — state machine: intake → plan → ask → answer → probe(≤2) → next | wrap → score → report. Transport-agnostic.
+Backend modules:
+- `anyview/config.py` — `Settings` from env vars. Plain `os.environ`, no settings library.
+- `anyview/llm/adapter.py` — the only file that imports `anthropic`. `generate()` (optionally with `output_schema=` → parsed dict), `stream()`. Returns plain Python types. Every call logs one `anyview.usage` JSON line.
+- `anyview/llm/fake.py` — `FakeModel`, same surface, scripted replies. Used by tests and by `ANYVIEW_FAKE_MODEL=1`.
+- `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; Phase 0 has `max_probes = 0`.
+- `anyview/api/{interview,sse}.py` — FastAPI routes and the SSE frame writer.
+- `anyview/db/repository.py` — **Phase 1**. The only file that runs SQL.
 
 ## Commands
 
@@ -107,7 +111,13 @@ stored.
 
 - Cloud Run service is created with a placeholder image; `lifecycle.ignore_changes`
   on the image means Terraform never fights CI. Don't remove that.
-- Firebase Hosting rewrites call Cloud Run as `allUsers`; auth is app-level.
+- Phase 0 Cloud Run has **no** `allUsers` binding — IAM invokers only. Reach it with
+  `gcloud run services proxy anyview-api --region us-central1 --project anyapps-anyview`.
+  Public exposure arrives with Identity Platform (Phase 1).
+- Phase 0 is **stateless**: the browser carries the whole session and posts it on each turn.
+  No in-memory session store — Cloud Run instances don't share memory.
+- Usage rows in Phase 0 are JSON log lines (`anyview.usage` logger), one per model call.
+  Phase 1 moves them to a table with the same fields.
 - `gcloud config get-value project` on this machine points at a *different*
   project. Always pass `--project` or rely on `terraform.tfvars`.
 - Frontend is a static export: no server components that fetch at request time,

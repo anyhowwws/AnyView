@@ -10,15 +10,15 @@ variable "region" {
 }
 
 variable "vertex_region" {
-  description = "Region the Claude model is served from on Vertex AI. May differ from var.region."
+  description = "Region the Claude model is served from on Vertex AI. \"global\" is recommended for current-generation models; may differ from var.region."
   type        = string
-  default     = "us-east5"
+  default     = "global"
 }
 
 variable "claude_model" {
-  description = "Vertex AI model ID the API calls. A variable so a model change is a plan, not a code change."
+  description = "Vertex AI model ID the API calls. Current-generation models use a bare ID (no @date suffix). A variable so a model change is a plan, not a code change."
   type        = string
-  default     = "claude-sonnet-4-5@20250929"
+  default     = "claude-opus-5"
 }
 
 variable "github_repo" {
@@ -38,7 +38,7 @@ variable "budget_amount_usd" {
 }
 
 variable "api_max_instances" {
-  description = "Hard cap on Cloud Run instances. Keeps both cost and Cloud SQL connection count bounded."
+  description = "Hard cap on Cloud Run instances. Keeps both cost and (later) Cloud SQL connection count bounded. 1 for Phase 0."
   type        = number
-  default     = 2
+  default     = 1
 }

@@ -59,12 +59,8 @@ resource "google_cloud_run_v2_service" "api" {
   depends_on = [google_project_service.enabled]
 }
 
-# Firebase Hosting rewrites reach Cloud Run as an unauthenticated caller, so the
-# service must be publicly invokable. User auth is enforced inside the app
-# (Identity Platform, Phase 1), not at the invoker layer.
-resource "google_cloud_run_v2_service_iam_member" "public" {
-  name     = google_cloud_run_v2_service.api.name
-  location = google_cloud_run_v2_service.api.location
-  role     = "roles/run.invoker"
-  member   = "allUsers"
-}
+# Phase 0: no public invoker binding. The service is reachable only by callers
+# with roles/run.invoker (the owner, via `gcloud run services proxy`). A public
+# binding arrives together with app-level auth (Identity Platform, Phase 1) —
+# an open, unauthenticated LLM endpoint is a cost trap, and the budget only
+# alerts, it does not stop spend. See ADR 0006.

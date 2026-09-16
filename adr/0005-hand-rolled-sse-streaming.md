@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-16
+- **Amendment (2026-09-16):** the "Proxy behaviour" note below is wrong —
+  Firebase Hosting rewrites buffer responses and cap requests at 60 s. The
+  browser calls Cloud Run directly instead. See 0006.
 
 ## Context
 

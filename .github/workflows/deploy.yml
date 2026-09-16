@@ -70,6 +70,9 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+        env:
+          # The Cloud Run service URL (terraform output api_url). A repository variable, not a secret.
+          NEXT_PUBLIC_API_BASE_URL: ${{ vars.API_BASE_URL }}
 
       - id: auth
         uses: google-github-actions/auth@v2
