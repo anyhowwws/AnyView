@@ -28,10 +28,11 @@ export function Practice({ session, spoken, onSpoken, onAnswer, busy, error }: P
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    // Ask once per (question, attempt). The cleanup aborts the in-flight stream
-    // when the question changes or the component unmounts — that also covers
-    // React's dev-mode double effect (the first run is aborted, the second
-    // completes), so no extra guard is needed.
+    // Ask once per (question, attempt). The request is sent on the next tick so
+    // React's dev-mode double effect (mount, unmount, mount) cancels the first
+    // run before any bytes leave the browser — otherwise the server would start
+    // a paid model call for a request the client immediately abandons. The
+    // cleanup also aborts an in-flight stream when the question changes.
     if (spoken !== undefined) return;
 
     const controller = new AbortController();
@@ -40,25 +41,30 @@ export function Practice({ session, spoken, onSpoken, onAnswer, busy, error }: P
     setStreaming(true);
     setStreamError(null);
 
-    askQuestion(
-      session,
-      (delta) => {
-        collected += delta;
-        setText(collected);
-      },
-      controller.signal,
-    )
-      .then(() => {
-        setStreaming(false);
-        onSpoken(question.id, collected);
-      })
-      .catch((err: unknown) => {
-        if ((err as Error).name === "AbortError") return;
-        setStreaming(false);
-        setStreamError(err instanceof ApiError ? err.message : "Something went wrong.");
-      });
+    const timer = setTimeout(() => {
+      askQuestion(
+        session,
+        (delta) => {
+          collected += delta;
+          setText(collected);
+        },
+        controller.signal,
+      )
+        .then(() => {
+          setStreaming(false);
+          onSpoken(question.id, collected);
+        })
+        .catch((err: unknown) => {
+          if ((err as Error).name === "AbortError") return;
+          setStreaming(false);
+          setStreamError(err instanceof ApiError ? err.message : "Something went wrong.");
+        });
+    }, 0);
 
-    return () => controller.abort();
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [question.id, attempt, spoken]);
 
