@@ -16,9 +16,15 @@ variable "vertex_region" {
 }
 
 variable "model_id" {
-  description = "Vertex AI model ID the API calls (Gemini, ADR 0007). A variable so a model change is a plan, not a code change."
+  description = "Vertex AI model for judgement calls: plan, score, ideal (ADR 0007). A variable so a model change is a plan, not a code change."
   type        = string
   default     = "gemini-3.1-pro-preview"
+}
+
+variable "fast_model_id" {
+  description = "Vertex AI model for streamed interviewer turns, where time-to-first-token matters more than depth."
+  type        = string
+  default     = "gemini-3.8-flash"
 }
 
 variable "github_repo" {

@@ -103,7 +103,7 @@ export function App() {
             </>
           ) : (
             <p className="text-sm text-muted-foreground" role="status">
-              Scoring your five answers against the rubric. This takes about a minute.
+              Scoring your five answers against the rubric. This usually takes under a minute.
             </p>
           )}
         </div>

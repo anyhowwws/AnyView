@@ -40,6 +40,10 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "MODEL_ID"
         value = var.model_id
       }
+      env {
+        name  = "MODEL_ID_FAST"
+        value = var.fast_model_id
+      }
     }
 
     # Interviews stream for up to a few minutes; default 300s is fine, stated explicitly.

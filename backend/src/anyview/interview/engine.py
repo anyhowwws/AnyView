@@ -15,6 +15,7 @@ so every transition in the brief's diagram is visible in `TRANSITIONS`.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import ValidationError
 
@@ -157,51 +158,59 @@ def submit_answer(session: Session, answer: Answer) -> Session:
     return _move(session, State.WRAP)
 
 
+def _score_one(
+    session: Session, system: str, question: Question, answer: Answer, *, model: Model
+) -> QuestionReport:
+    """Two structured calls for one answer: the rubric score and the
+    resume-grounded ideal answer."""
+    score_reply = model.generate(
+        system=system,
+        user=score_user(question, answer.text),
+        session_id=session.session_id,
+        call="score",
+        output_schema=SCORE_SCHEMA,
+        effort="high",
+        max_tokens=2048,
+    )
+    ideal_reply = model.generate(
+        system=system,
+        user=ideal_user(question),
+        session_id=session.session_id,
+        call="ideal",
+        output_schema=IDEAL_SCHEMA,
+        effort="high",
+        max_tokens=2048,
+    )
+    try:
+        score = ScoreOutput.model_validate(_structured(score_reply, "score the answer"))
+        ideal = IdealAnswer.model_validate(_structured(ideal_reply, "write the ideal answer"))
+    except ValidationError as exc:
+        raise EngineError("A score came back malformed. Please retry.", status=502) from exc
+
+    return QuestionReport(
+        question=question,
+        answer=answer.text,
+        dimensions=score.dimensions,
+        summary=score.summary,
+        gaps=score.gaps,
+        ideal=ideal,
+    )
+
+
 def finish(session: Session, *, model: Model) -> Report:
-    """wrap → score → report. Two structured calls per answer: the rubric score
-    and the resume-grounded ideal answer."""
+    """wrap → score → report. The five answers are scored concurrently: each
+    takes 20–40 s on the model and none depends on another, so wall time is
+    one answer's worth, not five. The SDK client is thread-safe, and
+    `pool.map` returns results in question order whichever finishes first."""
     require_state(session, State.WRAP)
     if len(session.answers) != len(session.questions):
         raise EngineError("Every question needs an answer before scoring.")
     session = _move(session, State.SCORE)
 
     system = session_system(session.setup)
-    items: list[QuestionReport] = []
-    for question, answer in zip(session.questions, session.answers, strict=True):
-        score_reply = model.generate(
-            system=system,
-            user=score_user(question, answer.text),
-            session_id=session.session_id,
-            call="score",
-            output_schema=SCORE_SCHEMA,
-            effort="high",
-            max_tokens=2048,
-        )
-        ideal_reply = model.generate(
-            system=system,
-            user=ideal_user(question),
-            session_id=session.session_id,
-            call="ideal",
-            output_schema=IDEAL_SCHEMA,
-            effort="high",
-            max_tokens=2048,
-        )
-        try:
-            score = ScoreOutput.model_validate(_structured(score_reply, "score the answer"))
-            ideal = IdealAnswer.model_validate(_structured(ideal_reply, "write the ideal answer"))
-        except ValidationError as exc:
-            raise EngineError("A score came back malformed. Please retry.", status=502) from exc
-
-        items.append(
-            QuestionReport(
-                question=question,
-                answer=answer.text,
-                dimensions=score.dimensions,
-                summary=score.summary,
-                gaps=score.gaps,
-                ideal=ideal,
-            )
-        )
+    pairs = list(zip(session.questions, session.answers, strict=True))
+    with ThreadPoolExecutor(max_workers=len(pairs)) as pool:
+        items = list(pool.map(lambda qa: _score_one(session, system, *qa, model=model), pairs))
 
     _move(session, State.REPORT)
     return Report(

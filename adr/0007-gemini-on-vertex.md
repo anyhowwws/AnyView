@@ -4,6 +4,12 @@
 - **Date:** 2026-09-16
 - **Supersedes:** 0004 (the *which model* part; the *how access is governed* part
   stands unchanged)
+- **Amendment (2026-09-16):** streamed interviewer turns (`ask`) run on
+  `gemini-3.8-flash`. Measured on the Pro model: ~450 thinking tokens and a
+  5.6 s pause before a two-sentence greeting, even at `thinking_level: low`.
+  Flash thinks near-zero at `low`. Judgement calls stay on Pro. The prompt
+  cache was not engaging anyway (prefix below the implicit minimum), so the
+  single-model argument cost nothing to give up. `fast_model_id` in Terraform.
 
 ## Context
 

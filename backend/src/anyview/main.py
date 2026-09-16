@@ -46,6 +46,7 @@ def build_model() -> Model:
         project_id=settings.project_id,
         region=settings.vertex_region,
         model=settings.model_id,
+        fast_model=settings.fast_model_id,
     )
 
 

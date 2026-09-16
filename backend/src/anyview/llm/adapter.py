@@ -182,12 +182,21 @@ def _translate(exc: Exception) -> ModelError:
 class VertexGemini:
     """Gemini on Vertex AI. Auth is Application Default Credentials — locally
     from `gcloud auth application-default login`, on Cloud Run from the
-    service account. No API key exists."""
+    service account. No API key exists.
 
-    def __init__(self, *, project_id: str, region: str, model: str) -> None:
+    Two models: `model` for judgement calls (plan, score, ideal) and
+    `fast_model` for streamed conversational turns, where time-to-first-token
+    matters more than depth. The Pro model spent ~450 thinking tokens and 5 s
+    on a two-sentence greeting; Flash thinks near-zero at `low`.
+    """
+
+    def __init__(
+        self, *, project_id: str, region: str, model: str, fast_model: str | None = None
+    ) -> None:
         if not project_id:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for Vertex model access")
         self.model = model
+        self.fast_model = fast_model or model
         # Retry transient failures inside the SDK: a 429 "Resource exhausted"
         # in the middle of a ten-call report is a blip, not a quota problem.
         # 4 attempts with exponential backoff (1s, 2s, 4s) then give up.
@@ -283,7 +292,7 @@ class VertexGemini:
         last_chunk = None
         try:
             for chunk in self._client.models.generate_content_stream(
-                model=self.model,
+                model=self.fast_model,
                 contents=user,
                 config=self._config(system=system, effort=effort, max_tokens=max_tokens),
             ):
@@ -299,7 +308,7 @@ class VertexGemini:
         _log_usage(
             session_id=session_id,
             call=call,
-            model=self.model,
+            model=self.fast_model,
             usage=_usage_from(meta),
             latency_ms=latency_ms,
         )

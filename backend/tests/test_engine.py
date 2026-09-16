@@ -99,3 +99,23 @@ def test_session_round_trips_through_json(setup):
     session = engine.start(setup, session_id="sess-0001", model=FakeModel())
     again = Session.model_validate_json(session.model_dump_json())
     assert again == session
+
+
+def test_finish_scores_answers_concurrently(setup):
+    """Ten model calls that each take 0.2s must not take 2s end to end."""
+    import time
+
+    class SlowFake(FakeModel):
+        def generate(self, **kwargs):
+            time.sleep(0.2)
+            return super().generate(**kwargs)
+
+    fake = SlowFake()
+    session = engine.start(setup, session_id="sess-0001", model=fake)
+    for i in range(5):
+        session = engine.submit_answer(session, Answer(question_id=i + 1, text="a"))
+    started = time.monotonic()
+    report = engine.finish(session, model=fake)
+    elapsed = time.monotonic() - started
+    assert [item.question.id for item in report.items] == [1, 2, 3, 4, 5]
+    assert elapsed < 1.0, f"took {elapsed:.2f}s — scoring is not concurrent"

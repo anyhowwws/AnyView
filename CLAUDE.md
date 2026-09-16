@@ -24,7 +24,7 @@ writes simple scripts). So:
 |---|---|---|
 | Cloud | GCP | 0001 |
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
-| LLM | **Gemini 3.1 Pro (preview)** on Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. Claude returns as a second adapter once its quota is granted | 0004, 0007 |
+| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.8 Flash** for streamed `ask` turns; Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. Claude returns as a second adapter once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
@@ -90,6 +90,8 @@ terraform plan                                                   # terraform.tfv
 - Event log is the source of truth; brain state is a projection. No write
   bypasses the log.
 - Every model call writes a usage row. No exceptions, including scoring calls.
+- `finish()` scores the five answers concurrently (thread pool; the SDK client is
+  thread-safe). Keep new per-answer work inside `_score_one` so it stays parallel.
 - Scoring prompts use explicit rubric anchors. Per-dimension scores only; never
   a blended number.
 - If the brain lacks material, the model says so. It never invents.
