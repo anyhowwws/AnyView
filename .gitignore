@@ -1,0 +1,44 @@
+# Secrets — never committed, from the first commit
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*-key.json
+credentials
+service-account*.json
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+*.tfvars
+!example.tfvars
+crash.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Firebase
+.firebase/
+firebase-debug.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
