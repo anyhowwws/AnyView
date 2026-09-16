@@ -1,6 +1,6 @@
 """A scripted stand-in for the real model.
 
-Same two methods as `VertexClaude`, no network, no tokens. Tests use it to
+Same two methods as `VertexGemini`, no network, no tokens. Tests use it to
 drive the engine and the API deterministically; `ANYVIEW_FAKE_MODEL=1` runs the
 whole app on it for a browser walk-through that costs nothing.
 
@@ -16,7 +16,7 @@ from typing import Any
 
 from anyview.llm.adapter import Effort, ModelError, Reply, Usage
 
-_FAKE_USAGE = Usage(input_tokens=100, output_tokens=50, cache_read=80, cache_write=0)
+_FAKE_USAGE = Usage(input_tokens=100, output_tokens=50, thinking_tokens=20, cache_read=80)
 
 
 class FakeModel:

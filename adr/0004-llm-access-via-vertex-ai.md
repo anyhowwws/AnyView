@@ -1,6 +1,6 @@
 # 0004 — LLM access via Vertex AI, IAM-governed
 
-- **Status:** Accepted
+- **Status:** Superseded by 0007 (model choice); the IAM-governed access decision stands
 - **Date:** 2026-09-16
 
 ## Context

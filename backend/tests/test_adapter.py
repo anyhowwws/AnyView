@@ -3,22 +3,22 @@
 import json
 from types import SimpleNamespace
 
-import anthropic
-import httpx2 as httpx
 import pytest
+from google.genai import errors, types
 
 from anyview.llm import adapter
-from anyview.llm.adapter import ModelError, Usage, VertexClaude
+from anyview.llm.adapter import ModelError, Usage, VertexGemini
 
 
-def test_usage_from_sdk_treats_missing_cache_fields_as_zero():
-    sdk_usage = SimpleNamespace(
-        input_tokens=120,
-        output_tokens=30,
-        cache_read_input_tokens=None,
-        cache_creation_input_tokens=None,
+def test_usage_from_sdk_folds_thoughts_into_output_and_treats_none_as_zero():
+    meta = SimpleNamespace(
+        prompt_token_count=120,
+        candidates_token_count=30,
+        thoughts_token_count=200,
+        cached_content_token_count=None,
     )
-    assert adapter._usage_from(sdk_usage) == Usage(120, 30, 0, 0)
+    assert adapter._usage_from(meta) == Usage(120, 230, 200, 0)
+    assert adapter._usage_from(None) == Usage()
 
 
 def test_usage_log_line_is_json_with_fixed_fields(caplog):
@@ -26,44 +26,51 @@ def test_usage_log_line_is_json_with_fixed_fields(caplog):
     adapter._log_usage(
         session_id="s1",
         call="score",
-        model="claude-opus-5",
-        usage=Usage(10, 5, 8, 0),
+        model="gemini-3.1-pro-preview",
+        usage=Usage(10, 5, 2, 8),
         latency_ms=42,
     )
     record = json.loads(caplog.records[-1].getMessage())
     assert record == {
         "session_id": "s1",
         "call": "score",
-        "model": "claude-opus-5",
+        "model": "gemini-3.1-pro-preview",
         "latency_ms": 42,
         "input_tokens": 10,
         "output_tokens": 5,
+        "thinking_tokens": 2,
         "cache_read": 8,
-        "cache_write": 0,
     }
 
 
-def _status_error(status: int) -> anthropic.APIStatusError:
-    # Build the SDK's exception the way the SDK would, from a fake HTTP response.
-    request = httpx.Request("POST", "https://example.invalid/v1/messages")
-    response = httpx.Response(status, request=request, json={"error": {"message": "x"}})
-    cls = {429: anthropic.RateLimitError, 400: anthropic.BadRequestError}.get(
-        status, anthropic.APIStatusError
-    )
-    return cls("boom", response=response, body=None)
+@pytest.mark.parametrize(
+    "finish, expected",
+    [
+        (types.FinishReason.STOP, "end_turn"),
+        (types.FinishReason.MAX_TOKENS, "max_tokens"),
+        (types.FinishReason.SAFETY, "refusal"),
+        (types.FinishReason.PROHIBITED_CONTENT, "refusal"),
+        (types.FinishReason.OTHER, "other"),
+        (None, "other"),
+    ],
+)
+def test_stop_reason_translation(finish, expected):
+    assert adapter._stop_reason(finish) == expected
+
+
+def _api_error(code: int) -> errors.APIError:
+    body = {"error": {"message": "x", "status": "TEST"}}
+    cls = errors.ServerError if code >= 500 else errors.ClientError
+    return cls(code, body)
 
 
 @pytest.mark.parametrize(
     "exc, retryable, phrase",
     [
-        (_status_error(429), True, "over quota"),
-        (_status_error(503), True, "problem"),
-        (_status_error(400), False, "could not be processed"),
-        (
-            anthropic.APIConnectionError(request=httpx.Request("POST", "https://x.invalid")),
-            True,
-            "reach",
-        ),
+        (_api_error(429), True, "over quota"),
+        (_api_error(503), True, "problem"),
+        (_api_error(400), False, "could not be processed"),
+        (ConnectionError("down"), True, "reach"),
         (ValueError("weird"), False, "Unexpected"),
     ],
 )
@@ -74,6 +81,20 @@ def test_translate_maps_sdk_errors_to_model_error(exc, retryable, phrase):
     assert phrase in err.user_message
 
 
+def test_config_adds_thinking_allowance_and_sets_schema():
+    model = VertexGemini.__new__(VertexGemini)  # skip __init__: no client needed
+    schema = {"type": "object", "properties": {}, "required": [], "additionalProperties": False}
+    cfg = model._config(system="sys", effort="high", max_tokens=1000, output_schema=schema)
+    assert cfg.system_instruction == "sys"
+    assert cfg.max_output_tokens == 1000 + adapter._THINKING_ALLOWANCE["high"]
+    assert cfg.thinking_config.thinking_level == types.ThinkingLevel.HIGH
+    assert cfg.response_mime_type == "application/json"
+    assert cfg.response_json_schema == schema
+
+    plain = model._config(system="sys", effort="low", max_tokens=400)
+    assert plain.response_mime_type is None
+
+
 def test_vertex_client_requires_project_id():
     with pytest.raises(RuntimeError):
-        VertexClaude(project_id="", region="global", model="claude-opus-5")
+        VertexGemini(project_id="", region="global", model="gemini-3.1-pro-preview")

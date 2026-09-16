@@ -40,12 +40,12 @@ def build_model() -> Model:
         from anyview.llm.fake import FakeModel
 
         return FakeModel()
-    from anyview.llm.adapter import VertexClaude
+    from anyview.llm.adapter import VertexGemini
 
-    return VertexClaude(
+    return VertexGemini(
         project_id=settings.project_id,
         region=settings.vertex_region,
-        model=settings.claude_model,
+        model=settings.model_id,
     )
 
 

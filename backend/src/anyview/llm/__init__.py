@@ -1,5 +1,5 @@
 """Model access. Application code imports `Model`, `Reply`, `ModelError` from
-here and never touches the `anthropic` package directly (ADR 0004)."""
+here and never touches the `google.genai` package directly (ADR 0004, 0007)."""
 
 from anyview.llm.adapter import Model, ModelError, Reply, Usage
 

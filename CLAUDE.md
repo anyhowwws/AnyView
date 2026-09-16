@@ -24,8 +24,8 @@ writes simple scripts). So:
 |---|---|---|
 | Cloud | GCP | 0001 |
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
-| LLM | Claude Opus 5 on Vertex AI (region `global`) via `anthropic[vertex]` 1.x; IAM only, **no API key exists anywhere** | 0004 |
-| Embeddings (Phase 2) | Vertex `gemini-embedding-001` — there is no Claude embedding model. Same project, same IAM, same identity | 0003 |
+| LLM | **Gemini 3.1 Pro (preview)** on Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. Claude returns as a second adapter once its quota is granted | 0004, 0007 |
+| Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
@@ -55,7 +55,7 @@ adr/                   Decision records, numbered. Write one *as* a decision is 
 
 Backend modules:
 - `anyview/config.py` — `Settings` from env vars. Plain `os.environ`, no settings library.
-- `anyview/llm/adapter.py` — the only file that imports `anthropic`. `generate()` (optionally with `output_schema=` → parsed dict), `stream()`. Returns plain Python types. Every call logs one `anyview.usage` JSON line.
+- `anyview/llm/adapter.py` — the only file that imports `google.genai`. `generate()` (optionally with `output_schema=` → parsed dict), `stream()`. Returns plain Python types. Every call logs one `anyview.usage` JSON line.
 - `anyview/llm/fake.py` — `FakeModel`, same surface, scripted replies. Used by tests and by `ANYVIEW_FAKE_MODEL=1`.
 - `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; Phase 0 has `max_probes = 0`.
 - `anyview/api/{interview,sse}.py` — FastAPI routes and the SSE frame writer.
@@ -84,7 +84,7 @@ terraform plan                                                   # terraform.tfv
 
 ## Conventions
 
-- Model access: only `llm/adapter.py` imports `anthropic`. Local dev uses ADC
+- Model access: only `llm/adapter.py` imports `google.genai`. Local dev uses ADC
   (`gcloud auth application-default login`), never a key.
 - DB access: only `db/repository.py` runs SQL. Everything else calls its methods.
 - Event log is the source of truth; brain state is a projection. No write
@@ -125,6 +125,11 @@ stored.
 - Don't run `next build` while `next dev` is up — both use `frontend/.next/` and the
   dev server then throws `__webpack_modules__[moduleId] is not a function`. Stop
   dev, build, restart dev (or `rm -rf frontend/.next`).
-- Real Vertex calls need the Claude models enabled for the project (Model Garden)
-  and a non-zero `global_online_prediction_requests_per_base_model` quota. A fresh
-  project returns 429 "Quota exceeded" until then; the app maps it to a 503.
+- Claude on Vertex needs the models enabled in Model Garden and a non-zero
+  `global_online_prediction_requests_per_base_model` quota; a fresh project returns
+  429 "Quota exceeded" until then (that is why Phase 0 runs Gemini — ADR 0007).
+  Gemini has a default quota. The app maps a 429 to a 503 either way.
+- Gemini counts thinking tokens against `max_output_tokens`; the adapter adds a
+  per-effort allowance. The usage log's `thinking_tokens` shows the real spend.
+- Only the `-preview` build of Gemini 3.1 Pro is reachable; bare `gemini-3.1-pro`
+  is a 404. `gemini-3.8-flash` is the GA step-down.

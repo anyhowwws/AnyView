@@ -10,15 +10,15 @@ variable "region" {
 }
 
 variable "vertex_region" {
-  description = "Region the Claude model is served from on Vertex AI. \"global\" is recommended for current-generation models; may differ from var.region."
+  description = "Vertex AI location the model is served from. \"global\" is recommended for current-generation models; may differ from var.region."
   type        = string
   default     = "global"
 }
 
-variable "claude_model" {
-  description = "Vertex AI model ID the API calls. Current-generation models use a bare ID (no @date suffix). A variable so a model change is a plan, not a code change."
+variable "model_id" {
+  description = "Vertex AI model ID the API calls (Gemini, ADR 0007). A variable so a model change is a plan, not a code change."
   type        = string
-  default     = "claude-opus-5"
+  default     = "gemini-3.1-pro-preview"
 }
 
 variable "github_repo" {

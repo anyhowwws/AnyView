@@ -1,4 +1,4 @@
-"""The one place the Anthropic SDK is imported (ADR 0004).
+"""The one place the model SDK is imported (ADR 0004, superseded by 0007).
 
 Two operations, plain Python in and out:
 
@@ -23,30 +23,47 @@ from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from typing import Any, Literal, Protocol
 
-import anthropic
+from google import genai
+from google.genai import errors, types
 
 log = logging.getLogger(__name__)
 usage_log = logging.getLogger("anyview.usage")
 
 Effort = Literal["low", "medium", "high"]
 
+# Gemini counts its own reasoning ("thoughts") against max_output_tokens. The
+# caller's max_tokens is the budget for the visible answer; the adapter adds
+# room for thinking on top so a long think does not truncate a short answer.
+_THINKING_ALLOWANCE: dict[Effort, int] = {"low": 2_048, "medium": 6_144, "high": 12_288}
+
+# Finish reasons that mean "the model declined", as opposed to "ran out of room".
+_REFUSAL_REASONS = {
+    "SAFETY",
+    "RECITATION",
+    "BLOCKLIST",
+    "PROHIBITED_CONTENT",
+    "SPII",
+    "IMAGE_SAFETY",
+}
+
 
 @dataclass(frozen=True)
 class Usage:
-    """Token counts for one call, as plain ints. `cache_read` is the part of the
-    input served from the prompt cache (~10% price); `cache_write` is what was
-    newly cached this call (~125% price)."""
+    """Token counts for one call, as plain ints. `output_tokens` includes the
+    model's thinking tokens (billed as output); `thinking_tokens` breaks them
+    out. `cache_read` is the part of the input served from Gemini's implicit
+    prompt cache (discounted); there is no explicit cache write in this design."""
 
     input_tokens: int = 0
     output_tokens: int = 0
+    thinking_tokens: int = 0
     cache_read: int = 0
-    cache_write: int = 0
 
 
 @dataclass(frozen=True)
 class Reply:
     text: str
-    stop_reason: str  # "end_turn" | "max_tokens" | "refusal" | ...
+    stop_reason: str  # "end_turn" | "max_tokens" | "refusal" | "other"
     usage: Usage
     data: dict[str, Any] | None = None  # parsed JSON when output_schema was given
 
@@ -70,7 +87,7 @@ class ModelError(Exception):
 
 
 class Model(Protocol):
-    """What the engine depends on. `VertexClaude` and `FakeModel` both satisfy it.
+    """What the engine depends on. `VertexGemini` and `FakeModel` both satisfy it.
     A Protocol is a structural interface: any class with these two methods fits,
     no inheritance needed."""
 
@@ -113,39 +130,57 @@ def _log_usage(*, session_id: str, call: str, model: str, usage: Usage, latency_
     )
 
 
-def _usage_from(sdk_usage: Any) -> Usage:
-    # The SDK returns None for cache fields when caching was not involved.
+def _usage_from(meta: Any) -> Usage:
+    """Map the SDK's usage metadata (fields are None when absent) to plain ints."""
+    if meta is None:
+        return Usage()
+    answer = meta.candidates_token_count or 0
+    thoughts = meta.thoughts_token_count or 0
     return Usage(
-        input_tokens=sdk_usage.input_tokens or 0,
-        output_tokens=sdk_usage.output_tokens or 0,
-        cache_read=getattr(sdk_usage, "cache_read_input_tokens", None) or 0,
-        cache_write=getattr(sdk_usage, "cache_creation_input_tokens", None) or 0,
+        input_tokens=meta.prompt_token_count or 0,
+        output_tokens=answer + thoughts,
+        thinking_tokens=thoughts,
+        cache_read=meta.cached_content_token_count or 0,
     )
+
+
+def _stop_reason(finish: Any) -> str:
+    """Translate Gemini's finish reason into the small vocabulary the engine uses."""
+    name = getattr(finish, "name", None) or (str(finish) if finish else "")
+    if name == "STOP":
+        return "end_turn"
+    if name == "MAX_TOKENS":
+        return "max_tokens"
+    if name in _REFUSAL_REASONS:
+        return "refusal"
+    return "other"
 
 
 def _translate(exc: Exception) -> ModelError:
     """Map SDK exceptions to one app exception with a message safe for the UI.
-    Most specific first, so a 429 is not swallowed by the generic status branch."""
-    if isinstance(exc, anthropic.RateLimitError):
-        # A 429 on Vertex is either a rate limit or a zero/exhausted quota for
-        # the base model. The raw message says which; keep it in the logs.
-        log.warning("model rate-limited or over quota: %s", exc.message)
-        return ModelError(
-            "The model is rate-limited or over quota right now. Please try again in a moment.",
-            retryable=True,
-        )
-    if isinstance(exc, anthropic.APIStatusError):
-        if exc.status_code >= 500:
+    Most specific first, so a 429 is not swallowed by the generic client branch."""
+    if isinstance(exc, errors.APIError):
+        if exc.code == 429:
+            # Either a rate limit or an exhausted/zero quota. The raw message says
+            # which; keep it in the logs.
+            log.warning("model rate-limited or over quota: %s", exc.message)
+            return ModelError(
+                "The model is rate-limited or over quota right now. Please try again in a moment.",
+                retryable=True,
+            )
+        if isinstance(exc, errors.ServerError):
+            log.warning("model service error %s: %s", exc.code, exc.message)
             return ModelError("The model service had a problem. Please try again.", retryable=True)
-        log.error("model request rejected: %s", exc.message)
+        log.error("model request rejected %s: %s", exc.code, exc.message)
         return ModelError("The request could not be processed.")
-    if isinstance(exc, anthropic.APIConnectionError):
+    if isinstance(exc, ConnectionError | TimeoutError | OSError):
         return ModelError("Could not reach the model service. Please try again.", retryable=True)
+    log.exception("unexpected model error")
     return ModelError("Unexpected model error.")
 
 
-class VertexClaude:
-    """Claude on Vertex AI. Auth is Application Default Credentials — locally
+class VertexGemini:
+    """Gemini on Vertex AI. Auth is Application Default Credentials — locally
     from `gcloud auth application-default login`, on Cloud Run from the
     service account. No API key exists."""
 
@@ -153,13 +188,30 @@ class VertexClaude:
         if not project_id:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for Vertex model access")
         self.model = model
-        self._client = anthropic.AnthropicVertex(project_id=project_id, region=region)
+        self._client = genai.Client(vertexai=True, project=project_id, location=region)
 
-    def _system_block(self, system: str) -> list[dict[str, Any]]:
-        # The system text is the stable prefix of every call in a session, so it
-        # is the cache breakpoint. Volatile content (the answer being scored, the
-        # question being asked) goes in the user turn, after the breakpoint.
-        return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+    def _config(
+        self,
+        *,
+        system: str,
+        effort: Effort,
+        max_tokens: int,
+        output_schema: dict[str, Any] | None = None,
+    ) -> types.GenerateContentConfig:
+        # The system text is the stable prefix shared by every call in a session.
+        # Gemini caches such prefixes implicitly (no breakpoint to set); hits show
+        # up as `cache_read` in the usage line. Volatile content goes in `contents`.
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            max_output_tokens=max_tokens + _THINKING_ALLOWANCE[effort],
+            thinking_config=types.ThinkingConfig(thinking_level=effort),
+        )
+        if output_schema is not None:
+            # Structured output: the API constrains generation to the schema, so
+            # the text is valid JSON. No "please answer in JSON" hoping.
+            config.response_mime_type = "application/json"
+            config.response_json_schema = output_schema
+        return config
 
     def generate(
         self,
@@ -172,38 +224,36 @@ class VertexClaude:
         effort: Effort = "high",
         max_tokens: int = 4096,
     ) -> Reply:
-        kwargs: dict[str, Any] = {
-            "model": self.model,
-            "max_tokens": max_tokens,
-            "system": self._system_block(system),
-            "messages": [{"role": "user", "content": user}],
-            "thinking": {"type": "adaptive"},
-            "output_config": {"effort": effort},
-        }
-        if output_schema is not None:
-            # Structured output: the API guarantees the text block is valid JSON
-            # matching the schema. No prefill, no "please answer in JSON" hoping.
-            kwargs["output_config"]["format"] = {"type": "json_schema", "schema": output_schema}
-
         started = time.monotonic()
         try:
-            message = self._client.messages.create(**kwargs)
+            response = self._client.models.generate_content(
+                model=self.model,
+                contents=user,
+                config=self._config(
+                    system=system, effort=effort, max_tokens=max_tokens, output_schema=output_schema
+                ),
+            )
         except Exception as exc:  # translated below; SDK types are not allowed out
             raise _translate(exc) from exc
         latency_ms = int((time.monotonic() - started) * 1000)
 
-        usage = _usage_from(message.usage)
+        usage = _usage_from(response.usage_metadata)
         _log_usage(
             session_id=session_id, call=call, model=self.model, usage=usage, latency_ms=latency_ms
         )
 
-        text = "".join(block.text for block in message.content if block.type == "text")
+        # A blocked *prompt* yields no candidates at all; treat it as a refusal.
+        if not response.candidates:
+            feedback = getattr(response, "prompt_feedback", None)
+            log.warning("prompt blocked: %s", getattr(feedback, "block_reason", "unknown"))
+            return Reply(text="", stop_reason="refusal", usage=usage)
+
+        stop = _stop_reason(response.candidates[0].finish_reason)
+        text = response.text or ""
         data = None
-        if output_schema is not None and message.stop_reason == "end_turn":
+        if output_schema is not None and stop == "end_turn":
             data = json.loads(text)
-        return Reply(
-            text=text, stop_reason=message.stop_reason or "end_turn", usage=usage, data=data
-        )
+        return Reply(text=text, stop_reason=stop, usage=usage, data=data)
 
     def stream(
         self,
@@ -216,29 +266,29 @@ class VertexClaude:
         max_tokens: int = 1024,
     ) -> Iterator[str]:
         started = time.monotonic()
+        last_chunk = None
         try:
-            with self._client.messages.stream(
+            for chunk in self._client.models.generate_content_stream(
                 model=self.model,
-                max_tokens=max_tokens,
-                system=self._system_block(system),
-                messages=[{"role": "user", "content": user}],
-                thinking={"type": "adaptive"},
-                output_config={"effort": effort},
-            ) as stream:
-                # `yield` inside the `with` keeps the connection open while the
-                # caller consumes deltas. The final message (with usage) is only
-                # available after the stream is exhausted.
-                yield from stream.text_stream
-                final = stream.get_final_message()
+                contents=user,
+                config=self._config(system=system, effort=effort, max_tokens=max_tokens),
+            ):
+                last_chunk = chunk
+                if chunk.text:
+                    yield chunk.text
         except Exception as exc:
             raise _translate(exc) from exc
         latency_ms = int((time.monotonic() - started) * 1000)
+
+        # The final chunk carries usage and the finish reason.
+        meta = getattr(last_chunk, "usage_metadata", None)
         _log_usage(
             session_id=session_id,
             call=call,
             model=self.model,
-            usage=_usage_from(final.usage),
+            usage=_usage_from(meta),
             latency_ms=latency_ms,
         )
-        if final.stop_reason == "refusal":
+        candidates = getattr(last_chunk, "candidates", None) or []
+        if candidates and _stop_reason(candidates[0].finish_reason) == "refusal":
             raise ModelError("The model declined to answer this turn.")

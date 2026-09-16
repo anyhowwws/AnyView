@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 class Settings:
     project_id: str
     vertex_region: str
-    claude_model: str
+    model_id: str
     cors_origins: list[str] = field(default_factory=list)
     use_fake_model: bool = False
 
@@ -29,7 +29,7 @@ class Settings:
         return cls(
             project_id=os.environ.get("GOOGLE_CLOUD_PROJECT", ""),
             vertex_region=os.environ.get("VERTEX_REGION", "global"),
-            claude_model=os.environ.get("CLAUDE_MODEL", "claude-opus-5"),
+            model_id=os.environ.get("MODEL_ID", "gemini-3.1-pro-preview"),
             cors_origins=origins or ["http://localhost:3000"],
             use_fake_model=os.environ.get("ANYVIEW_FAKE_MODEL", "0") == "1",
         )

@@ -2,12 +2,12 @@ from anyview.config import Settings
 
 
 def test_defaults_when_env_is_empty(monkeypatch):
-    for key in ("GOOGLE_CLOUD_PROJECT", "VERTEX_REGION", "CLAUDE_MODEL", "CORS_ORIGINS"):
+    for key in ("GOOGLE_CLOUD_PROJECT", "VERTEX_REGION", "MODEL_ID", "CORS_ORIGINS"):
         monkeypatch.delenv(key, raising=False)
     s = Settings.from_env()
     assert s.project_id == ""
     assert s.vertex_region == "global"
-    assert s.claude_model == "claude-opus-5"
+    assert s.model_id == "gemini-3.1-pro-preview"
     assert s.cors_origins == ["http://localhost:3000"]
     assert s.use_fake_model is False
 

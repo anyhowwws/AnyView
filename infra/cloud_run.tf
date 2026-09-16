@@ -37,8 +37,8 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.vertex_region
       }
       env {
-        name  = "CLAUDE_MODEL"
-        value = var.claude_model
+        name  = "MODEL_ID"
+        value = var.model_id
       }
     }
 
