@@ -1,0 +1,8 @@
+{
+  "$comment": "Pre-launch audit config. baseUrl points at the local Next.js dev server; switch to the Firebase Hosting URL before running the audit against production.",
+  "baseUrl": "http://localhost:3000",
+  "buildDir": "frontend/out",
+  "routes": ["/"],
+  "skipChecks": [],
+  "framework": "nextjs"
+}

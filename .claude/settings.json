@@ -1,0 +1,56 @@
+{
+  "autoMode": {
+    "allow": [
+      "$defaults",
+      "Bash(backend/.venv/bin/pytest:*)",
+      "Bash(backend/.venv/bin/ruff:*)",
+      "Bash(.venv/bin/pytest:*)",
+      "Bash(.venv/bin/ruff:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm run build:*)",
+      "Bash(npm test:*)",
+      "Bash(terraform fmt:*)",
+      "Bash(terraform validate:*)",
+      "Bash(terraform plan:*)",
+      "Bash(gcloud run services describe:*)",
+      "Bash(gcloud logging read:*)"
+    ],
+    "soft_deny": [
+      "$defaults",
+      "Bash(terraform destroy:*)",
+      "Bash(terraform apply:*)",
+      "Bash(rm -rf /*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(gcloud projects delete:*)",
+      "Bash(gcloud sql instances delete:*)",
+      "Bash(gcloud storage rm:*)",
+      "Bash(gcloud storage buckets delete:*)",
+      "Bash(gcloud run services delete:*)",
+      "Bash(gcloud secrets delete:*)",
+      "Bash(gcloud iam service-accounts keys create:*)",
+      "Bash(gcloud config set:*)",
+      "Bash(firebase hosting:disable:*)",
+      "Read(./**/.env)",
+      "Read(./**/.env.*)",
+      "Read(./**/*.tfstate)",
+      "Read(./**/*.tfstate.*)",
+      "Read(./**/*.tfvars)",
+      "Read(./**/*.key)",
+      "Read(./**/*.pem)",
+      "Read(./**/*-key.json)",
+      "Read(./**/credentials)",
+      "Read(//Users/hows/.ssh/**)",
+      "Read(//Users/hows/.config/gcloud/**)"
+    ],
+    "environment": [
+      "**Cloud provider**: GCP — Cloud Run (FastAPI), Vertex AI (Claude, IAM-governed, no API key), Cloud SQL Postgres + pgvector, Cloud Storage, Cloud Tasks, Identity Platform, Firebase Hosting. All Terraform-managed.",
+      "**Repository visibility**: private",
+      "**Secrets management**: none in Phase 0 (model access is IAM). Later: Secret Manager, provisioned by Terraform as a parameter only. No .env with secrets ever; .env.example is the only committed env file.",
+      "**Sensitive data**: user's resume, career history, STAR stories, mock-interview transcripts — personal career data, not public",
+      "**Trusted repo**: this checkout only",
+      "**terraform apply is a user action**: propose the plan, the owner applies"
+    ]
+  }
+}
