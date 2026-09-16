@@ -14,7 +14,7 @@ def test_defaults_when_env_is_empty(monkeypatch):
     assert s.project_id == ""
     assert s.vertex_region == "global"
     assert s.model_id == "gemini-3.1-pro-preview"
-    assert s.fast_model_id == "gemini-3.8-flash"
+    assert s.fast_model_id == "gemini-3.5-flash-lite"
     assert s.cors_origins == ["http://localhost:3000"]
     assert s.use_fake_model is False
 

@@ -134,4 +134,4 @@ stored.
 - Gemini counts thinking tokens against `max_output_tokens`; the adapter adds a
   per-effort allowance. The usage log's `thinking_tokens` shows the real spend.
 - Only the `-preview` build of Gemini 3.1 Pro is reachable; bare `gemini-3.1-pro`
-  is a 404. `gemini-3.8-flash` is the GA step-down.
+  is a 404. `gemini-3.8-flash` is the GA step-down for judgement calls; it cannot disable thinking, so it is not a fit for `ask`.

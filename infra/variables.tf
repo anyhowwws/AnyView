@@ -24,7 +24,7 @@ variable "model_id" {
 variable "fast_model_id" {
   description = "Vertex AI model for streamed interviewer turns, where time-to-first-token matters more than depth."
   type        = string
-  default     = "gemini-3.8-flash"
+  default     = "gemini-3.5-flash-lite"
 }
 
 variable "github_repo" {

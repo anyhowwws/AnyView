@@ -31,7 +31,7 @@ class Settings:
             project_id=os.environ.get("GOOGLE_CLOUD_PROJECT", ""),
             vertex_region=os.environ.get("VERTEX_REGION", "global"),
             model_id=os.environ.get("MODEL_ID", "gemini-3.1-pro-preview"),
-            fast_model_id=os.environ.get("MODEL_ID_FAST", "gemini-3.8-flash"),
+            fast_model_id=os.environ.get("MODEL_ID_FAST", "gemini-3.5-flash-lite"),
             cors_origins=origins or ["http://localhost:3000"],
             use_fake_model=os.environ.get("ANYVIEW_FAKE_MODEL", "0") == "1",
         )
