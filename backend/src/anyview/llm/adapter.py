@@ -127,8 +127,12 @@ def _translate(exc: Exception) -> ModelError:
     """Map SDK exceptions to one app exception with a message safe for the UI.
     Most specific first, so a 429 is not swallowed by the generic status branch."""
     if isinstance(exc, anthropic.RateLimitError):
+        # A 429 on Vertex is either a rate limit or a zero/exhausted quota for
+        # the base model. The raw message says which; keep it in the logs.
+        log.warning("model rate-limited or over quota: %s", exc.message)
         return ModelError(
-            "The model is busy right now. Please try again in a moment.", retryable=True
+            "The model is rate-limited or over quota right now. Please try again in a moment.",
+            retryable=True,
         )
     if isinstance(exc, anthropic.APIStatusError):
         if exc.status_code >= 500:

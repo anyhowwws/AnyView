@@ -56,7 +56,7 @@ def _status_error(status: int) -> anthropic.APIStatusError:
 @pytest.mark.parametrize(
     "exc, retryable, phrase",
     [
-        (_status_error(429), True, "busy"),
+        (_status_error(429), True, "over quota"),
         (_status_error(503), True, "problem"),
         (_status_error(400), False, "could not be processed"),
         (
