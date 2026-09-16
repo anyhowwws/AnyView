@@ -1,0 +1,44 @@
+[project]
+name = "anyview"
+version = "0.0.1"
+description = "AnyView API — interview prep with a second brain"
+requires-python = ">=3.12"
+# Every dependency is justified. Add one, add a line.
+dependencies = [
+  # Web framework. Small, async, typed request/response models; StreamingResponse is our SSE transport (ADR 0005).
+  "fastapi>=0.115",
+  # ASGI server that runs FastAPI. Cloud Run needs a process listening on $PORT; this is it.
+  "uvicorn[standard]>=0.30",
+  # Official Anthropic SDK; its AnthropicVertex client is the only model access path (ADR 0004). No API key.
+  "anthropic[vertex]>=0.40",
+]
+
+[project.optional-dependencies]
+dev = [
+  # Test runner.
+  "pytest>=8",
+  # Lets FastAPI's TestClient drive the app in-process without a server.
+  "httpx>=0.27",
+  # Lint + format in one tool, replaces flake8/isort/black.
+  "ruff>=0.6",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# E/F = pyflakes + pycodestyle basics, I = import order, UP = modern-syntax nudges, B = common bugs.
+select = ["E", "F", "I", "UP", "B"]
