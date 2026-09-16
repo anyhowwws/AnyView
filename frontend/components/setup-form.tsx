@@ -26,6 +26,7 @@ export function SetupForm({ onStart, error, busy }: Props) {
   const [seniority, setSeniority] = useState<Seniority | null>(null);
   const [jd, setJd] = useState("");
 
+  const resumeTooShort = resume.trim().length > 0 && resume.trim().length < 50;
   const canSubmit = resume.trim().length >= 50 && company.trim() && role.trim() && seniority;
 
   return (
@@ -46,11 +47,16 @@ export function SetupForm({ onStart, error, busy }: Props) {
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">Practice an interview</h1>
         <p className="text-sm text-muted-foreground">
-          Paste your resume, name the target, and Maya will ask five questions tailored to you.
+          Paste your resume and name the target. Maya, an AI interviewer, will ask five questions
+          tailored to you and score your answers.
         </p>
       </header>
 
-      <Field label="Resume" hint={`${resume.length.toLocaleString()} / 15,000`}>
+      <Field
+        label="Resume"
+        hint={resumeTooShort ? "at least 50 characters" : `${resume.length.toLocaleString()} / 15,000`}
+        hintTone={resumeTooShort ? "warn" : "muted"}
+      >
         <Textarea
           value={resume}
           onChange={(e) => setResume(e.target.value)}
@@ -100,19 +106,43 @@ export function SetupForm({ onStart, error, busy }: Props) {
         </p>
       )}
 
-      <Button type="submit" size="lg" disabled={!canSubmit || busy} className="self-start">
-        {busy ? "Planning your questions…" : "Start interview"}
-      </Button>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="submit" size="lg" disabled={!canSubmit || busy} className="h-11 px-5 text-base">
+          {busy ? "Planning your questions…" : "Start interview"}
+        </Button>
+        {!canSubmit && !busy && (
+          <span className="text-xs text-muted-foreground">
+            Needs a resume of 50+ characters, a company, a role, and a seniority.
+          </span>
+        )}
+      </div>
     </form>
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({
+  label,
+  hint,
+  hintTone = "muted",
+  children,
+}: {
+  label: string;
+  hint?: string;
+  hintTone?: "muted" | "warn";
+  children: React.ReactNode;
+}) {
   return (
     <label className="flex flex-col gap-1.5">
       <span className="flex items-baseline justify-between text-sm font-medium">
         {label}
-        {hint && <span className="text-xs font-normal text-muted-foreground">{hint}</span>}
+        {hint && (
+          <span
+            className={`text-xs font-normal ${hintTone === "warn" ? "text-destructive" : "text-muted-foreground"}`}
+            aria-live="polite"
+          >
+            {hint}
+          </span>
+        )}
       </span>
       {children}
     </label>

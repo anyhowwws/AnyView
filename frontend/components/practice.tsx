@@ -88,19 +88,22 @@ export function Practice({ session, spoken, onSpoken, onAnswer, busy, error }: P
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.25 }}
           className="min-h-40 space-y-4"
-          aria-live="polite"
         >
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Maya · {question.competency}
           </p>
-          <p className="text-xl leading-relaxed sm:text-2xl">
+          <p className="text-xl leading-relaxed sm:text-2xl" aria-hidden={streaming}>
             {text}
             {streaming && <TypingDots />}
+          </p>
+          {/* One announcement per question for screen readers, not one per token. */}
+          <p className="sr-only" role="status">
+            {streaming ? "Maya is speaking." : text}
           </p>
           {streamError && (
             <div className="flex flex-wrap items-center gap-3 text-sm text-destructive" role="alert">
               <span>{streamError}</span>
-              <Button variant="outline" size="sm" onClick={() => setAttempt((n) => n + 1)}>
+              <Button variant="outline" className="h-10" onClick={() => setAttempt((n) => n + 1)}>
                 Try again
               </Button>
             </div>
@@ -132,7 +135,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, busy, error }: P
         )}
         <div className="flex items-center justify-between">
           <span className="text-xs text-muted-foreground">{answer.length.toLocaleString()} / 4,000</span>
-          <Button type="submit" disabled={!canAnswer}>
+          <Button type="submit" disabled={!canAnswer} className="h-11 px-5 text-base">
             {busy ? "Sending…" : session.current + 1 === total ? "Finish" : "Next question"}
           </Button>
         </div>

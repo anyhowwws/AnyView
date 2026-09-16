@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { MotionConfig } from "framer-motion";
 import { Practice } from "@/components/practice";
 import { ReportView } from "@/components/report-view";
 import { SetupForm } from "@/components/setup-form";
@@ -67,6 +68,9 @@ export function App() {
   if (!hydrated) return null;
 
   return (
+    // reducedMotion="user" turns every framer-motion animation into an instant
+    // change when the OS "Reduce Motion" setting is on.
+    <MotionConfig reducedMotion="user">
     <main className="min-h-screen px-4 py-10 sm:px-6 sm:py-16">
       {saved.phase === "setup" && <SetupForm onStart={onStart} error={error} busy={busy} />}
 
@@ -98,12 +102,15 @@ export function App() {
               </button>
             </>
           ) : (
-            <p className="text-sm text-muted-foreground">Scoring your answers…</p>
+            <p className="text-sm text-muted-foreground" role="status">
+              Scoring your five answers against the rubric. This takes about a minute.
+            </p>
           )}
         </div>
       )}
 
       {saved.phase === "report" && saved.report && <ReportView report={saved.report} onRestart={onRestart} />}
     </main>
+    </MotionConfig>
   );
 }

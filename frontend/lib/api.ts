@@ -25,7 +25,7 @@ async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promi
     });
   } catch (err) {
     if ((err as Error).name === "AbortError") throw err;
-    throw new ApiError("Could not reach the API. Is it running?", 0, true);
+    throw new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
   }
   if (!res.ok) throw await toApiError(res);
   return (await res.json()) as T;
@@ -74,7 +74,7 @@ export async function askQuestion(
     });
   } catch (err) {
     if ((err as Error).name === "AbortError") throw err;
-    throw new ApiError("Could not reach the API. Is it running?", 0, true);
+    throw new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
   }
   if (!res.ok) throw await toApiError(res);
   if (!res.body) throw new ApiError("Empty response from the API.", 502, true);

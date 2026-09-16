@@ -20,8 +20,12 @@ export function ReportView({ report, onRestart }: Props) {
           <p className="text-sm text-muted-foreground">
             {report.role} · {report.company} · {report.seniority}
           </p>
+          <p className="text-xs text-muted-foreground">
+            Scores and ideal answers are AI-generated from your answers and your resume. Check the
+            facts before you reuse them.
+          </p>
         </div>
-        <Button variant="outline" onClick={onRestart}>
+        <Button variant="outline" className="h-10" onClick={onRestart}>
           Start another
         </Button>
       </header>
@@ -99,7 +103,7 @@ function ScoreRow({ score }: { score: DimensionScore }) {
           />
         ))}
       </div>
-      <p className="text-xs text-muted-foreground">{score.evidence}</p>
+      <p className="text-sm text-muted-foreground">{score.evidence}</p>
     </li>
   );
 }
