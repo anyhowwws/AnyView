@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,14 +26,13 @@ export function Practice({ session, spoken, onSpoken, onAnswer, busy, error }: P
   const [streamError, setStreamError] = useState<string | null>(null);
   const [answer, setAnswer] = useState("");
   const [attempt, setAttempt] = useState(0);
-  const askedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    // Ask once per (question, attempt). The ref guards React's dev-mode double
-    // effect; the AbortController stops the stream if the user navigates away.
-    const key = `${question.id}:${attempt}`;
-    if (spoken !== undefined || askedFor.current === key) return;
-    askedFor.current = key;
+    // Ask once per (question, attempt). The cleanup aborts the in-flight stream
+    // when the question changes or the component unmounts — that also covers
+    // React's dev-mode double effect (the first run is aborted, the second
+    // completes), so no extra guard is needed.
+    if (spoken !== undefined) return;
 
     const controller = new AbortController();
     let collected = "";
