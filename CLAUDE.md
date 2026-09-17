@@ -60,7 +60,9 @@ Backend modules:
 - `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; Phase 0 has `max_probes = 0`.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
 - `anyview/uploads/{store,extract}.py` — the upload store (GCS or in-memory) and resume → text extraction.
-- `anyview/db/repository.py` — **Phase 1**. The only file that runs SQL.
+- `anyview/db/{connection,migrate,repository}.py` — engine (connector + IAM auth, or DATABASE_URL), numbered SQL migrations run at startup, and **the only file that runs SQL**: app-meaningful methods over an event log + projection (ADR 0011).
+- `anyview/brain/{models,extract}.py` — Patch drafts with verbatim evidence, the brain as read, coverage; the dump → Patch extraction call with the evidence check.
+- `backend/migrations/NNN_*.sql` — the schema. Additive only; the DB enforces provenance, append-only events, the competency taxonomy, one live skill per name.
 
 ## Commands
 
@@ -74,6 +76,13 @@ python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"
 # frontend (from frontend/)
 npm install && npm run dev
 npx shadcn@latest init        # one-time, when the first component is needed
+
+# database (ADR 0011)
+brew install postgresql@17 pgvector && brew services start postgresql@17   # once, for tests
+createdb anyview_test && createdb anyview_dev                               # once
+TEST_DATABASE_URL=postgresql+psycopg://localhost/anyview_test .venv/bin/pytest   # DB tests run instead of skipping
+DATABASE_URL=postgresql+psycopg://localhost/anyview_dev .venv/bin/python -m anyview.db.migrate
+GOOGLE_CLOUD_PROJECT=anyapps-anyview DB_OWNER_IAM_USER=<you> .venv/bin/python scripts/db_bootstrap.py  # once per Cloud SQL instance
 
 # infra
 cd infra/bootstrap && terraform init && terraform apply         # once
@@ -89,7 +98,11 @@ terraform plan                                                   # terraform.tfv
   (`gcloud auth application-default login`), never a key.
 - DB access: only `db/repository.py` runs SQL. Everything else calls its methods.
 - Event log is the source of truth; brain state is a projection. No write
-  bypasses the log.
+  bypasses the log: `confirm_proposal`, `edit_entity`, `retire_entity` append an event
+  and apply it in one transaction via `_apply`; `rebuild(uid)` replays with the same
+  function and a test asserts equality.
+- Entity labels (R1, P2, S3, K1, A1) are computed per read from creation order, never
+  stored. Prompts use them; the review queue resolves them back to ids at confirmation.
 - Every model call writes a usage row. No exceptions, including scoring calls.
 - `finish()` scores the five answers concurrently (thread pool; the SDK client is
   thread-safe). Keep new per-answer work inside `_score_one` so it stays parallel.
@@ -104,10 +117,11 @@ terraform plan                                                   # terraform.tfv
 
 ## Current phase
 
-**Phase 1, in progress** — auth (ADR 0009) and resume upload (ADR 0010, pulled
-forward from Phase 2) are done. Next: Cloud SQL + pgvector,
-the repository module, the event log, brain capture and the review queue.
-Cloud Storage / Cloud Tasks Terraform arrives with Phase 2 ingestion.
+**Phase 1** — auth (0009), resume upload (0010), Cloud SQL + the second brain
+(0011): capture, review queue, event-sourced projection, coverage heatmap,
+`/brain` screen, and the brain as an interview source. Phase 2 next: embeddings
+(`gemini-embedding-2`), hybrid retrieval, Cloud Tasks for ingestion, golden
+retrieval test set.
 
 ## Gotchas
 
@@ -131,6 +145,8 @@ Cloud Storage / Cloud Tasks Terraform arrives with Phase 2 ingestion.
   project. Always pass `--project` or rely on `terraform.tfvars`.
 - Frontend is a static export: no server components that fetch at request time,
   no `next/headers`, no route handlers. Client calls the API directly.
+- Repository and brain tests need `TEST_DATABASE_URL`; without it they skip (visible as
+  `-rs` output), they do not fail. CI always has the pgvector service container.
 - Don't run `next build` while `next dev` is up — both use `frontend/.next/` and the
   dev server then throws `__webpack_modules__[moduleId] is not a function`. Stop
   dev, build, restart dev (or `rm -rf frontend/.next`).
