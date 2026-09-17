@@ -45,9 +45,11 @@ def migrate(engine: Engine) -> list[str]:
             if path.name in done:
                 continue
             log.info("applying migration %s", path.name)
-            # exec_driver_sql runs the file as-is: many statements, $$ bodies,
-            # and no :param parsing.
-            conn.exec_driver_sql(path.read_text())
+            # Run the file through the driver with *no* parameters: psycopg then
+            # sends it verbatim (many statements, $$ bodies, and plpgsql's own
+            # '%' format markers). Any parameter tuple, even an empty one, would
+            # make it parse '%' as a placeholder.
+            conn.connection.driver_connection.execute(path.read_text())
             conn.execute(
                 sqlalchemy.text("INSERT INTO schema_migrations (name) VALUES (:n)"),
                 {"n": path.name},
