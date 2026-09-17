@@ -119,7 +119,10 @@ class Repository:
             row = c.execute(
                 _q(
                     "INSERT INTO proposals (id, user_id, raw_dump_id, patch, model) "
-                    "VALUES (:id, :uid, :dump, CAST(:patch AS jsonb), :model) RETURNING created_at"
+                    "SELECT :id, :uid, :dump, CAST(:patch AS jsonb), :model FROM raw_dumps d "
+                    "WHERE d.id = :dump AND d.user_id = :uid "
+                    "RETURNING created_at, (SELECT kind FROM raw_dumps WHERE id = :dump), "
+                    "(SELECT left(text, 400) FROM raw_dumps WHERE id = :dump)"
                 ),
                 {
                     "id": pid,
@@ -128,10 +131,12 @@ class Repository:
                     "patch": patch.model_dump_json(),
                     "model": model,
                 },
-            ).one()
+            ).one_or_none()
+        if row is None:
+            raise NotFound("dump")
         return Proposal(
             id=pid, raw_dump_id=dump_id, status="pending", patch=patch, model=model,
-            created_at=row[0], resolved_at=None,
+            created_at=row[0], resolved_at=None, dump_kind=row[1], dump_excerpt=row[2],
         )  # fmt: skip
 
     def pending_proposals(self, uid: str) -> list[Proposal]:

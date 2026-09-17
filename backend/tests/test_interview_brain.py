@@ -42,7 +42,9 @@ def _fill_brain(client):
 
 def test_use_brain_renders_the_confirmed_record_with_labels(client):
     _fill_brain(client)
-    r = client.post("/interview/start", json={"session_id": "s1", "setup": _setup(use_brain=True)})
+    r = client.post(
+        "/interview/start", json={"session_id": "sess-0001", "setup": _setup(use_brain=True)}
+    )
     assert r.status_code == 200, r.text
     setup = r.json()["setup"]
     assert setup["source"] == "brain" and setup["resume_object"] is None
@@ -54,21 +56,24 @@ def test_use_brain_renders_the_confirmed_record_with_labels(client):
 
 
 def test_use_brain_with_an_empty_brain_is_a_422(client):
-    r = client.post("/interview/start", json={"session_id": "s1", "setup": _setup(use_brain=True)})
+    r = client.post(
+        "/interview/start", json={"session_id": "sess-0001", "setup": _setup(use_brain=True)}
+    )
     assert r.status_code == 422 and "still empty" in r.json()["detail"]
 
 
 def test_exactly_one_source(client):
     both = _setup(use_brain=True, resume="x" * 60)
     assert (
-        client.post("/interview/start", json={"session_id": "s1", "setup": both}).status_code == 422
+        client.post("/interview/start", json={"session_id": "sess-0001", "setup": both}).status_code
+        == 422
     )
 
 
 def test_report_carries_the_source(client):
     _fill_brain(client)
     session = client.post(
-        "/interview/start", json={"session_id": "s1", "setup": _setup(use_brain=True)}
+        "/interview/start", json={"session_id": "sess-0001", "setup": _setup(use_brain=True)}
     ).json()
     for i in range(5):
         session = client.post(
@@ -84,7 +89,7 @@ def test_upload_with_add_to_brain_queues_a_proposal_alongside_the_interview(clie
     store.put(name, _docx_bytes(RESUME.splitlines()))
     r = client.post(
         "/interview/start",
-        json={"session_id": "s1", "setup": _setup(resume_object=name, add_to_brain=True)},
+        json={"session_id": "sess-0001", "setup": _setup(resume_object=name, add_to_brain=True)},
     )
     assert r.status_code == 200, r.text
     assert r.json()["state"] == "ask"
@@ -100,7 +105,7 @@ def test_upload_without_add_to_brain_queues_nothing(client, store):
     name = f"uploads/{UID}/cv.docx"
     store.put(name, _docx_bytes(RESUME.splitlines()))
     r = client.post(
-        "/interview/start", json={"session_id": "s1", "setup": _setup(resume_object=name)}
+        "/interview/start", json={"session_id": "sess-0001", "setup": _setup(resume_object=name)}
     )
     assert r.status_code == 200
     assert client.get("/brain").json()["pending_proposals"] == 0
@@ -111,7 +116,9 @@ def test_brain_source_without_a_database_is_a_503(signed_in):
     app.dependency_overrides[interview.get_repository_optional] = lambda: None
     try:
         c = TestClient(app, headers={"Authorization": "Bearer good"})
-        r = c.post("/interview/start", json={"session_id": "s1", "setup": _setup(use_brain=True)})
+        r = c.post(
+            "/interview/start", json={"session_id": "sess-0001", "setup": _setup(use_brain=True)}
+        )
         assert r.status_code == 503
     finally:
         app.dependency_overrides.pop(interview.get_model, None)
