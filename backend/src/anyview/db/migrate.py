@@ -20,23 +20,26 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
 LOCK_KEY = 7_140_926  # arbitrary, fixed: "the anyview migrations lock"
 
 
+LEDGER = (
+    "CREATE TABLE IF NOT EXISTS schema_migrations "
+    "(name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"
+)
+
+
 def pending(engine: Engine) -> list[Path]:
     with engine.begin() as conn:
-        conn.execute(
-            sqlalchemy.text(
-                "CREATE TABLE IF NOT EXISTS schema_migrations "
-                "(name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())"
-            )
-        )
+        conn.execute(sqlalchemy.text(LEDGER))
         done = {r[0] for r in conn.execute(sqlalchemy.text("SELECT name FROM schema_migrations"))}
     return [p for p in sorted(MIGRATIONS_DIR.glob("*.sql")) if p.name not in done]
 
 
 def migrate(engine: Engine) -> list[str]:
-    """Apply everything pending; return the names applied."""
+    """Apply everything pending; return the names applied. Safe on a brand-new
+    database: the ledger table is created first."""
     applied: list[str] = []
     with engine.begin() as conn:
         conn.execute(sqlalchemy.text("SELECT pg_advisory_xact_lock(:k)"), {"k": LOCK_KEY})
+        conn.execute(sqlalchemy.text(LEDGER))
         done = {r[0] for r in conn.execute(sqlalchemy.text("SELECT name FROM schema_migrations"))}
         for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
             if path.name in done:
