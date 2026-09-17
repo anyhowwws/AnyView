@@ -140,7 +140,7 @@ function ProposalCard({
         )}
         <div className="flex flex-wrap items-center gap-3">
           <Button
-            className="h-10"
+            className="h-11 px-5 text-base"
             disabled={busy || keptCount === 0}
             onClick={() => void act(async () => onConfirmed(await confirmProposal(proposal.id, kept()), proposal.id))}
           >

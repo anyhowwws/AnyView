@@ -56,7 +56,7 @@ export function CaptureBox({ onProposal }: Props) {
           disabled={busy}
         />
         <div className="flex flex-wrap items-center gap-3">
-          <Button type="submit" className="h-10" disabled={busy || text.trim().length < 20}>
+          <Button type="submit" className="h-11 px-5 text-base" disabled={busy || text.trim().length < 20}>
             {stage === "reading" ? "Maya is reading…" : "Add to brain"}
           </Button>
           <input

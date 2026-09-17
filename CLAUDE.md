@@ -133,6 +133,10 @@ retrieval test set.
   include `signBlob`** — a laptop needs `local_signers = ["user:you@…"]` in tfvars (grants
   `tokenCreator` on the SA) before the real API can issue upload URLs locally. `ANYVIEW_FAKE_MODEL=1`
   uses an in-memory store instead, so no bucket is needed for a local walk-through.
+- Local dev without Google: `ANYVIEW_FAKE_MODEL=1` also switches the API to accept
+  `Authorization: Bearer fake:<email>` (allow-list still applies), and the `web-fake` launch
+  config builds the frontend with `NEXT_PUBLIC_FAKE_AUTH=dev@example.com`. Neither exists in
+  a Vertex-backed build.
 - Tests never call Google: `signed_in` fixture in `tests/conftest.py` swaps the verifier.
   The real one needs `GOOGLE_CLOUD_PROJECT` set (token audience).
 - The Google provider is provisioned by the Firebase CLI from `firebase-auth.json`, not

@@ -189,8 +189,8 @@ function EntityCard({
         </div>
         {!editing && !confirmingRetire && (
           <div className="flex shrink-0 gap-1">
-            <Button variant="ghost" size="sm" onClick={startEdit} aria-label={`Edit ${title}`}>Edit</Button>
-            <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmingRetire(true)} aria-label={`Retire ${title}`}>
+            <Button variant="ghost" size="sm" className="h-9 sm:h-7" onClick={startEdit} aria-label={`Edit ${title}`}>Edit</Button>
+            <Button variant="ghost" size="sm" className="h-9 sm:h-7" disabled={busy} onClick={() => setConfirmingRetire(true)} aria-label={`Retire ${title}`}>
               Retire
             </Button>
           </div>
