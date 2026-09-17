@@ -54,3 +54,9 @@ variable "api_max_instances" {
   type        = number
   default     = 1
 }
+
+variable "cors_origins" {
+  description = "Browser origins allowed to call the API (ADR 0006). Firebase Hosting serves the frontend on both of these by default."
+  type        = list(string)
+  default     = ["https://anyapps-anyview.web.app", "https://anyapps-anyview.firebaseapp.com"]
+}

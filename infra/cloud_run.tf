@@ -44,6 +44,10 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "MODEL_ID_FAST"
         value = var.fast_model_id
       }
+      env {
+        name  = "CORS_ORIGINS"
+        value = join(",", var.cors_origins)
+      }
     }
 
     # Interviews stream for up to a few minutes; default 300s is fine, stated explicitly.
