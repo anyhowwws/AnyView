@@ -60,3 +60,13 @@ output "upload_bucket" {
   description = "Where uploaded resumes land (uploads/<uid>/…)."
   value       = google_storage_bucket.uploads.name
 }
+
+output "db_instance" {
+  description = "Cloud SQL connection name (project:region:instance) for the connector."
+  value       = google_sql_database_instance.main.connection_name
+}
+
+output "db_iam_user" {
+  description = "The API's IAM database user name."
+  value       = local.db_api_user
+}

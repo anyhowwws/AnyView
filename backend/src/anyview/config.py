@@ -20,6 +20,10 @@ class Settings:
     cors_origins: list[str] = field(default_factory=list)
     allowed_emails: frozenset[str] = frozenset()
     upload_bucket: str = ""
+    db_instance: str = ""  # project:region:instance; empty = no database
+    db_name: str = "anyview"
+    db_iam_user: str = ""
+    database_url: str = ""  # local/test override: a plain postgres:// URL
     signer_service_account: str = ""
     use_fake_model: bool = False
 
@@ -44,6 +48,10 @@ class Settings:
             cors_origins=origins or ["http://localhost:3000"],
             allowed_emails=emails,
             upload_bucket=os.environ.get("UPLOAD_BUCKET", ""),
+            db_instance=os.environ.get("DB_INSTANCE", ""),
+            db_name=os.environ.get("DB_NAME", "anyview"),
+            db_iam_user=os.environ.get("DB_IAM_USER", ""),
+            database_url=os.environ.get("DATABASE_URL", ""),
             # Signed URLs are signed by the API's own service account via the IAM
             # signBlob API; locally your ADC calls it on the SA's behalf.
             signer_service_account=os.environ.get(

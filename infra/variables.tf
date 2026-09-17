@@ -88,3 +88,20 @@ variable "local_signers" {
   type        = list(string)
   default     = []
 }
+
+variable "db_tier" {
+  description = "Cloud SQL machine tier. db-g1-small per the brief (~USD 25-30/month idle); db-f1-micro is the step-down if the budget bites."
+  type        = string
+  default     = "db-g1-small"
+}
+
+variable "db_owner_iam_user" {
+  description = "Google account that may log in to the database with IAM auth from a laptop (migrations, tests, break-glass). Usually the project owner."
+  type        = string
+}
+
+variable "db_password_version" {
+  description = "Bump to rotate the built-in postgres user's password (ADR 0011). The value itself is never in state."
+  type        = number
+  default     = 1
+}

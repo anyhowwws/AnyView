@@ -16,6 +16,7 @@ locals {
     "firebase.googleapis.com", # Firebase Hosting + web app registration
     "firebasehosting.googleapis.com",
     "identitytoolkit.googleapis.com", # Identity Platform (sign-in)
+    "sqladmin.googleapis.com",        # Cloud SQL (instance admin + connector)
   ]
 }
 

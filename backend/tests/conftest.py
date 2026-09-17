@@ -8,6 +8,8 @@ from anyview.interview.models import Setup
 from anyview.main import app
 from anyview.uploads.store import MemoryUploadStore
 
+pytest_plugins = ["tests.db_fixtures"]  # the Postgres fixtures: db_engine, db
+
 ALLOWED = "jordan@example.com"
 
 # Claims a verifier returns for each fake token. Tests never touch Google.

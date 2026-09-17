@@ -15,6 +15,12 @@ dependencies = [
   "google-cloud-storage>=3,<4",
   # Reads .docx resumes to text; PDFs go to the model natively instead (ADR 0010).
   "python-docx>=1.1,<2",
+  # Cloud SQL connector: IAM-authenticated, TLS connections with no database password (ADR 0011).
+  "cloud-sql-python-connector[psycopg]>=1.15,<2",
+  # PostgreSQL driver.
+  "psycopg[binary]>=3.2,<4",
+  # Used only as the connection pool around the connector and to run text() SQL. No ORM (ADR 0011).
+  "sqlalchemy>=2.0,<3",
 ]
 
 [project.optional-dependencies]

@@ -56,6 +56,18 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "UPLOAD_BUCKET"
         value = google_storage_bucket.uploads.name
       }
+      env {
+        name  = "DB_INSTANCE"
+        value = google_sql_database_instance.main.connection_name
+      }
+      env {
+        name  = "DB_NAME"
+        value = google_sql_database.anyview.name
+      }
+      env {
+        name  = "DB_IAM_USER"
+        value = local.db_api_user
+      }
     }
 
     # Interviews stream for up to a few minutes; default 300s is fine, stated explicitly.

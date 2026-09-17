@@ -8,3 +8,4 @@ budget_amount      = 50
 budget_currency    = "SGD"                    # must match the billing account
 allowed_emails     = ["you@example.com"]      # Google accounts allowed to sign in
 local_signers      = ["user:you@example.com"] # sign upload URLs locally; omit in CI
+db_owner_iam_user  = "you@example.com"        # IAM database login from your laptop
