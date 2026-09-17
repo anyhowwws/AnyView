@@ -29,15 +29,29 @@ data "aws_route53_zone" "root" {
 }
 
 locals {
-  # Flatten Firebase's "please add these" list into one record per (type, name),
-  # sorted so count.index is stable across applies. Only ADD actions; anything
-  # else is Firebase reporting on records it found.
-  dns_records_by_key = {
-    for r in flatten([
-      for u in google_firebase_hosting_custom_domain.app.required_dns_updates : [
-        for d in u.desired : d.records
+  # Firebase reports the records it wants in two places: the hosting CNAME
+  # under `required_dns_updates`, and the certificate challenge TXT
+  # (_acme-challenge.<domain>) under `cert[].verification[].dns[]`. Merge both,
+  # one record per (type, name), sorted so count.index is stable across
+  # applies. Only ADD actions; anything else is Firebase reporting on records
+  # it found.
+  hosting_records = flatten([
+    for u in google_firebase_hosting_custom_domain.app.required_dns_updates : [
+      for d in u.desired : d.records
+    ]
+  ])
+  cert_records = flatten([
+    for c in google_firebase_hosting_custom_domain.app.cert : [
+      for v in c.verification : [
+        for dns in v.dns : [
+          for d in dns.desired : d.records
+        ]
       ]
-    ]) : "${r.type}:${r.domain_name}" => r if r.required_action == "ADD"
+    ]
+  ])
+  dns_records_by_key = {
+    for r in concat(local.hosting_records, local.cert_records) :
+    "${r.type}:${r.domain_name}" => r if r.required_action == "ADD"
   }
   dns_records = [for k in sort(keys(local.dns_records_by_key)) : local.dns_records_by_key[k]]
 }

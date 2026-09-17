@@ -56,11 +56,15 @@ resource "google_cloud_run_v2_service" "api" {
 
   lifecycle {
     # Terraform sets the service up; GitHub Actions deploys images. Without this,
-    # every plan would try to roll the image back to the placeholder.
+    # every plan would try to roll the image back to the placeholder. The
+    # service-level `scaling` block is API-populated defaults (all zero) that the
+    # provider reports as a change on every plan; the real scaling lives in
+    # template.scaling above.
     ignore_changes = [
       template[0].containers[0].image,
       client,
       client_version,
+      scaling,
     ]
   }
 
