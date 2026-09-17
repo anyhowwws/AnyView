@@ -31,7 +31,9 @@ export function CaptureBox({ onProposal }: Props) {
   }
 
   return (
-    <section className="sticky top-0 z-10 -mx-4 border-b bg-background/95 px-4 py-4 backdrop-blur sm:-mx-6 sm:px-6">
+    // Pinned at the top on wide screens (brief). On a phone a pinned box would
+    // hold a quarter of the viewport, so it scrolls with the page there.
+    <section className="-mx-4 border-b bg-background/95 px-4 py-4 backdrop-blur sm:sticky sm:top-0 sm:z-10 sm:-mx-6 sm:px-6">
       <form
         className="mx-auto flex w-full max-w-4xl flex-col gap-2"
         onSubmit={(e) => {

@@ -177,17 +177,22 @@ function DraftCard<G extends Group>({
 }) {
   const d = draft as unknown as Record<string, unknown>;
   const patchOf = (fields: Record<string, unknown>) => fields as unknown as Partial<Patch[G][number]>;
-  const text = (name: string, placeholder: string, multiline = false) => {
+  const text = (name: string, label: string, multiline = false) => {
     const value = (d[name] as string | null) ?? "";
     const props = {
       value,
-      placeholder,
-      "aria-label": placeholder,
+      placeholder: "—",
       onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
         onChange(patchOf({ [name]: e.target.value || null })),
       disabled: !kept,
     };
-    return multiline ? <Textarea rows={2} {...props} /> : <Input {...props} />;
+    // A visible caption, so the field keeps its name once it has a value.
+    return (
+      <label className="flex flex-col gap-0.5">
+        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+        {multiline ? <Textarea rows={2} {...props} /> : <Input {...props} />}
+      </label>
+    );
   };
 
   return (
