@@ -37,10 +37,16 @@ variable "billing_account_id" {
   type        = string
 }
 
-variable "budget_amount_usd" {
-  description = "Monthly spend that triggers the budget alert."
+variable "budget_amount" {
+  description = "Monthly spend that triggers the budget alert, in the billing account's currency."
   type        = number
   default     = 50
+}
+
+variable "budget_currency" {
+  description = "Must match the billing account's currency (gcloud billing accounts describe <id> → currencyCode); the Budgets API rejects any other with a bare 400."
+  type        = string
+  default     = "SGD"
 }
 
 variable "api_max_instances" {
