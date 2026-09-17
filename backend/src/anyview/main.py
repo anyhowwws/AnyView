@@ -39,10 +39,15 @@ async def lifespan(_: FastAPI):
     engine = build_engine()
     if engine is not None:
         from anyview.db.migrate import migrate
+        from anyview.db.repository import Repository
+        from anyview.llm import adapter
 
         applied = migrate(engine)
         if applied:
             logging.getLogger(__name__).info("applied migrations: %s", applied)
+        # Every model call also becomes a usage_events row (brief: cost tracking).
+        repo = Repository(engine)
+        adapter.usage_sink = lambda record: repo.write_usage(record, uid=None)
     yield
     if engine is not None:
         engine.dispose()

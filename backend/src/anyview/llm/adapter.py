@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
 from typing import Any, Literal, Protocol
 
@@ -28,6 +28,11 @@ from google.genai import errors, types
 
 log = logging.getLogger(__name__)
 usage_log = logging.getLogger("anyview.usage")
+
+# Optional second destination for usage rows (the database, once one exists).
+# main.py sets it; the adapter never imports the repository.
+UsageSink = Callable[[dict[str, Any]], None]
+usage_sink: UsageSink | None = None
 
 Effort = Literal["low", "medium", "high"]
 
@@ -117,18 +122,19 @@ class Model(Protocol):
 
 
 def _log_usage(*, session_id: str, call: str, model: str, usage: Usage, latency_ms: int) -> None:
-    usage_log.info(
-        json.dumps(
-            {
-                "session_id": session_id,
-                "call": call,
-                "model": model,
-                "latency_ms": latency_ms,
-                **asdict(usage),
-            },
-            sort_keys=True,
-        )
-    )
+    record = {
+        "session_id": session_id,
+        "call": call,
+        "model": model,
+        "latency_ms": latency_ms,
+        **asdict(usage),
+    }
+    usage_log.info(json.dumps(record, sort_keys=True))
+    if usage_sink is not None:
+        try:
+            usage_sink(record)
+        except Exception:  # a usage row must never fail the call it describes
+            log.exception("usage sink failed")
 
 
 def _usage_from(meta: Any) -> Usage:

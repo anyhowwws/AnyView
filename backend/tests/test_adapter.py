@@ -21,6 +21,28 @@ def test_usage_from_sdk_folds_thoughts_into_output_and_treats_none_as_zero():
     assert adapter._usage_from(None) == Usage()
 
 
+def test_usage_sink_receives_the_same_record_and_cannot_break_the_call(caplog, monkeypatch):
+    seen = []
+    monkeypatch.setattr(adapter, "usage_sink", seen.append)
+    adapter._log_usage(
+        session_id="s1", call="ask", model="m", usage=Usage(1, 2, 3, 4), latency_ms=5
+    )
+    assert seen == [
+        {"session_id": "s1", "call": "ask", "model": "m", "latency_ms": 5, "input_tokens": 1,
+         "output_tokens": 2, "thinking_tokens": 3, "cache_read": 4}
+    ]  # fmt: skip
+
+    def boom(record):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(adapter, "usage_sink", boom)
+    caplog.set_level("ERROR")
+    adapter._log_usage(
+        session_id="s1", call="ask", model="m", usage=Usage(), latency_ms=0
+    )  # no raise
+    assert "usage sink failed" in caplog.text
+
+
 def test_usage_log_line_is_json_with_fixed_fields(caplog):
     caplog.set_level("INFO", logger="anyview.usage")
     adapter._log_usage(
