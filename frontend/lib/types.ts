@@ -34,12 +34,15 @@ export interface Setup {
   seniority: Seniority;
   job_description: string | null;
   resume_object: string | null;
+  source: "resume" | "brain";
 }
 
 /** What the browser sends to start: uploaded object name or pasted text, not both. */
 export interface SetupInput {
   resume?: string;
   resume_object?: string;
+  use_brain?: boolean;
+  add_to_brain?: boolean;
   company: string;
   role: string;
   seniority: Seniority;
@@ -99,6 +102,7 @@ export interface Report {
   company: string;
   role: string;
   seniority: Seniority;
+  source: "resume" | "brain";
   items: QuestionReport[];
 }
 

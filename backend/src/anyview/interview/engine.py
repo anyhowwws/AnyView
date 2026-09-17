@@ -218,5 +218,6 @@ def finish(session: Session, *, model: Model) -> Report:
         company=session.setup.company,
         role=session.setup.role,
         seniority=session.setup.seniority,
+        source=session.setup.source,
         items=items,
     )

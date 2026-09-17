@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { getBrain } from "@/lib/api";
 import {
   MAX_UPLOAD_BYTES,
   SENIORITIES,
@@ -18,6 +19,8 @@ import {
   type Seniority,
   type SetupInput,
 } from "@/lib/types";
+
+type Source = "upload" | "paste" | "brain";
 
 interface Props {
   /** Receives the file (if any) and the rest of the setup; the caller uploads then starts. */
@@ -31,7 +34,9 @@ interface Props {
 export function SetupForm({ onStart, error, busy, stage }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
-  const [pasting, setPasting] = useState(false);
+  const [source, setSource] = useState<Source>("upload");
+  const [addToBrain, setAddToBrain] = useState(true);
+  const [brainSize, setBrainSize] = useState<number | null>(null); // entities in the brain; null = unknown
   const [resume, setResume] = useState("");
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
@@ -39,9 +44,18 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
   const [jd, setJd] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
 
+  const pasting = source === "paste";
   const resumeTooShort = pasting && resume.trim().length > 0 && resume.trim().length < 50;
-  const hasResume = pasting ? resume.trim().length >= 50 : file !== null;
+  const hasResume =
+    source === "brain" ? (brainSize ?? 0) > 0 : pasting ? resume.trim().length >= 50 : file !== null;
   const canSubmit = hasResume && company.trim() && role.trim() && seniority;
+
+  useEffect(() => {
+    // Is there a brain to interview from? One request; absence just hides the option.
+    getBrain()
+      .then((b) => setBrainSize(b.roles.length + b.projects.length + b.stories.length + b.skills.length))
+      .catch(() => setBrainSize(null));
+  }, []);
 
   function pick(list: FileList | null) {
     const f = list?.[0] ?? null;
@@ -64,8 +78,10 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
       onSubmit={(e) => {
         e.preventDefault();
         if (!seniority || !canSubmit) return;
-        void onStart(pasting ? null : file, {
+        void onStart(source === "upload" ? file : null, {
           resume: pasting ? resume : undefined,
+          use_brain: source === "brain" || undefined,
+          add_to_brain: source === "upload" && addToBrain ? true : undefined,
           company: company.trim(),
           role: role.trim(),
           seniority,
@@ -81,7 +97,34 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
         </p>
       </header>
 
-      {pasting ? (
+      {brainSize !== null && brainSize > 0 && (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Where should Maya read about you?">
+          {(
+            [
+              ["upload", "Upload a resume"],
+              ["brain", `My brain (${brainSize} ${brainSize === 1 ? "entry" : "entries"})`],
+              ["paste", "Paste text"],
+            ] as [Source, string][]
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              aria-pressed={source === value}
+              onClick={() => setSource(value)}
+              className={`rounded-full border px-3 py-1 text-sm ${source === value ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {source === "brain" ? (
+        <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+          Maya will interview you from your confirmed brain and cite its entries ([R1], [S2]…) in
+          the ideal answers.
+        </p>
+      ) : pasting ? (
         <Field
           label="Resume"
           hint={resumeTooShort ? "at least 50 characters" : `${resume.length.toLocaleString()} / 15,000`}
@@ -97,7 +140,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
           <button
             type="button"
             className="self-start text-xs text-muted-foreground underline underline-offset-4"
-            onClick={() => setPasting(false)}
+            onClick={() => setSource("upload")}
           >
             Upload a file instead
           </button>
@@ -131,10 +174,19 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
               {fileError}
             </p>
           )}
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              className="size-4"
+              checked={addToBrain}
+              onChange={(e) => setAddToBrain(e.target.checked)}
+            />
+            Also add this resume to my brain (you review before anything is saved)
+          </label>
           <button
             type="button"
             className="self-start text-xs text-muted-foreground underline underline-offset-4"
-            onClick={() => setPasting(true)}
+            onClick={() => setSource("paste")}
           >
             Paste text instead
           </button>

@@ -105,6 +105,9 @@ def build_repository():
 app.dependency_overrides[interview.get_model] = build_model
 app.dependency_overrides[uploads.get_store] = build_store
 app.dependency_overrides[brain.get_repository] = build_repository
+app.dependency_overrides[interview.get_repository_optional] = lambda: (
+    build_repository() if build_engine() is not None else None
+)
 app.dependency_overrides[auth.get_settings] = lambda: settings
 app.dependency_overrides[auth.get_verifier] = lambda: auth.verify_firebase_token(settings)
 app.include_router(interview.router)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ValidationError
@@ -10,11 +12,14 @@ from pydantic import BaseModel, ValidationError
 from anyview.api.auth import CurrentUser, current_user
 from anyview.api.sse import stream_response
 from anyview.api.uploads import get_store, object_prefix
+from anyview.brain.extract import ExtractionFailed, propose
 from anyview.interview import engine
 from anyview.interview.models import Answer, Report, Session, Setup, SetupInput, State
 from anyview.llm.adapter import Model
 from anyview.uploads.extract import ExtractionError, docx_to_text, pdf_to_text
 from anyview.uploads.store import UploadStore
+
+log = logging.getLogger(__name__)
 
 # Every route here requires a signed-in, allow-listed user (api/auth.py).
 router = APIRouter(prefix="/interview", tags=["interview"], dependencies=[Depends(current_user)])
@@ -28,17 +33,53 @@ ModelDep = Annotated[Model, Depends(get_model)]
 StoreDep = Annotated[UploadStore, Depends(get_store)]
 
 
+def get_repository_optional():  # overridden in main.py and tests; None = no database
+    return None
+
+
+RepoDep = Annotated[Any, Depends(get_repository_optional)]
+
+
 class StartRequest(BaseModel):
     session_id: str
     setup: SetupInput
 
 
-def resolve_setup(body: StartRequest, *, user_uid: str, store: UploadStore, model: Model) -> Setup:
-    """Turn the browser's SetupInput into a Setup with resume text, reading and
-    extracting the uploaded file when one was given (ADR 0010)."""
+def resolve_setup(
+    body: StartRequest, *, user_uid: str, store: UploadStore, model: Model, repo: Any = None
+) -> Setup:
+    """Turn the browser's SetupInput into a Setup with the candidate's record:
+    pasted text, an uploaded file's extracted text (ADR 0010), or the brain
+    rendered as text."""
     given = body.setup
-    if bool(given.resume) == bool(given.resume_object):
-        raise HTTPException(422, "Upload a resume or paste its text — one or the other.")
+    sources = sum(bool(x) for x in (given.resume, given.resume_object, given.use_brain))
+    if sources != 1:
+        raise HTTPException(
+            422, "Upload a resume, paste its text, or use your brain — one of the three."
+        )
+
+    if given.use_brain:
+        if repo is None:
+            raise HTTPException(503, "The brain needs a database and none is configured.")
+        text = repo.brain_context(user_uid)
+        if len(text.strip()) < 50:
+            raise HTTPException(
+                422, "Your brain is still empty. Add something to it first, or upload a resume."
+            )
+        try:
+            return Setup(
+                resume=text,
+                company=given.company,
+                role=given.role,
+                seniority=given.seniority,
+                job_description=given.job_description,
+                resume_object=None,
+                source="brain",
+            )
+        except ValidationError as exc:
+            raise HTTPException(
+                422, "Your brain is too large to fit in one interview prompt yet."
+            ) from exc
 
     if given.resume_object:
         # Only the caller's own uploads. The prefix is set by /uploads from the
@@ -84,9 +125,41 @@ class AnswerRequest(BaseModel):
 
 
 @router.post("/start", response_model=Session)
-def start(body: StartRequest, user: CurrentUser, model: ModelDep, store: StoreDep) -> Session:
-    setup = resolve_setup(body, user_uid=user.uid, store=store, model=model)
-    return engine.start(setup, session_id=body.session_id, model=model)
+def start(
+    body: StartRequest, user: CurrentUser, model: ModelDep, store: StoreDep, repo: RepoDep
+) -> Session:
+    setup = resolve_setup(body, user_uid=user.uid, store=store, model=model, repo=repo)
+
+    if not (body.setup.add_to_brain and setup.resume_object):
+        return engine.start(setup, session_id=body.session_id, model=model)
+    if repo is None:
+        raise HTTPException(503, "The brain needs a database and none is configured.")
+
+    # The same text feeds two independent model calls — plan the interview and
+    # propose brain entries — so run them side by side rather than back to back.
+    def add_to_brain() -> None:
+        repo.ensure_user(user.uid, user.email)
+        kind = "resume_pdf" if setup.resume_object.endswith(".pdf") else "resume_docx"
+        dump = repo.create_dump(
+            user.uid, kind=kind, text=setup.resume, object_name=setup.resume_object
+        )
+        index, _ = repo.brain_index(user.uid)
+        patch = propose(setup.resume, brain_index=index, model=model, session_id=body.session_id)
+        if not patch.is_empty():
+            repo.create_proposal(
+                user.uid, dump_id=dump.id, patch=patch, model=getattr(model, "model", "fake")
+            )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        planned = pool.submit(engine.start, setup, session_id=body.session_id, model=model)
+        proposed = pool.submit(add_to_brain)
+        session = planned.result()
+        try:
+            proposed.result()
+        except ExtractionFailed as exc:
+            # The interview is what the user asked for; the brain entry is a bonus.
+            log.warning("add_to_brain failed for %s: %s", body.session_id, exc.user_message)
+    return session
 
 
 @router.post("/ask")

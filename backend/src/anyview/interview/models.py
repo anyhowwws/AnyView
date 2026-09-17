@@ -39,17 +39,24 @@ class Setup(BaseModel):
     role: str = Field(min_length=1, max_length=120)
     seniority: Seniority
     job_description: str | None = Field(default=None, max_length=8_000)
-    # Where `resume` came from, for the record: the uploaded object's name, or
-    # None when the text was pasted. Phase 2's RawDump will point here.
+    # Where `resume` came from: an uploaded object's name, or None when the
+    # text was pasted or rendered from the brain.
     resume_object: str | None = None
+    # "resume" = a document the candidate gave us; "brain" = their confirmed
+    # record, rendered with [R1]/[P1]/[S1] labels the model can cite.
+    source: Literal["resume", "brain"] = "resume"
 
 
 class SetupInput(BaseModel):
-    """What the browser sends to start: either pasted resume text or the name of
-    an object it uploaded (ADR 0010). Exactly one of the two."""
+    """What the browser sends to start. One of: pasted `resume` text, an
+    uploaded `resume_object` (ADR 0010), or `use_brain` (the confirmed brain
+    as the candidate's record). `add_to_brain` sends an uploaded resume
+    through the brain's review queue as well (ADR 0010)."""
 
     resume: str | None = Field(default=None, max_length=15_000)
     resume_object: str | None = Field(default=None, max_length=200)
+    use_brain: bool = False
+    add_to_brain: bool = False
     company: str = Field(min_length=1, max_length=120)
     role: str = Field(min_length=1, max_length=120)
     seniority: Seniority
@@ -118,6 +125,7 @@ class Report(BaseModel):
     company: str
     role: str
     seniority: Seniority
+    source: Literal["resume", "brain"] = "resume"
     items: list[QuestionReport]
 
 
