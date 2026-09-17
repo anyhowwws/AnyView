@@ -52,6 +52,10 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "ALLOWED_EMAILS"
         value = join(",", var.allowed_emails)
       }
+      env {
+        name  = "UPLOAD_BUCKET"
+        value = google_storage_bucket.uploads.name
+      }
     }
 
     # Interviews stream for up to a few minutes; default 300s is fine, stated explicitly.

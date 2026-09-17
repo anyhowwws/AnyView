@@ -12,8 +12,21 @@ resource "google_identity_platform_config" "default" {
   project = var.project_id
 
   autodelete_anonymous_users = true
+  # Google only (ADR 0009). Email/password and anonymous are declared off
+  # explicitly: the Firebase CLI's auth deploy writes these blocks, and an
+  # undeclared block shows up as a change on every plan.
   sign_in {
     anonymous { enabled = false }
+    email {
+      enabled           = false
+      password_required = false
+    }
+    phone_number {
+      enabled = false
+    }
+  }
+  multi_tenant {
+    allow_tenants = false
   }
 
   # Where a sign-in may start from. Firebase Hosting serves the auth handler

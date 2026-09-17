@@ -55,3 +55,8 @@ output "firebase_web_config" {
     project_id  = var.project_id
   }
 }
+
+output "upload_bucket" {
+  description = "Where uploaded resumes land (uploads/<uid>/…)."
+  value       = google_storage_bucket.uploads.name
+}
