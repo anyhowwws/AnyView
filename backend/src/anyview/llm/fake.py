@@ -14,7 +14,7 @@ import json
 from collections.abc import Iterator
 from typing import Any
 
-from anyview.llm.adapter import Effort, ModelError, Reply, Usage
+from anyview.llm.adapter import Effort, ModelError, Reply, Usage, _log_usage
 
 _FAKE_USAGE = Usage(input_tokens=100, output_tokens=50, thinking_tokens=20, cache_read=80)
 
@@ -27,10 +27,16 @@ class FakeModel:
         self.fail = fail
         self.calls: list[dict[str, Any]] = []  # every invocation, for assertions
 
+    model = "fake"
+
     def _record(self, call: str, session_id: str, system: str, user: str) -> None:
         self.calls.append({"call": call, "session_id": session_id, "system": system, "user": user})
         if self.fail == call:
             raise ModelError("fake failure", retryable=True)
+        # Same usage plumbing as the real adapter (log line + sink), fake numbers.
+        _log_usage(
+            session_id=session_id, call=call, model=self.model, usage=_FAKE_USAGE, latency_ms=1
+        )
 
     def generate(
         self,
