@@ -1,6 +1,17 @@
 import { idToken } from "@/lib/auth";
 import { readSse } from "@/lib/sse";
-import type { Answer, Report, Session, SetupInput } from "@/lib/types";
+import type {
+  Answer,
+  Brain,
+  BrainEvent,
+  EntityKind,
+  Patch,
+  Proposal,
+  RawDump,
+  Report,
+  Session,
+  SetupInput,
+} from "@/lib/types";
 
 // Baked in at build time (static export). See frontend/.env.example.
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
@@ -51,6 +62,55 @@ async function toApiError(res: Response): Promise<ApiError> {
     // non-JSON error body; keep the default message
   }
   return new ApiError(detail, res.status, retryable);
+}
+
+async function request<T>(method: "GET" | "PATCH" | "DELETE", path: string): Promise<T> {
+  const auth = await authHeaders();
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, { method, headers: auth });
+  } catch {
+    throw new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
+  }
+  if (!res.ok) throw await toApiError(res);
+  return (await res.json()) as T;
+}
+
+// --- The second brain -------------------------------------------------------
+
+export interface EventOut {
+  event: BrainEvent;
+  brain: Brain;
+}
+
+export const getBrain = () => request<Brain>("GET", "/brain");
+export const listProposals = () => request<Proposal[]>("GET", "/brain/proposals");
+export const getDump = (id: string) => request<RawDump>("GET", `/brain/dumps/${id}`);
+export const createDump = (text: string) => post<Proposal>("/brain/dumps", { text });
+export const createDumpFromUpload = (resumeObject: string) =>
+  post<Proposal>("/brain/dumps/from-upload", { resume_object: resumeObject });
+export const confirmProposal = (id: string, patch: Patch) =>
+  post<EventOut>(`/brain/proposals/${id}/confirm`, { patch });
+export const discardProposal = (id: string) => post<Brain>(`/brain/proposals/${id}/discard`, {});
+export const editEntity = (kind: EntityKind, id: string, fields: Record<string, unknown>) =>
+  patchJson<EventOut>(`/brain/entities/${kind}/${id}`, { fields });
+export const retireEntity = (kind: EntityKind, id: string) =>
+  request<EventOut>("DELETE", `/brain/entities/${kind}/${id}`);
+
+async function patchJson<T>(path: string, body: unknown): Promise<T> {
+  const auth = await authHeaders();
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...auth },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
+  }
+  if (!res.ok) throw await toApiError(res);
+  return (await res.json()) as T;
 }
 
 export function startInterview(sessionId: string, setup: SetupInput): Promise<Session> {

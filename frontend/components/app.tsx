@@ -1,20 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MotionConfig } from "framer-motion";
 import { Practice } from "@/components/practice";
 import { ReportView } from "@/components/report-view";
 import { SetupForm } from "@/components/setup-form";
-import { SignIn } from "@/components/sign-in";
-import { Button } from "@/components/ui/button";
 import { ApiError, getReport, startInterview, submitAnswer, uploadResume } from "@/lib/api";
-import { signOut, useAuth } from "@/lib/auth";
+import { signOut } from "@/lib/auth";
 import { EMPTY, clear, load, save, type Saved } from "@/lib/store";
 import type { SetupInput } from "@/lib/types";
 
 /** Top-level flow: setup → practice → report. Owns the session and persists it. */
 export function App() {
-  const { user, configured } = useAuth();
   const [saved, setSaved] = useState<Saved>(EMPTY);
   const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -84,27 +80,10 @@ export function App() {
     setError(null);
   };
 
-  if (!hydrated || user === undefined) return null;
-
-  if (!user) {
-    return (
-      <main className="min-h-screen px-4 py-10 sm:px-6 sm:py-16">
-        <SignIn configured={configured} />
-      </main>
-    );
-  }
+  if (!hydrated) return null;
 
   return (
-    // reducedMotion="user" turns every framer-motion animation into an instant
-    // change when the OS "Reduce Motion" setting is on.
-    <MotionConfig reducedMotion="user">
-    <main className="min-h-screen px-4 py-10 sm:px-6 sm:py-16">
-      <div className="mx-auto mb-6 flex w-full max-w-4xl items-center justify-end gap-3 text-xs text-muted-foreground">
-        <span>{user.email}</span>
-        <Button variant="ghost" size="sm" onClick={() => void signOut().then(onRestart)}>
-          Sign out
-        </Button>
-      </div>
+    <>
       {saved.phase === "setup" && (
         <SetupForm onStart={onStart} error={error} busy={busy} stage={stage} />
       )}
@@ -145,7 +124,6 @@ export function App() {
       )}
 
       {saved.phase === "report" && saved.report && <ReportView report={saved.report} onRestart={onRestart} />}
-    </main>
-    </MotionConfig>
+    </>
   );
 }

@@ -4,19 +4,30 @@
     {
       "name": "api-fake",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd backend && ANYVIEW_FAKE_MODEL=1 GOOGLE_CLOUD_PROJECT=anyapps-anyview ALLOWED_EMAILS=${ALLOWED_EMAILS:-} .venv/bin/uvicorn anyview.main:app --port 8080"],
+      "runtimeArgs": [
+        "-c",
+        "cd backend && ANYVIEW_FAKE_MODEL=1 GOOGLE_CLOUD_PROJECT=anyapps-anyview ALLOWED_EMAILS=${ALLOWED_EMAILS:-} DATABASE_URL=postgresql+psycopg://localhost/anyview_dev .venv/bin/uvicorn anyview.main:app --port 8080"
+      ],
       "port": 8080
     },
     {
       "name": "api-vertex",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd backend && GOOGLE_CLOUD_PROJECT=anyapps-anyview ALLOWED_EMAILS=${ALLOWED_EMAILS:-} .venv/bin/uvicorn anyview.main:app --port 8080"],
+      "runtimeArgs": [
+        "-c",
+        "cd backend && GOOGLE_CLOUD_PROJECT=anyapps-anyview ALLOWED_EMAILS=${ALLOWED_EMAILS:-} DB_INSTANCE=anyapps-anyview:us-central1:anyview-pg DB_IAM_USER=${DB_IAM_USER:-} .venv/bin/uvicorn anyview.main:app --port 8080"
+      ],
       "port": 8080
     },
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--prefix",
+        "frontend"
+      ],
       "port": 3000
     }
   ]

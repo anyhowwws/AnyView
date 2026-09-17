@@ -101,3 +101,173 @@ export interface Report {
   seniority: Seniority;
   items: QuestionReport[];
 }
+
+// --- The second brain (mirrors backend/src/anyview/brain/models.py) ---------
+
+export type EntityKind = "role" | "project" | "story" | "skill" | "achievement";
+
+export interface Provenance {
+  raw_dump_id: string;
+  event_id: number;
+}
+
+export interface Role {
+  id: string;
+  label: string;
+  company: string;
+  title: string;
+  start_date: string | null;
+  end_date: string | null;
+  level: string | null;
+  source: Provenance;
+}
+
+export interface Project {
+  id: string;
+  label: string;
+  role_id: string | null;
+  name: string;
+  problem: string | null;
+  action: string | null;
+  result: string | null;
+  tech: string[];
+  metrics: string[];
+  source: Provenance;
+}
+
+export interface Story {
+  id: string;
+  label: string;
+  role_id: string | null;
+  project_id: string | null;
+  title: string;
+  situation: string | null;
+  task: string | null;
+  action: string | null;
+  result: string | null;
+  competencies: string[];
+  source: Provenance;
+}
+
+export interface Skill {
+  id: string;
+  label: string;
+  name: string;
+  depth: number;
+  project_ids: string[];
+  source: Provenance;
+}
+
+export interface Achievement {
+  id: string;
+  label: string;
+  kind: "achievement" | "credential";
+  title: string;
+  issuer: string | null;
+  achieved_on: string | null;
+  source: Provenance;
+}
+
+export interface Competency {
+  key: string;
+  label: string;
+}
+
+export type Strength = "none" | "weak" | "strong";
+
+export interface Coverage {
+  competencies: Competency[];
+  roles: Role[];
+  cells: Record<string, Record<string, Strength>>;
+}
+
+export interface Brain {
+  roles: Role[];
+  projects: Project[];
+  stories: Story[];
+  skills: Skill[];
+  achievements: Achievement[];
+  coverage: Coverage;
+  pending_proposals: number;
+}
+
+// Drafts: what the model proposed, editable in the review queue.
+interface Draft {
+  key: string;
+  existing: string | null;
+  evidence: string;
+}
+export interface RoleDraft extends Draft {
+  company: string;
+  title: string;
+  start_date: string | null;
+  end_date: string | null;
+  level: string | null;
+}
+export interface ProjectDraft extends Draft {
+  role: string | null;
+  name: string;
+  problem: string | null;
+  action: string | null;
+  result: string | null;
+  tech: string[];
+  metrics: string[];
+}
+export interface StoryDraft extends Draft {
+  role: string | null;
+  project: string | null;
+  title: string;
+  situation: string | null;
+  task: string | null;
+  action: string | null;
+  result: string | null;
+  competencies: string[];
+}
+export interface SkillDraft extends Draft {
+  name: string;
+  depth: number;
+  projects: string[];
+}
+export interface AchievementDraft extends Draft {
+  kind: "achievement" | "credential";
+  title: string;
+  issuer: string | null;
+  achieved_on: string | null;
+}
+export interface Patch {
+  roles: RoleDraft[];
+  projects: ProjectDraft[];
+  stories: StoryDraft[];
+  skills: SkillDraft[];
+  achievements: AchievementDraft[];
+}
+
+export interface Proposal {
+  id: string;
+  raw_dump_id: string;
+  status: "pending" | "confirmed" | "discarded";
+  patch: Patch;
+  model: string;
+  created_at: string;
+  resolved_at: string | null;
+  dump_kind: "text" | "resume_pdf" | "resume_docx" | null;
+  dump_excerpt: string | null;
+}
+
+export interface BrainEvent {
+  id: number;
+  seq: number;
+  kind: "patch_confirmed" | "entity_edited" | "entity_retired";
+  payload: Record<string, unknown>;
+  raw_dump_id: string | null;
+  proposal_id: string | null;
+  created_at: string;
+}
+
+export interface RawDump {
+  id: string;
+  kind: "text" | "resume_pdf" | "resume_docx";
+  text: string;
+  object_name: string | null;
+  created_at: string;
+}
