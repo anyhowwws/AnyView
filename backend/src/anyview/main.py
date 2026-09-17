@@ -53,7 +53,7 @@ app = FastAPI(title="AnyView API", version="0.0.1", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,  # explicit list from config, never "*"
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],  # edit and retire use PATCH/DELETE
     allow_headers=["Content-Type", "Authorization"],
 )
 

@@ -170,3 +170,9 @@ def test_cors_allows_configured_origin_only(client):
     )
     assert "access-control-allow-origin" not in bad.headers
     assert "authorization" in ok.headers.get("access-control-allow-headers", "").lower()
+    for method in ("PATCH", "DELETE"):  # the Brain screen's edit and retire
+        pre = client.options(
+            "/brain/entities/story/x",
+            headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": method},
+        )
+        assert method in pre.headers.get("access-control-allow-methods", ""), method
