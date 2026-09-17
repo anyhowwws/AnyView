@@ -86,6 +86,68 @@ def default_plan(count: int) -> dict[str, Any]:
 
 
 DEFAULTS: dict[str, Any] = {
+    # A plausible brain patch for the resume in tests/conftest.py. Evidence quotes
+    # are verbatim fragments of that resume so the evidence check keeps them.
+    "propose": {
+        "roles": [
+            {
+                "key": "r1",
+                "existing": None,
+                "company": "Acme Corp",
+                "title": "Senior Cloud Architect",
+                "start_date": "2021-01-01",
+                "end_date": None,
+                "level": "senior",
+                "evidence": "Acme Corp (2021–present) — Senior Cloud Architect",
+            },  # fmt: skip
+        ],
+        "projects": [
+            {
+                "key": "p1",
+                "existing": None,
+                "role": "r1",
+                "name": "Billing service migration to Cloud Run",
+                "problem": None,
+                "action": "Led migration of the billing service from VMs to Cloud Run",
+                "result": "cutting monthly infra cost 38%",
+                "tech": ["Cloud Run"],
+                "metrics": ["-38% monthly infra cost"],
+                "evidence": (
+                    "Led migration of the billing service from VMs to Cloud Run, "
+                    "cutting monthly infra cost 38%."
+                ),
+            },  # fmt: skip
+        ],
+        "stories": [
+            {
+                "key": "s1",
+                "existing": None,
+                "role": "r1",
+                "project": None,
+                "title": "On-call rota redesign after two Sev-1s",
+                "situation": "two Sev-1 incidents",
+                "task": None,
+                "action": "Ran the on-call rota redesign",
+                "result": "MTTR dropped from 4h to 50m",
+                "competencies": ["ownership", "failure"],
+                "evidence": (
+                    "Ran the on-call rota redesign after two Sev-1 incidents; "
+                    "MTTR dropped from 4h to 50m."
+                ),
+            },  # fmt: skip
+        ],
+        "skills": [
+            {
+                "key": "k1",
+                "existing": None,
+                "name": "Terraform",
+                "depth": 4,
+                "projects": [],
+                "evidence": "Designed the Terraform module library now used by 6 product teams.",
+            },  # fmt: skip
+        ],
+        "achievements": [],
+    },
     "extract": (
         "Jordan Lee — Cloud Solutions Architect\n\nAcme Corp (2021–present) — Senior Cloud "
         "Architect\n- Led migration of the billing service from VMs to Cloud Run, cutting monthly "
