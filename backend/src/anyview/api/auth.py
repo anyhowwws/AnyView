@@ -50,6 +50,15 @@ def verify_firebase_token(settings: Settings) -> Verifier:
     return verify
 
 
+def fake_verifier(token: str) -> dict[str, Any]:
+    """Dev only, wired in main.py when ANYVIEW_FAKE_MODEL=1: a token of the form
+    `fake:<email>` signs that email in. The allow-list still applies."""
+    if not token.startswith("fake:"):
+        raise ValueError("not a fake token")
+    email = token.removeprefix("fake:")
+    return {"sub": f"fake-{email}", "email": email, "email_verified": True}
+
+
 def get_verifier(request: Request) -> Verifier:  # overridden in main.py and tests
     raise NotImplementedError
 

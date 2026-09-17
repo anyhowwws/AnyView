@@ -6,7 +6,7 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": [
         "-c",
-        "cd backend && ANYVIEW_FAKE_MODEL=1 GOOGLE_CLOUD_PROJECT=anyapps-anyview ALLOWED_EMAILS=${ALLOWED_EMAILS:-} DATABASE_URL=postgresql+psycopg://localhost/anyview_dev .venv/bin/uvicorn anyview.main:app --port 8080"
+        "cd backend && ANYVIEW_FAKE_MODEL=1 GOOGLE_CLOUD_PROJECT=anyapps-anyview ALLOWED_EMAILS=dev@example.com DATABASE_URL=postgresql+psycopg://localhost/anyview_dev .venv/bin/uvicorn anyview.main:app --port 8080"
       ],
       "port": 8080
     },
@@ -27,6 +27,15 @@
         "dev",
         "--prefix",
         "frontend"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "web-fake",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd frontend && NEXT_PUBLIC_API_BASE_URL=http://localhost:8080 NEXT_PUBLIC_FAKE_AUTH=dev@example.com npm run dev"
       ],
       "port": 3000
     }

@@ -109,7 +109,10 @@ app.dependency_overrides[interview.get_repository_optional] = lambda: (
     build_repository() if build_engine() is not None else None
 )
 app.dependency_overrides[auth.get_settings] = lambda: settings
-app.dependency_overrides[auth.get_verifier] = lambda: auth.verify_firebase_token(settings)
+app.dependency_overrides[auth.get_verifier] = lambda: (
+    # The fake-model switch also means "no real identity": sign in with `fake:<email>`.
+    auth.fake_verifier if settings.use_fake_model else auth.verify_firebase_token(settings)
+)
 app.include_router(interview.router)
 app.include_router(uploads.router)
 app.include_router(brain.router)

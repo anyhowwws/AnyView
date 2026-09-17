@@ -57,6 +57,20 @@ def test_every_interview_route_is_guarded(setup, signed_in):
     assert c.post("/interview/report", json={}).status_code == 401
 
 
+def test_fake_verifier_only_accepts_fake_tokens():
+    from anyview.api.auth import fake_verifier
+
+    assert fake_verifier("fake:dev@example.com") == {
+        "sub": "fake-dev@example.com",
+        "email": "dev@example.com",
+        "email_verified": True,
+    }
+    import pytest as _pytest
+
+    with _pytest.raises(ValueError):
+        fake_verifier("eyJhbGciOi...")
+
+
 def test_empty_allow_list_lets_nobody_in(monkeypatch):
     for key in ("ALLOWED_EMAILS",):
         monkeypatch.delenv(key, raising=False)
