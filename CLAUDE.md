@@ -115,8 +115,9 @@ Cloud Storage / Cloud Tasks Terraform arrives with Phase 2 ingestion.
   on the image means Terraform never fights CI. Don't remove that.
 - Cloud Run is publicly invokable; the sign-in gate is app-level (ADR 0009). An empty
   `ALLOWED_EMAILS` lets nobody in — check tfvars before assuming auth is broken.
-- Signed URLs are signed via IAM `signBlob` as `anyview-api@…`; locally that needs your
-  ADC to have `iam.serviceAccounts.signBlob` on that SA (owner does). `ANYVIEW_FAKE_MODEL=1`
+- Signed URLs are signed via IAM `signBlob` as `anyview-api@…`. **`roles/owner` does not
+  include `signBlob`** — a laptop needs `local_signers = ["user:you@…"]` in tfvars (grants
+  `tokenCreator` on the SA) before the real API can issue upload URLs locally. `ANYVIEW_FAKE_MODEL=1`
   uses an in-memory store instead, so no bucket is needed for a local walk-through.
 - Tests never call Google: `signed_in` fixture in `tests/conftest.py` swaps the verifier.
   The real one needs `GOOGLE_CLOUD_PROJECT` set (token audience).

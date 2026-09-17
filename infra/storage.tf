@@ -41,3 +41,12 @@ resource "google_service_account_iam_member" "api_signs_as_itself" {
   role               = "roles/iam.serviceAccountTokenCreator"
   member             = google_service_account.api.member
 }
+
+# Developers running the API locally sign as the same SA through their own ADC,
+# which needs this grant explicitly: roles/owner does not carry signBlob.
+resource "google_service_account_iam_member" "local_signers" {
+  for_each           = toset(var.local_signers)
+  service_account_id = google_service_account.api.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = each.value
+}

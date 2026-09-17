@@ -82,3 +82,9 @@ variable "allowed_emails" {
   type        = list(string)
   default     = []
 }
+
+variable "local_signers" {
+  description = "IAM members allowed to sign upload URLs as the API service account from a laptop, e.g. [\"user:you@example.com\"]. roles/owner does not include signBlob. Empty in CI/production."
+  type        = list(string)
+  default     = []
+}
