@@ -1,0 +1,325 @@
+# ruff: noqa: E501 — fixture data reads better unwrapped.
+"""The repository against a real Postgres: the write path, the read path, and
+the property that makes the event log the source of truth — a rebuilt
+projection is identical to the incrementally maintained one."""
+
+import datetime as dt
+
+import pytest
+import sqlalchemy as sa
+
+from anyview.brain.models import (
+    AchievementDraft,
+    Patch,
+    ProjectDraft,
+    RoleDraft,
+    SkillDraft,
+    StoryDraft,
+)
+from anyview.db.repository import Conflict, NotFound, Repository
+
+UID = "uid-jordan"
+
+
+@pytest.fixture
+def repo(db):
+    r = Repository(db)
+    r.ensure_user(UID, "jordan@example.com")
+    r.ensure_user("uid-other", "other@example.com")
+    return r
+
+
+def first_patch() -> Patch:
+    return Patch(
+        roles=[
+            RoleDraft(
+                key="r1",
+                company="Acme Corp",
+                title="Senior Cloud Architect",
+                start_date=dt.date(2021, 3, 1),
+                level="senior",
+                evidence="Acme Corp (2021–present)",
+            )  # fmt: skip
+        ],
+        projects=[
+            ProjectDraft(
+                key="p1",
+                role="r1",
+                name="Billing service to Cloud Run",
+                problem="VM fleet was expensive",
+                action="Led the migration",
+                result="-38% monthly infra cost",
+                tech=["Cloud Run", "Terraform"],
+                metrics=["-38% cost"],
+                evidence="Led migration of the billing service",
+            )  # fmt: skip
+        ],
+        stories=[
+            StoryDraft(
+                key="s1",
+                role="r1",
+                project="p1",
+                title="Cutting over billing without downtime",
+                situation="Billing on VMs",
+                task="Move it",
+                action="Rehearsed cutovers",
+                result="Zero downtime, cost -38%",
+                competencies=["ownership", "delivery"],
+                evidence="cutting monthly infra cost 38%",
+            )  # fmt: skip
+        ],
+        skills=[
+            SkillDraft(
+                key="k1",
+                name="Terraform",
+                depth=4,
+                projects=["p1"],
+                evidence="Terraform module library",
+            )
+        ],
+        achievements=[
+            AchievementDraft(
+                key="a1",
+                kind="credential",
+                title="GCP Professional Cloud Architect",
+                issuer="Google",
+                evidence="certified",
+            )
+        ],
+    )
+
+
+def _confirm(repo: Repository, patch: Patch, text="dump text"):
+    dump = repo.create_dump(UID, kind="text", text=text, object_name=None)
+    prop = repo.create_proposal(UID, dump_id=dump.id, patch=patch, model="fake")
+    return repo.confirm_proposal(UID, prop.id, patch)
+
+
+def _snapshot(db, uid=UID) -> dict:
+    """Every projection row for a user, as plain data, for equality checks."""
+    out = {}
+    with db.begin() as c:
+        for t in ("roles", "projects", "stories", "skills", "achievements"):
+            rows = (
+                c.execute(sa.text(f"SELECT * FROM {t} WHERE user_id = :u ORDER BY id"), {"u": uid})
+                .mappings()
+                .all()
+            )
+            out[t] = [dict(r) for r in rows]
+        out["skill_evidence"] = sorted(
+            tuple(map(str, r))
+            for r in c.execute(
+                sa.text(
+                    "SELECT e.skill_id, e.project_id FROM skill_evidence e JOIN skills s ON s.id = e.skill_id WHERE s.user_id = :u"
+                ),
+                {"u": uid},
+            ).all()
+        )
+    return out
+
+
+# --- write path ------------------------------------------------------------------
+
+
+def test_confirm_writes_one_event_and_the_projection(repo):
+    event = _confirm(repo, first_patch())
+    assert event.kind == "patch_confirmed" and event.seq == 1
+    brain = repo.brain(UID)
+    assert [r.company for r in brain.roles] == ["Acme Corp"]
+    assert brain.projects[0].role_id == brain.roles[0].id
+    assert brain.stories[0].project_id == brain.projects[0].id
+    assert brain.skills[0].project_ids == [brain.projects[0].id]
+    assert brain.achievements[0].kind == "credential"
+    assert brain.pending_proposals == 0
+    # provenance: every entity points at the dump and the event
+    for e in (*brain.roles, *brain.projects, *brain.stories, *brain.skills, *brain.achievements):
+        assert e.source.raw_dump_id == event.raw_dump_id and e.source.event_id == event.id
+
+
+def test_labels_are_stable_handles(repo):
+    _confirm(repo, first_patch())
+    index, labels = repo.brain_index(UID)
+    assert set(labels) == {"R1", "P1", "S1", "K1", "A1"}
+    assert "[R1] Acme Corp — Senior Cloud Architect (2021-03 → now)" in index
+    assert (
+        "[S1] (ownership, delivery) Cutting over billing without downtime → Zero downtime" in index
+    )
+
+
+def test_second_dump_can_update_an_existing_entity_by_label(repo):
+    _confirm(repo, first_patch())
+    update = Patch(
+        roles=[
+            RoleDraft(
+                key="r1",
+                existing="R1",
+                company="Acme Corp",
+                title="Principal Cloud Architect",
+                evidence="promoted",
+            )
+        ],
+        stories=[
+            StoryDraft(
+                key="s1",
+                role="R1",
+                title="Rota redesign",
+                result="MTTR 4h → 50m",
+                competencies=["failure"],
+                evidence="MTTR",
+            )
+        ],
+    )
+    event = _confirm(repo, update, text="second dump")
+    brain = repo.brain(UID)
+    assert len(brain.roles) == 1 and brain.roles[0].title == "Principal Cloud Architect"
+    assert brain.roles[0].source.raw_dump_id == event.raw_dump_id  # the latest dump that touched it
+    assert [s.title for s in brain.stories] == [
+        "Cutting over billing without downtime",
+        "Rota redesign",
+    ]
+    assert brain.stories[1].role_id == brain.roles[0].id
+
+
+def test_bad_references_are_conflicts_not_partial_writes(repo):
+    _confirm(repo, first_patch())
+    bad = Patch(stories=[StoryDraft(key="s9", role="R7", title="x", evidence="e")])
+    dump = repo.create_dump(UID, kind="text", text="t", object_name=None)
+    prop = repo.create_proposal(UID, dump_id=dump.id, patch=bad, model="fake")
+    with pytest.raises(Conflict):
+        repo.confirm_proposal(UID, prop.id, bad)
+    assert repo.proposal(UID, prop.id).status == "pending"  # untouched
+    assert len(repo.events(UID)) == 1
+
+
+def test_proposal_cannot_be_confirmed_twice(repo):
+    patch = first_patch()
+    dump = repo.create_dump(UID, kind="text", text="t", object_name=None)
+    prop = repo.create_proposal(UID, dump_id=dump.id, patch=patch, model="fake")
+    repo.confirm_proposal(UID, prop.id, patch)
+    with pytest.raises(Conflict):
+        repo.confirm_proposal(UID, prop.id, patch)
+    with pytest.raises(NotFound):
+        repo.discard_proposal(UID, prop.id)
+
+
+def test_discard_leaves_no_event(repo):
+    dump = repo.create_dump(UID, kind="text", text="t", object_name=None)
+    prop = repo.create_proposal(UID, dump_id=dump.id, patch=first_patch(), model="fake")
+    assert repo.brain(UID).pending_proposals == 1
+    repo.discard_proposal(UID, prop.id)
+    assert repo.brain(UID).pending_proposals == 0
+    assert repo.events(UID) == []
+
+
+def test_edit_and_retire_append_events(repo):
+    _confirm(repo, first_patch())
+    story = repo.brain(UID).stories[0]
+    repo.edit_entity(UID, "story", story.id, {"result": "Zero downtime; cost down 38%; 2 quarters"})
+    with pytest.raises(Conflict):
+        repo.edit_entity(UID, "story", story.id, {"user_id": "uid-other"})  # not editable
+    repo.retire_entity(UID, "achievement", repo.brain(UID).achievements[0].id)
+    brain = repo.brain(UID)
+    assert brain.stories[0].result.startswith("Zero downtime; cost down 38%")
+    assert brain.achievements == []
+    assert [e.kind for e in repo.events(UID)] == [
+        "patch_confirmed",
+        "entity_edited",
+        "entity_retired",
+    ]
+    with pytest.raises(NotFound):  # retired is gone for edits too
+        repo.edit_entity(UID, "achievement", repo.events(UID)[-1].payload["id"], {"title": "x"})
+
+
+def test_rebuild_reproduces_the_projection_exactly(repo, db):
+    _confirm(repo, first_patch())
+    _confirm(
+        repo,
+        Patch(
+            stories=[
+                StoryDraft(
+                    key="s1",
+                    role="R1",
+                    title="Rota redesign",
+                    competencies=["failure"],
+                    evidence="e",
+                )
+            ]
+        ),
+        text="two",
+    )
+    brain = repo.brain(UID)
+    repo.edit_entity(UID, "skill", brain.skills[0].id, {"depth": 5, "project_ids": []})
+    repo.retire_entity(UID, "story", brain.stories[0].id)
+    repo.edit_entity(UID, "role", brain.roles[0].id, {"end_date": dt.date(2026, 1, 31)})
+
+    before = _snapshot(db)
+    assert repo.rebuild(UID) == 5
+    assert _snapshot(db) == before
+    # rebuild of one user leaves another user's rows alone
+    other = Repository(db)
+    other_dump = other.create_dump("uid-other", kind="text", text="t", object_name=None)
+    p = other.create_proposal("uid-other", dump_id=other_dump.id, patch=first_patch(), model="fake")
+    other.confirm_proposal("uid-other", p.id, first_patch())
+    other_before = _snapshot(db, "uid-other")
+    repo.rebuild(UID)
+    assert _snapshot(db, "uid-other") == other_before
+
+
+def test_users_cannot_see_each_others_brains(repo):
+    _confirm(repo, first_patch())
+    other = repo.brain("uid-other")
+    assert other.roles == [] and other.pending_proposals == 0
+    with pytest.raises(NotFound):
+        repo.dump("uid-other", repo.events(UID)[0].raw_dump_id)
+    with pytest.raises(NotFound):
+        repo.retire_entity("uid-other", "role", repo.brain(UID).roles[0].id)
+
+
+# --- reads --------------------------------------------------------------------------
+
+
+def test_coverage_marks_strong_weak_none(repo):
+    _confirm(repo, first_patch())  # story with a result → strong for ownership, delivery at R1
+    _confirm(
+        repo,
+        Patch(
+            stories=[
+                StoryDraft(
+                    key="s1", role="R1", title="Vague", competencies=["conflict"], evidence="e"
+                )
+            ]
+        ),
+        text="two",
+    )  # no result → weak
+    cov = repo.brain(UID).coverage
+    rid = cov.roles[0].id
+    assert cov.cells["ownership"][rid] == "strong"
+    assert cov.cells["conflict"][rid] == "weak"
+    assert cov.cells["ambiguity"][rid] == "none"
+    assert [c.key for c in cov.competencies][:3] == ["ownership", "ambiguity", "conflict"]
+
+
+def test_stories_for_competency_and_brain_context(repo):
+    _confirm(repo, first_patch())
+    assert [s.title for s in repo.stories_for_competency(UID, "delivery")] == [
+        "Cutting over billing without downtime"
+    ]
+    assert repo.stories_for_competency(UID, "failure") == []
+    ctx = repo.brain_context(UID)
+    assert ctx.startswith("## [R1] Senior Cloud Architect at Acme Corp (2021-03 → now)")
+    assert "[P1] Billing service to Cloud Run" in ctx and "Result: -38% monthly infra cost" in ctx
+    assert "[S1] Cutting over billing without downtime (competencies: ownership, delivery)" in ctx
+    assert "[K1] Terraform — self-rated 4/5" in ctx
+
+
+def test_usage_rows(repo):
+    rec = {"session_id": "s1", "call": "plan", "model": "m", "input_tokens": 10, "output_tokens": 20,
+           "thinking_tokens": 5, "cache_read": 0, "latency_ms": 100}  # fmt: skip
+    repo.write_usage(rec, uid=UID)
+    repo.write_usage({**rec, "call": "ask"}, uid=None)
+    assert repo.usage_for_session("s1") == {
+        "calls": 2,
+        "input_tokens": 20,
+        "output_tokens": 40,
+        "thinking_tokens": 10,
+    }
