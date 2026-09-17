@@ -63,12 +63,9 @@ resource "aws_route53_record" "app" {
   name    = local.dns_records[count.index].domain_name
   type    = local.dns_records[count.index].type
   ttl     = 300
-  # Route 53 wants TXT values quoted; Firebase hands them over bare.
-  records = [
-    local.dns_records[count.index].type == "TXT" && !startswith(local.dns_records[count.index].rdata, "\"")
-    ? "\"${local.dns_records[count.index].rdata}\""
-    : local.dns_records[count.index].rdata
-  ]
+  # The AWS provider (v6) wraps TXT values in the quotes Route 53 requires;
+  # passing them pre-quoted produces ""…"" and a 400.
+  records = [local.dns_records[count.index].rdata]
 
   lifecycle {
     precondition {
