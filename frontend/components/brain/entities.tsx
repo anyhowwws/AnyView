@@ -134,6 +134,7 @@ function EntityCard({
   onChanged: Props["onChanged"];
 }) {
   const [editing, setEditing] = useState(false);
+  const [confirmingRetire, setConfirmingRetire] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -186,15 +187,23 @@ function EntityCard({
           )}
           {footnote && <p className="mt-1 text-xs text-muted-foreground">{footnote}</p>}
         </div>
-        {!editing && (
+        {!editing && !confirmingRetire && (
           <div className="flex shrink-0 gap-1">
             <Button variant="ghost" size="sm" onClick={startEdit} aria-label={`Edit ${title}`}>Edit</Button>
-            <Button variant="ghost" size="sm" disabled={busy}
-              onClick={() => { if (window.confirm(`Retire “${title}”? It stays in the log but leaves your brain.`)) void act(async () => onChanged(await retireEntity(kind, entity.id))); }}
-              aria-label={`Retire ${title}`}
-            >
+            <Button variant="ghost" size="sm" disabled={busy} onClick={() => setConfirmingRetire(true)} aria-label={`Retire ${title}`}>
               Retire
             </Button>
+          </div>
+        )}
+        {confirmingRetire && (
+          <div className="flex shrink-0 items-center gap-1 text-xs" role="group" aria-label={`Retire ${title}?`}>
+            <span className="text-muted-foreground">Retire? It stays in the log.</span>
+            <Button variant="destructive" size="sm" disabled={busy}
+              onClick={() => void act(async () => { onChanged(await retireEntity(kind, entity.id)); setConfirmingRetire(false); })}
+            >
+              {busy ? "Retiring…" : "Yes, retire"}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmingRetire(false)}>Keep</Button>
           </div>
         )}
       </div>
