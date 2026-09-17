@@ -85,6 +85,20 @@ Firebase verifies over HTTP through the CNAME and issues the certificate a few
 minutes later; `terraform output firebase_dns_requests` shows anything it is
 still waiting for.
 
+## Turning sign-in on (once)
+
+Terraform creates the Identity Platform config and the Firebase web app; the
+Google OAuth client is provisioned by the Firebase CLI so its secret never
+enters state or the repository (ADR 0009):
+
+```sh
+npx firebase-tools@latest deploy --only auth --config firebase-auth.json --project anyapps-anyview
+```
+
+Then copy `terraform output firebase_web_config` into the GitHub repository
+variables `FIREBASE_API_KEY` and `FIREBASE_AUTH_DOMAIN` (public values), and
+put the Google accounts allowed in under `allowed_emails` in `terraform.tfvars`.
+
 ## Build order
 
 Phase 0 (current): single page, resume pasted as text, target company/role/

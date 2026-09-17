@@ -44,3 +44,14 @@ output "firebase_dns_requests" {
     ]) : "${r.type} ${r.domain_name} ${r.rdata}" if r.required_action == "ADD"
   ]
 }
+
+# Public by design (it identifies the project to Google's sign-in service; it
+# is not a credential). Goes into GitHub repository variables for the build.
+output "firebase_web_config" {
+  description = "Set as NEXT_PUBLIC_FIREBASE_API_KEY / _AUTH_DOMAIN / _PROJECT_ID for the frontend build."
+  value = {
+    api_key     = data.google_firebase_web_app_config.app.api_key
+    auth_domain = var.app_domain # Hosting serves /__/auth/handler on the custom domain
+    project_id  = var.project_id
+  }
+}

@@ -5,4 +5,5 @@ vertex_region      = "global"
 github_repo        = "anyhowwws/AnyView"
 billing_account_id = "XXXXXX-XXXXXX-XXXXXX"
 budget_amount      = 50
-budget_currency    = "SGD" # must match the billing account
+budget_currency    = "SGD"               # must match the billing account
+allowed_emails     = ["you@example.com"] # Google accounts allowed to sign in

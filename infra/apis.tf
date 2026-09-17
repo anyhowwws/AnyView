@@ -13,8 +13,9 @@ locals {
     "secretmanager.googleapis.com",        # secrets (Phase 1+; the API, not any value)
     "logging.googleapis.com",
     "monitoring.googleapis.com",
-    "firebase.googleapis.com", # Firebase Hosting
+    "firebase.googleapis.com", # Firebase Hosting + web app registration
     "firebasehosting.googleapis.com",
+    "identitytoolkit.googleapis.com", # Identity Platform (sign-in)
   ]
 }
 

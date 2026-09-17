@@ -4,13 +4,13 @@
     {
       "name": "api-fake",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd backend && ANYVIEW_FAKE_MODEL=1 .venv/bin/uvicorn anyview.main:app --port 8080"],
+      "runtimeArgs": ["-c", "cd backend && ANYVIEW_FAKE_MODEL=1 GOOGLE_CLOUD_PROJECT=anyapps-anyview ALLOWED_EMAILS=${ALLOWED_EMAILS:-} .venv/bin/uvicorn anyview.main:app --port 8080"],
       "port": 8080
     },
     {
       "name": "api-vertex",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd backend && GOOGLE_CLOUD_PROJECT=anyapps-anyview .venv/bin/uvicorn anyview.main:app --port 8080"],
+      "runtimeArgs": ["-c", "cd backend && GOOGLE_CLOUD_PROJECT=anyapps-anyview ALLOWED_EMAILS=${ALLOWED_EMAILS:-} .venv/bin/uvicorn anyview.main:app --port 8080"],
       "port": 8080
     },
     {

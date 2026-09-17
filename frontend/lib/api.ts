@@ -1,3 +1,4 @@
+import { idToken } from "@/lib/auth";
 import { readSse } from "@/lib/sse";
 import type { Answer, Report, Session, Setup } from "@/lib/types";
 
@@ -14,12 +15,20 @@ export class ApiError extends Error {
   }
 }
 
+/** Every API call carries the signed-in user's Firebase ID token (ADR 0009). */
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await idToken();
+  if (!token) throw new ApiError("Sign in to continue.", 401);
+  return { Authorization: `Bearer ${token}` };
+}
+
 async function post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  const auth = await authHeaders();
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...auth },
       body: JSON.stringify(body),
       signal,
     });
@@ -64,11 +73,12 @@ export async function askQuestion(
   onToken: (text: string) => void,
   signal: AbortSignal,
 ): Promise<void> {
+  const auth = await authHeaders();
   let res: Response;
   try {
     res = await fetch(`${BASE}/interview/ask`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...auth },
       body: JSON.stringify(session),
       signal,
     });

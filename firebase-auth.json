@@ -1,0 +1,15 @@
+{
+  "auth": {
+    "providers": {
+      "anonymous": false,
+      "emailPassword": false,
+      "googleSignIn": {
+        "oAuthBrandDisplayName": "AnyView",
+        "supportEmail": "howyi.10@gmail.com",
+        "authorizedRedirectUris": [
+          "https://anyview.anyapps.cloud"
+        ]
+      }
+    }
+  }
+}

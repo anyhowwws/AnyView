@@ -48,6 +48,10 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "CORS_ORIGINS"
         value = join(",", var.cors_origins)
       }
+      env {
+        name  = "ALLOWED_EMAILS"
+        value = join(",", var.allowed_emails)
+      }
     }
 
     # Interviews stream for up to a few minutes; default 300s is fine, stated explicitly.
@@ -71,8 +75,13 @@ resource "google_cloud_run_v2_service" "api" {
   depends_on = [google_project_service.enabled]
 }
 
-# Phase 0: no public invoker binding. The service is reachable only by callers
-# with roles/run.invoker (the owner, via `gcloud run services proxy`). A public
-# binding arrives together with app-level auth (Identity Platform, Phase 1) —
-# an open, unauthenticated LLM endpoint is a cost trap, and the budget only
-# alerts, it does not stop spend. See ADR 0006.
+# The browser calls this service directly (ADR 0006), so the invoker must be
+# public. Access control is app-level: every interview route requires a
+# signed-in Google account on the ALLOWED_EMAILS list (ADR 0009). Phase 0 had
+# no public binding because there was no app-level auth to stand behind it.
+resource "google_cloud_run_v2_service_iam_member" "public" {
+  name     = google_cloud_run_v2_service.api.name
+  location = google_cloud_run_v2_service.api.location
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}

@@ -76,3 +76,9 @@ variable "cors_origins" {
     "https://anyapps-anyview.firebaseapp.com",
   ]
 }
+
+variable "allowed_emails" {
+  description = "Google account emails allowed past sign-in (ADR 0009). Empty means nobody can start an interview."
+  type        = list(string)
+  default     = []
+}

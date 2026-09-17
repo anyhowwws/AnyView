@@ -32,7 +32,7 @@ writes simple scripts). So:
 | Frontend | Next.js App Router, TS, Tailwind v4, shadcn/ui, Framer Motion; static export → Firebase Hosting (static files only) | brief |
 | Files | Cloud Storage, signed URLs (never transit the API) | brief |
 | Async | Cloud Tasks | brief |
-| Auth | Identity Platform (Phase 1) | brief |
+| Auth | Identity Platform: Google sign-in only, email allow-list (`ALLOWED_EMAILS`), Firebase ID token verified by `google-auth` on every `/interview/*` route | 0009 |
 | Secrets | Secret Manager, Terraform provisions the *parameter*, never the value | brief |
 | IaC | Terraform, everything; console-clicked resources do not exist. The `aws` provider manages **only** Route 53 records for `anyview.anyapps.cloud` | brief, 0008 |
 | CI/CD | GitHub Actions → WIF → GCP. No stored keys. | brief |
@@ -58,7 +58,7 @@ Backend modules:
 - `anyview/llm/adapter.py` — the only file that imports `google.genai`. `generate()` (optionally with `output_schema=` → parsed dict), `stream()`. Returns plain Python types. Every call logs one `anyview.usage` JSON line.
 - `anyview/llm/fake.py` — `FakeModel`, same surface, scripted replies. Used by tests and by `ANYVIEW_FAKE_MODEL=1`.
 - `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; Phase 0 has `max_probes = 0`.
-- `anyview/api/{interview,sse}.py` — FastAPI routes and the SSE frame writer.
+- `anyview/api/{auth,interview,sse}.py` — the sign-in gate (`current_user`), FastAPI routes, and the SSE frame writer.
 - `anyview/db/repository.py` — **Phase 1**. The only file that runs SQL.
 
 ## Commands
@@ -103,19 +103,20 @@ terraform plan                                                   # terraform.tfv
 
 ## Current phase
 
-**Phase 0** — single page, resume pasted as text, company/role/seniority, five
-tailored questions one at a time, streaming interviewer, per-dimension report.
-Real stack, minimum surface. Cloud SQL / Storage / Tasks / Identity Platform
-Terraform is **not yet written** — it arrives with Phase 1, when data is first
-stored.
+**Phase 1, in progress** — auth is done (ADR 0009). Next: Cloud SQL + pgvector,
+the repository module, the event log, brain capture and the review queue.
+Cloud Storage / Cloud Tasks Terraform arrives with Phase 2 ingestion.
 
 ## Gotchas
 
 - Cloud Run service is created with a placeholder image; `lifecycle.ignore_changes`
   on the image means Terraform never fights CI. Don't remove that.
-- Phase 0 Cloud Run has **no** `allUsers` binding — IAM invokers only. Reach it with
-  `gcloud run services proxy anyview-api --region us-central1 --project anyapps-anyview`.
-  Public exposure arrives with Identity Platform (Phase 1).
+- Cloud Run is publicly invokable; the sign-in gate is app-level (ADR 0009). An empty
+  `ALLOWED_EMAILS` lets nobody in — check tfvars before assuming auth is broken.
+- Tests never call Google: `signed_in` fixture in `tests/conftest.py` swaps the verifier.
+  The real one needs `GOOGLE_CLOUD_PROJECT` set (token audience).
+- The Google provider is provisioned by the Firebase CLI from `firebase-auth.json`, not
+  Terraform. `authDomain` is the custom domain in production.
 - Phase 0 is **stateless**: the browser carries the whole session and posts it on each turn.
   No in-memory session store — Cloud Run instances don't share memory.
 - Usage rows in Phase 0 are JSON log lines (`anyview.usage` logger), one per model call.
