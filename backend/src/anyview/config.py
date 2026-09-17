@@ -19,6 +19,8 @@ class Settings:
     fast_model_id: str
     cors_origins: list[str] = field(default_factory=list)
     allowed_emails: frozenset[str] = frozenset()
+    upload_bucket: str = ""
+    signer_service_account: str = ""
     use_fake_model: bool = False
 
     @classmethod
@@ -33,12 +35,19 @@ class Settings:
         emails = frozenset(
             e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()
         )
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT", "")
         return cls(
-            project_id=os.environ.get("GOOGLE_CLOUD_PROJECT", ""),
+            project_id=project,
             vertex_region=os.environ.get("VERTEX_REGION", "global"),
             model_id=os.environ.get("MODEL_ID", "gemini-3.1-pro-preview"),
             fast_model_id=os.environ.get("MODEL_ID_FAST", "gemini-3.5-flash-lite"),
             cors_origins=origins or ["http://localhost:3000"],
             allowed_emails=emails,
+            upload_bucket=os.environ.get("UPLOAD_BUCKET", ""),
+            # Signed URLs are signed by the API's own service account via the IAM
+            # signBlob API; locally your ADC calls it on the SA's behalf.
+            signer_service_account=os.environ.get(
+                "SIGNER_SERVICE_ACCOUNT", f"anyview-api@{project}.iam.gserviceaccount.com"
+            ),
             use_fake_model=os.environ.get("ANYVIEW_FAKE_MODEL", "0") == "1",
         )

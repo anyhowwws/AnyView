@@ -101,6 +101,7 @@ class Model(Protocol):
         output_schema: dict[str, Any] | None = None,
         effort: Effort = "high",
         max_tokens: int = 4096,
+        attachment: tuple[bytes, str] | None = None,
     ) -> Reply: ...
 
     def stream(
@@ -246,12 +247,19 @@ class VertexGemini:
         output_schema: dict[str, Any] | None = None,
         effort: Effort = "high",
         max_tokens: int = 4096,
+        attachment: tuple[bytes, str] | None = None,
     ) -> Reply:
+        # `attachment` is (bytes, mime type) — a PDF the model reads natively.
+        # Sent inline; uploads are capped at 10 MB, well inside the request limit.
+        contents: Any = user
+        if attachment is not None:
+            data, mime = attachment
+            contents = [types.Part.from_bytes(data=data, mime_type=mime), user]
         started = time.monotonic()
         try:
             response = self._client.models.generate_content(
                 model=self.model,
-                contents=user,
+                contents=contents,
                 config=self._config(
                     system=system, effort=effort, max_tokens=max_tokens, output_schema=output_schema
                 ),

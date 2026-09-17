@@ -42,8 +42,11 @@ class FakeModel:
         output_schema: dict[str, Any] | None = None,
         effort: Effort = "high",
         max_tokens: int = 4096,
+        attachment: tuple[bytes, str] | None = None,
     ) -> Reply:
         self._record(call, session_id, system, user)
+        if attachment is not None:
+            self.calls[-1]["attachment"] = (len(attachment[0]), attachment[1])
         reply = self.replies.get(call, DEFAULTS[call])
         if isinstance(reply, dict):
             return Reply(
@@ -83,6 +86,11 @@ def default_plan(count: int) -> dict[str, Any]:
 
 
 DEFAULTS: dict[str, Any] = {
+    "extract": (
+        "Jordan Lee — Cloud Solutions Architect\n\nAcme Corp (2021–present) — Senior Cloud "
+        "Architect\n- Led migration of the billing service from VMs to Cloud Run, cutting monthly "
+        "infra cost 38%.\n- Designed the Terraform module library now used by 6 product teams."
+    ),
     "plan": default_plan(5),
     "ask": "Thanks for that. Next: tell me about a time you led a project end to end.",
     "score": {

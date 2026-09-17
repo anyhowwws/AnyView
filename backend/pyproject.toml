@@ -11,6 +11,10 @@ dependencies = [
   "uvicorn[standard]>=0.30",
   # Official Google Gen AI SDK; its Vertex client is the only model access path (ADR 0007). No API key.
   "google-genai>=1.75,<2",
+  # Signed upload URLs and reading uploaded resumes from Cloud Storage (ADR 0010). Files never transit the API.
+  "google-cloud-storage>=3,<4",
+  # Reads .docx resumes to text; PDFs go to the model natively instead (ADR 0010).
+  "python-docx>=1.1,<2",
 ]
 
 [project.optional-dependencies]

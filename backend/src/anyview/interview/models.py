@@ -39,6 +39,21 @@ class Setup(BaseModel):
     role: str = Field(min_length=1, max_length=120)
     seniority: Seniority
     job_description: str | None = Field(default=None, max_length=8_000)
+    # Where `resume` came from, for the record: the uploaded object's name, or
+    # None when the text was pasted. Phase 2's RawDump will point here.
+    resume_object: str | None = None
+
+
+class SetupInput(BaseModel):
+    """What the browser sends to start: either pasted resume text or the name of
+    an object it uploaded (ADR 0010). Exactly one of the two."""
+
+    resume: str | None = Field(default=None, max_length=15_000)
+    resume_object: str | None = Field(default=None, max_length=200)
+    company: str = Field(min_length=1, max_length=120)
+    role: str = Field(min_length=1, max_length=120)
+    seniority: Seniority
+    job_description: str | None = Field(default=None, max_length=8_000)
 
 
 class Question(BaseModel):

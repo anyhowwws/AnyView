@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from anyview.api import auth, interview
+from anyview.api import auth, interview, uploads
 from anyview.config import Settings
 from anyview.interview.engine import EngineError
 from anyview.llm.adapter import Model, ModelError
@@ -50,10 +50,27 @@ def build_model() -> Model:
     )
 
 
+@lru_cache(maxsize=1)
+def build_store():
+    """One upload store per process. In-memory when running on the fake model
+    (no bucket needed for a token-free local walk-through)."""
+    if settings.use_fake_model:
+        from anyview.uploads.store import MemoryUploadStore
+
+        return MemoryUploadStore()
+    from anyview.uploads.store import GcsUploadStore
+
+    return GcsUploadStore(
+        bucket=settings.upload_bucket, signer_service_account=settings.signer_service_account
+    )
+
+
 app.dependency_overrides[interview.get_model] = build_model
+app.dependency_overrides[uploads.get_store] = build_store
 app.dependency_overrides[auth.get_settings] = lambda: settings
 app.dependency_overrides[auth.get_verifier] = lambda: auth.verify_firebase_token(settings)
 app.include_router(interview.router)
+app.include_router(uploads.router)
 
 
 # --- Error translation: every failure is {"detail": <sentence>} -------------

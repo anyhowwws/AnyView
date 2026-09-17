@@ -2,10 +2,11 @@
 
 import pytest
 
-from anyview.api import auth
+from anyview.api import auth, uploads
 from anyview.config import Settings
 from anyview.interview.models import Setup
 from anyview.main import app
+from anyview.uploads.store import MemoryUploadStore
 
 ALLOWED = "jordan@example.com"
 
@@ -26,7 +27,16 @@ def fake_verifier(token: str) -> dict:
 
 
 @pytest.fixture
-def signed_in():
+def store():
+    """An in-memory upload store, shared by the client and the test body."""
+    memory = MemoryUploadStore()
+    app.dependency_overrides[uploads.get_store] = lambda: memory
+    yield memory
+    app.dependency_overrides.pop(uploads.get_store, None)
+
+
+@pytest.fixture
+def signed_in(store):
     """Wire the auth dependencies to the fake verifier and a one-email allow-list."""
     app.dependency_overrides[auth.get_verifier] = lambda: fake_verifier
     app.dependency_overrides[auth.get_settings] = lambda: Settings(
