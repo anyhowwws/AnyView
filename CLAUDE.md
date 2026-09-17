@@ -24,7 +24,7 @@ writes simple scripts). So:
 |---|---|---|
 | Cloud | GCP | 0001 |
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
-| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.8 Flash** for streamed `ask` turns; Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. Claude returns as a second adapter once its quota is granted | 0004, 0007 |
+| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for streamed `ask` turns (0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first); Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. Claude returns as a second adapter once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
