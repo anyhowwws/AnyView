@@ -7,12 +7,14 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
+from anyview.api.auth import current_user
 from anyview.api.sse import stream_response
 from anyview.interview import engine
 from anyview.interview.models import Answer, Report, Session, Setup, State
 from anyview.llm.adapter import Model
 
-router = APIRouter(prefix="/interview", tags=["interview"])
+# Every route here requires a signed-in, allow-listed user (api/auth.py).
+router = APIRouter(prefix="/interview", tags=["interview"], dependencies=[Depends(current_user)])
 
 
 def get_model() -> Model:  # overridden in main.py and in tests

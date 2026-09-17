@@ -16,9 +16,9 @@ def fake():
 
 
 @pytest.fixture
-def client(fake):
+def client(fake, signed_in):
     app.dependency_overrides[interview.get_model] = lambda: fake
-    yield TestClient(app)
+    yield TestClient(app, headers={"Authorization": "Bearer good"})
     app.dependency_overrides.pop(interview.get_model, None)
 
 
@@ -129,11 +129,11 @@ def test_ask_on_finished_session_is_a_409_not_a_stream(client, setup):
     assert r.status_code == 409
 
 
-def test_model_failure_during_ask_is_an_error_event(setup):
+def test_model_failure_during_ask_is_an_error_event(setup, signed_in):
     fake = FakeModel(fail="ask")
     app.dependency_overrides[interview.get_model] = lambda: fake
     try:
-        client = TestClient(app)
+        client = TestClient(app, headers={"Authorization": "Bearer good"})
         session = _start(client, setup)
         with client.stream("POST", "/interview/ask", json=session) as r:
             events = _sse_events(r)
@@ -142,10 +142,10 @@ def test_model_failure_during_ask_is_an_error_event(setup):
         app.dependency_overrides.pop(interview.get_model, None)
 
 
-def test_model_failure_during_start_is_a_503(setup):
+def test_model_failure_during_start_is_a_503(setup, signed_in):
     app.dependency_overrides[interview.get_model] = lambda: FakeModel(fail="plan")
     try:
-        r = TestClient(app).post(
+        r = TestClient(app, headers={"Authorization": "Bearer good"}).post(
             "/interview/start", json={"session_id": "sess-0001", "setup": setup.model_dump()}
         )
         assert r.status_code == 503
@@ -165,3 +165,4 @@ def test_cors_allows_configured_origin_only(client):
         headers={"Origin": "https://evil.example", "Access-Control-Request-Method": "POST"},
     )
     assert "access-control-allow-origin" not in bad.headers
+    assert "authorization" in ok.headers.get("access-control-allow-headers", "").lower()

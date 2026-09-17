@@ -2,7 +2,44 @@
 
 import pytest
 
+from anyview.api import auth
+from anyview.config import Settings
 from anyview.interview.models import Setup
+from anyview.main import app
+
+ALLOWED = "jordan@example.com"
+
+# Claims a verifier returns for each fake token. Tests never touch Google.
+FAKE_TOKENS = {
+    "good": {"sub": "uid-jordan", "email": ALLOWED, "email_verified": True},
+    "upper": {"sub": "uid-jordan", "email": ALLOWED.upper(), "email_verified": True},
+    "unverified": {"sub": "uid-x", "email": ALLOWED, "email_verified": False},
+    "stranger": {"sub": "uid-y", "email": "someone@example.com", "email_verified": True},
+}
+
+
+def fake_verifier(token: str) -> dict:
+    try:
+        return FAKE_TOKENS[token]
+    except KeyError:
+        raise ValueError("Token is not valid") from None
+
+
+@pytest.fixture
+def signed_in():
+    """Wire the auth dependencies to the fake verifier and a one-email allow-list."""
+    app.dependency_overrides[auth.get_verifier] = lambda: fake_verifier
+    app.dependency_overrides[auth.get_settings] = lambda: Settings(
+        project_id="test",
+        vertex_region="global",
+        model_id="m",
+        fast_model_id="m",
+        allowed_emails=frozenset({ALLOWED}),
+    )
+    yield
+    app.dependency_overrides.pop(auth.get_verifier, None)
+    app.dependency_overrides.pop(auth.get_settings, None)
+
 
 RESUME = """Jordan Lee — Cloud Solutions Architect
 

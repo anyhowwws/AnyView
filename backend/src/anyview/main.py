@@ -14,7 +14,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from anyview.api import interview
+from anyview.api import auth, interview
 from anyview.config import Settings
 from anyview.interview.engine import EngineError
 from anyview.llm.adapter import Model, ModelError
@@ -28,7 +28,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,  # explicit list from config, never "*"
     allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -51,6 +51,8 @@ def build_model() -> Model:
 
 
 app.dependency_overrides[interview.get_model] = build_model
+app.dependency_overrides[auth.get_settings] = lambda: settings
+app.dependency_overrides[auth.get_verifier] = lambda: auth.verify_firebase_token(settings)
 app.include_router(interview.router)
 
 
