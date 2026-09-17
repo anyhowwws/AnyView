@@ -101,8 +101,9 @@ put the Google accounts allowed in under `allowed_emails` in `terraform.tfvars`.
 
 ## Build order
 
-Phase 0 (current): single page, resume pasted as text, target company/role/
-seniority, five tailored questions asked one at a time, streaming interviewer,
-per-dimension scored report. Real stack, minimum surface, nothing throwaway.
+Phase 0 is done: one page, resume uploaded as PDF/DOCX (or pasted), target
+company/role/seniority, five tailored questions asked one at a time, streaming
+interviewer, per-dimension scored report. Phase 1 is in progress: sign-in is
+live; the brain and its database are next.
 
 See [BRIEF.md](BRIEF.md#build-order) for Phases 1–5.

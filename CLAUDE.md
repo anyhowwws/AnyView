@@ -30,7 +30,7 @@ writes simple scripts). So:
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
 | Frontend | Next.js App Router, TS, Tailwind v4, shadcn/ui, Framer Motion; static export → Firebase Hosting (static files only) | brief |
-| Files | Cloud Storage, signed URLs (never transit the API) | brief |
+| Files | Cloud Storage bucket `<project>-uploads`, `uploads/<uid>/…`, V4 signed PUT URLs (never transit the API); PDF read by the model, DOCX by `python-docx` | 0010 |
 | Async | Cloud Tasks | brief |
 | Auth | Identity Platform: Google sign-in only, email allow-list (`ALLOWED_EMAILS`), Firebase ID token verified by `google-auth` on every `/interview/*` route | 0009 |
 | Secrets | Secret Manager, Terraform provisions the *parameter*, never the value | brief |
@@ -58,7 +58,8 @@ Backend modules:
 - `anyview/llm/adapter.py` — the only file that imports `google.genai`. `generate()` (optionally with `output_schema=` → parsed dict), `stream()`. Returns plain Python types. Every call logs one `anyview.usage` JSON line.
 - `anyview/llm/fake.py` — `FakeModel`, same surface, scripted replies. Used by tests and by `ANYVIEW_FAKE_MODEL=1`.
 - `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; Phase 0 has `max_probes = 0`.
-- `anyview/api/{auth,interview,sse}.py` — the sign-in gate (`current_user`), FastAPI routes, and the SSE frame writer.
+- `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
+- `anyview/uploads/{store,extract}.py` — the upload store (GCS or in-memory) and resume → text extraction.
 - `anyview/db/repository.py` — **Phase 1**. The only file that runs SQL.
 
 ## Commands
@@ -103,7 +104,8 @@ terraform plan                                                   # terraform.tfv
 
 ## Current phase
 
-**Phase 1, in progress** — auth is done (ADR 0009). Next: Cloud SQL + pgvector,
+**Phase 1, in progress** — auth (ADR 0009) and resume upload (ADR 0010, pulled
+forward from Phase 2) are done. Next: Cloud SQL + pgvector,
 the repository module, the event log, brain capture and the review queue.
 Cloud Storage / Cloud Tasks Terraform arrives with Phase 2 ingestion.
 
@@ -113,6 +115,9 @@ Cloud Storage / Cloud Tasks Terraform arrives with Phase 2 ingestion.
   on the image means Terraform never fights CI. Don't remove that.
 - Cloud Run is publicly invokable; the sign-in gate is app-level (ADR 0009). An empty
   `ALLOWED_EMAILS` lets nobody in — check tfvars before assuming auth is broken.
+- Signed URLs are signed via IAM `signBlob` as `anyview-api@…`; locally that needs your
+  ADC to have `iam.serviceAccounts.signBlob` on that SA (owner does). `ANYVIEW_FAKE_MODEL=1`
+  uses an in-memory store instead, so no bucket is needed for a local walk-through.
 - Tests never call Google: `signed_in` fixture in `tests/conftest.py` swaps the verifier.
   The real one needs `GOOGLE_CLOUD_PROJECT` set (token audience).
 - The Google provider is provisioned by the Firebase CLI from `firebase-auth.json`, not

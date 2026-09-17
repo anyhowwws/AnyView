@@ -33,7 +33,24 @@ export interface Setup {
   role: string;
   seniority: Seniority;
   job_description: string | null;
+  resume_object: string | null;
 }
+
+/** What the browser sends to start: uploaded object name or pasted text, not both. */
+export interface SetupInput {
+  resume?: string;
+  resume_object?: string;
+  company: string;
+  role: string;
+  seniority: Seniority;
+  job_description: string | null;
+}
+
+export const UPLOAD_TYPES: Record<string, string> = {
+  "application/pdf": ".pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+};
+export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 export interface Question {
   id: number;

@@ -1,6 +1,6 @@
 import { idToken } from "@/lib/auth";
 import { readSse } from "@/lib/sse";
-import type { Answer, Report, Session, Setup } from "@/lib/types";
+import type { Answer, Report, Session, SetupInput } from "@/lib/types";
 
 // Baked in at build time (static export). See frontend/.env.example.
 const BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8080";
@@ -53,8 +53,36 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(detail, res.status, retryable);
 }
 
-export function startInterview(sessionId: string, setup: Setup): Promise<Session> {
+export function startInterview(sessionId: string, setup: SetupInput): Promise<Session> {
   return post<Session>("/interview/start", { session_id: sessionId, setup });
+}
+
+interface UploadTicket {
+  object_name: string;
+  upload_url: string;
+  expires_in_seconds: number;
+}
+
+/** Uploads a resume straight to Cloud Storage via a signed URL (ADR 0010) and
+ *  returns the object name to pass as `resume_object`. The API never sees the bytes. */
+export async function uploadResume(file: File): Promise<string> {
+  const ticket = await post<UploadTicket>("/uploads", {
+    filename: file.name,
+    content_type: file.type,
+    size_bytes: file.size,
+  });
+  let res: Response;
+  try {
+    res = await fetch(ticket.upload_url, {
+      method: "PUT",
+      headers: { "Content-Type": file.type },
+      body: file,
+    });
+  } catch {
+    throw new ApiError("The upload didn't go through. Check your connection and try again.", 0, true);
+  }
+  if (!res.ok) throw new ApiError(`The upload was rejected (${res.status}).`, res.status, true);
+  return ticket.object_name;
 }
 
 export function submitAnswer(session: Session, answer: Answer): Promise<Session> {

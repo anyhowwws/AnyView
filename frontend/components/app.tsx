@@ -7,10 +7,10 @@ import { ReportView } from "@/components/report-view";
 import { SetupForm } from "@/components/setup-form";
 import { SignIn } from "@/components/sign-in";
 import { Button } from "@/components/ui/button";
-import { ApiError, getReport, startInterview, submitAnswer } from "@/lib/api";
+import { ApiError, getReport, startInterview, submitAnswer, uploadResume } from "@/lib/api";
 import { signOut, useAuth } from "@/lib/auth";
 import { EMPTY, clear, load, save, type Saved } from "@/lib/store";
-import type { Setup } from "@/lib/types";
+import type { SetupInput } from "@/lib/types";
 
 /** Top-level flow: setup → practice → report. Owns the session and persists it. */
 export function App() {
@@ -18,6 +18,7 @@ export function App() {
   const [saved, setSaved] = useState<Saved>(EMPTY);
   const [hydrated, setHydrated] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<"idle" | "uploading" | "starting">("idle");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -47,10 +48,20 @@ export function App() {
     }
   }
 
-  const onStart = (setup: Setup) =>
+  const onStart = (file: File | null, setup: Omit<SetupInput, "resume_object">) =>
     run(async () => {
-      const session = await startInterview(crypto.randomUUID(), setup);
-      update({ phase: "practice", session, report: null, spoken: {} });
+      try {
+        let input: SetupInput = setup;
+        if (file) {
+          setStage("uploading");
+          input = { ...setup, resume_object: await uploadResume(file) };
+        }
+        setStage("starting");
+        const session = await startInterview(crypto.randomUUID(), input);
+        update({ phase: "practice", session, report: null, spoken: {} });
+      } finally {
+        setStage("idle");
+      }
     });
 
   const onAnswer = (text: string) =>
@@ -94,7 +105,9 @@ export function App() {
           Sign out
         </Button>
       </div>
-      {saved.phase === "setup" && <SetupForm onStart={onStart} error={error} busy={busy} />}
+      {saved.phase === "setup" && (
+        <SetupForm onStart={onStart} error={error} busy={busy} stage={stage} />
+      )}
 
       {saved.phase === "practice" && saved.session && (
         <Practice

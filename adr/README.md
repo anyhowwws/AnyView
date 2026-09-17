@@ -30,3 +30,4 @@ record of having been wrong is the useful part.
 | [0007](0007-gemini-on-vertex.md) | Gemini on Vertex AI as the Phase 0 model | Accepted |
 | [0008](0008-custom-domain-dns-in-route53.md) | Custom domain on Firebase Hosting, DNS records managed in Route 53 | Accepted |
 | [0009](0009-google-sign-in-with-allow-list.md) | Google sign-in through Identity Platform, allow-listed by email | Accepted |
+| [0010](0010-resume-upload-via-signed-urls.md) | Resume upload: signed URLs into Cloud Storage, PDF read by the model | Accepted |
