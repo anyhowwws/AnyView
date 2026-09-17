@@ -7,6 +7,7 @@ CORS, error translation, the model singleton, and the routers.
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from functools import lru_cache
 
 from fastapi import FastAPI, Request
@@ -14,7 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from anyview.api import auth, interview, uploads
+from anyview.api import auth, brain, interview, uploads
 from anyview.config import Settings
 from anyview.interview.engine import EngineError
 from anyview.llm.adapter import Model, ModelError
@@ -22,7 +23,32 @@ from anyview.llm.adapter import Model, ModelError
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 settings = Settings.from_env()
-app = FastAPI(title="AnyView API", version="0.0.1")
+
+
+@lru_cache(maxsize=1)
+def build_engine():
+    """The database engine, or None when none is configured (Phase 0 routes
+    still work; /brain answers 503)."""
+    from anyview.db.connection import make_engine
+
+    return make_engine(settings)
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    engine = build_engine()
+    if engine is not None:
+        from anyview.db.migrate import migrate
+
+        applied = migrate(engine)
+        if applied:
+            logging.getLogger(__name__).info("applied migrations: %s", applied)
+    yield
+    if engine is not None:
+        engine.dispose()
+
+
+app = FastAPI(title="AnyView API", version="0.0.1", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,12 +91,25 @@ def build_store():
     )
 
 
+def build_repository():
+    from fastapi import HTTPException
+
+    from anyview.db.repository import Repository
+
+    engine = build_engine()
+    if engine is None:
+        raise HTTPException(503, "The brain needs a database and none is configured.")
+    return Repository(engine)
+
+
 app.dependency_overrides[interview.get_model] = build_model
 app.dependency_overrides[uploads.get_store] = build_store
+app.dependency_overrides[brain.get_repository] = build_repository
 app.dependency_overrides[auth.get_settings] = lambda: settings
 app.dependency_overrides[auth.get_verifier] = lambda: auth.verify_firebase_token(settings)
 app.include_router(interview.router)
 app.include_router(uploads.router)
+app.include_router(brain.router)
 
 
 # --- Error translation: every failure is {"detail": <sentence>} -------------
