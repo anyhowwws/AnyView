@@ -79,9 +79,11 @@ terraform init -backend-config="bucket=<state bucket from bootstrap output>"
 terraform plan
 ```
 
-The custom domain (`anyview.anyapps.cloud`) is part of the same apply:
-Firebase issues the record values and Route 53 receives them in one run.
-The certificate follows a few minutes after the records propagate.
+The custom domain (`anyview.anyapps.cloud`) is part of the same apply: the
+domain is registered on Firebase Hosting and a CNAME is written to Route 53.
+Firebase verifies over HTTP through the CNAME and issues the certificate a few
+minutes later; `terraform output firebase_dns_requests` shows anything it is
+still waiting for.
 
 ## Build order
 

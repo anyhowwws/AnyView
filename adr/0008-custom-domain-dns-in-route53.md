@@ -25,9 +25,9 @@ resources nobody can rebuild from the repo.
 values still live only in a console.
 
 **Terraform on both sides.** `google_firebase_hosting_custom_domain` registers
-the domain and returns the records Firebase requires (`required_dns_updates`);
-`aws_route53_record` writes them. Adds a second provider to a stack that is
-otherwise pure GCP, and needs AWS credentials wherever the stack is applied.
+the domain; `aws_route53_record` writes the CNAME. Adds a second provider to a
+stack that is otherwise pure GCP, and needs AWS credentials wherever the stack
+is applied.
 
 ## Decision
 
@@ -36,18 +36,26 @@ this repository; no compute, storage, or IAM on AWS. Credentials are the
 owner's local `aws login` session — the stack is applied from the laptop, not
 from CI, and there is no AWS identity in GitHub.
 
-The CNAME points at the default Hosting site (`anyapps-anyview.web.app`); the
-Cloud Run API keeps its `*.run.app` URL and is reached cross-origin (ADR 0006),
+One record: a CNAME from the domain to the default Hosting site
+(`anyapps-anyview.web.app`). It is written statically — the site hostname is
+deterministic — rather than derived from what Firebase reports back. Firebase's
+`required_dns_updates` / `cert.verification` lists are transient (a record
+leaves "desired" once discovered) and the certificate challenge completes over
+HTTP through the CNAME, so the `_acme-challenge` TXT the console suggests is
+not needed; AnyTatt's is a leftover of the console flow. A first attempt at
+driving `aws_route53_record` from those lists would have deleted the CNAME on
+the second apply; they now feed a diagnostic output only.
+
+The Cloud Run API keeps its `*.run.app` URL and is reached cross-origin (ADR 0006),
 so `cors_origins` gains the custom domain. Identity Platform (Phase 1) will
 list it as an authorized domain.
 
 ## What this costs
 
-- **A fixed record count.** The record values are computed by Firebase, and
-  `for_each` cannot iterate over keys unknown at plan time — that would force a
-  two-step first apply. A fixed `count` (two records: CNAME + certificate TXT)
-  keeps it to one apply; a precondition fails loudly if Firebase ever asks for
-  a different number, and `dns_record_count` is the knob.
+- **If Firebase ever needs the DNS challenge** (HTTP verification blocked,
+  for instance), the TXT it wants appears in the `firebase_dns_requests`
+  output and is added by hand or as a second static record. Not automated on
+  purpose: the value is transient and the case has not occurred.
 - **Two clouds' credentials to apply.** `gcloud auth application-default login`
   and `aws login` both need to be live. Documented in the README.
 - **Certificate provisioning is Firebase's timeline.** Typically minutes after

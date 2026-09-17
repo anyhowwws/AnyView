@@ -61,12 +61,6 @@ variable "app_domain" {
   default     = "anyview.anyapps.cloud"
 }
 
-variable "dns_record_count" {
-  description = "How many DNS records Firebase requires for app_domain. Two (CNAME + certificate TXT) today; a precondition tells you if that changes."
-  type        = number
-  default     = 2
-}
-
 variable "dns_zone_name" {
   description = "Route 53 hosted zone that holds app_domain's records."
   type        = string

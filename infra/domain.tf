@@ -1,14 +1,17 @@
 # anyview.anyapps.cloud → Firebase Hosting (ADR 0008).
 #
-# Firebase registers the domain on the Hosting site and tells us which DNS
-# records it needs — a CNAME to the site and a TXT for the certificate
-# challenge, the same two AnyTatt has. Those records are written into the
-# Route 53 zone below in the same apply.
+# Firebase registers the domain on the Hosting site; Route 53 gets one CNAME
+# pointing the domain at the site. That record is deterministic — the site's
+# default hostname is `<site_id>.web.app` — so it is written statically and
+# does not depend on anything Firebase reports back.
 #
-# The record *values* only exist once Firebase has issued them, so the Route 53
-# resources use a fixed `count` (values may be unknown at plan time; keys may
-# not) rather than `for_each`. A precondition fails the apply with a clear
-# message if Firebase ever asks for a different number of records.
+# What Firebase reports back (`required_dns_updates`, `cert.verification`) is
+# transient: a record disappears from "desired" the moment Firebase discovers
+# it, and the certificate challenge is completed over HTTP through the CNAME
+# (observed: `cert.verification.http.discovered` matched `desired` within
+# minutes; the `_acme-challenge` TXT was never needed). Driving resources from
+# that list would delete the CNAME on the next apply, so it only feeds the
+# `firebase_dns_requests` output for troubleshooting.
 
 resource "google_firebase_hosting_custom_domain" "app" {
   provider = google-beta
@@ -18,7 +21,7 @@ resource "google_firebase_hosting_custom_domain" "app" {
   custom_domain   = var.app_domain
   cert_preference = "GROUPED" # shared cert, free; DEDICATED costs and buys nothing here
 
-  # Don't block the apply on propagation; the records are created right after.
+  # Don't block the apply on propagation; the CNAME is created right after.
   wait_dns_verification = false
 
   depends_on = [google_firebase_project.this]
@@ -28,49 +31,10 @@ data "aws_route53_zone" "root" {
   name = "${var.dns_zone_name}."
 }
 
-locals {
-  # Firebase reports the records it wants in two places: the hosting CNAME
-  # under `required_dns_updates`, and the certificate challenge TXT
-  # (_acme-challenge.<domain>) under `cert[].verification[].dns[]`. Merge both,
-  # one record per (type, name), sorted so count.index is stable across
-  # applies. Only ADD actions; anything else is Firebase reporting on records
-  # it found.
-  hosting_records = flatten([
-    for u in google_firebase_hosting_custom_domain.app.required_dns_updates : [
-      for d in u.desired : d.records
-    ]
-  ])
-  cert_records = flatten([
-    for c in google_firebase_hosting_custom_domain.app.cert : [
-      for v in c.verification : [
-        for dns in v.dns : [
-          for d in dns.desired : d.records
-        ]
-      ]
-    ]
-  ])
-  dns_records_by_key = {
-    for r in concat(local.hosting_records, local.cert_records) :
-    "${r.type}:${r.domain_name}" => r if r.required_action == "ADD"
-  }
-  dns_records = [for k in sort(keys(local.dns_records_by_key)) : local.dns_records_by_key[k]]
-}
-
 resource "aws_route53_record" "app" {
-  count = var.dns_record_count
-
   zone_id = data.aws_route53_zone.root.zone_id
-  name    = local.dns_records[count.index].domain_name
-  type    = local.dns_records[count.index].type
+  name    = var.app_domain
+  type    = "CNAME"
   ttl     = 300
-  # The AWS provider (v6) wraps TXT values in the quotes Route 53 requires;
-  # passing them pre-quoted produces ""…"" and a 400.
-  records = [local.dns_records[count.index].rdata]
-
-  lifecycle {
-    precondition {
-      condition     = length(local.dns_records) == var.dns_record_count
-      error_message = "Firebase asked for ${length(local.dns_records)} DNS record(s) but dns_record_count is ${var.dns_record_count}. Set dns_record_count to match and apply again."
-    }
-  }
+  records = ["${google_firebase_hosting_custom_domain.app.site_id}.web.app"]
 }

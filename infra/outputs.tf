@@ -29,7 +29,18 @@ output "app_url" {
   value       = "https://${var.app_domain}"
 }
 
-output "dns_records" {
-  description = "What Firebase asked Route 53 to hold for the custom domain."
-  value       = { for r in aws_route53_record.app : "${r.type} ${r.name}" => r.records }
+output "dns_record" {
+  description = "The Route 53 record that points the custom domain at Firebase Hosting."
+  value       = "${aws_route53_record.app.type} ${aws_route53_record.app.fqdn} → ${one(aws_route53_record.app.records)}"
+}
+
+output "firebase_dns_requests" {
+  description = "Records Firebase still wants for the custom domain (empty once verified). Diagnostic only."
+  value = [
+    for r in flatten([
+      for u in google_firebase_hosting_custom_domain.app.required_dns_updates : [
+        for d in u.desired : d.records
+      ]
+    ]) : "${r.type} ${r.domain_name} ${r.rdata}" if r.required_action == "ADD"
+  ]
 }
