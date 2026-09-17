@@ -34,7 +34,7 @@ writes simple scripts). So:
 | Async | Cloud Tasks | brief |
 | Auth | Identity Platform (Phase 1) | brief |
 | Secrets | Secret Manager, Terraform provisions the *parameter*, never the value | brief |
-| IaC | Terraform, everything; console-clicked resources do not exist | brief |
+| IaC | Terraform, everything; console-clicked resources do not exist. The `aws` provider manages **only** Route 53 records for `anyview.anyapps.cloud` | brief, 0008 |
 | CI/CD | GitHub Actions → WIF → GCP. No stored keys. | brief |
 
 Out of scope (brief): LangChain/orchestration libs, any vector DB, chunking raw
@@ -48,7 +48,7 @@ backend/tests/         pytest; pythonpath=src set in pyproject.
 frontend/app/          Next.js App Router. output: "export" → frontend/out.
 frontend/firebase.json Hosting config: static files + SPA fallback only. No API rewrite (ADR 0006).
 infra/bootstrap/       State bucket only. Local state. Run once.
-infra/                 Main stack. GCS backend, bucket via -backend-config.
+infra/                 Main stack. GCS backend, bucket via -backend-config. domain.tf needs `aws login` too.
 adr/                   Decision records, numbered. Write one *as* a decision is made.
 .github/workflows/     ci.yml (lint/test/validate), deploy.yml (WIF → Artifact Registry → Cloud Run → Hosting)
 ```

@@ -55,8 +55,30 @@ variable "api_max_instances" {
   default     = 1
 }
 
+variable "app_domain" {
+  description = "Custom domain for the frontend, served by Firebase Hosting (ADR 0008)."
+  type        = string
+  default     = "anyview.anyapps.cloud"
+}
+
+variable "dns_record_count" {
+  description = "How many DNS records Firebase requires for app_domain. Two (CNAME + certificate TXT) today; a precondition tells you if that changes."
+  type        = number
+  default     = 2
+}
+
+variable "dns_zone_name" {
+  description = "Route 53 hosted zone that holds app_domain's records."
+  type        = string
+  default     = "anyapps.cloud"
+}
+
 variable "cors_origins" {
-  description = "Browser origins allowed to call the API (ADR 0006). Firebase Hosting serves the frontend on both of these by default."
+  description = "Browser origins allowed to call the API (ADR 0006): the custom domain plus the two default Hosting origins."
   type        = list(string)
-  default     = ["https://anyapps-anyview.web.app", "https://anyapps-anyview.firebaseapp.com"]
+  default = [
+    "https://anyview.anyapps.cloud",
+    "https://anyapps-anyview.web.app",
+    "https://anyapps-anyview.firebaseapp.com",
+  ]
 }

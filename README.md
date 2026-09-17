@@ -67,14 +67,21 @@ cd infra/bootstrap
 terraform init && terraform apply
 ```
 
-Then the main stack:
+Then the main stack. It touches two clouds: everything is GCP except the
+DNS records for the custom domain, which live in the Route 53 zone for
+`anyapps.cloud` (ADR 0008) — so both `gcloud auth application-default login`
+and `aws login` need to be live.
 
 ```sh
 cd infra
-cp example.tfvars terraform.tfvars   # edit project_id, github_repo
+cp example.tfvars terraform.tfvars   # edit project_id, github_repo, billing
 terraform init -backend-config="bucket=<state bucket from bootstrap output>"
 terraform plan
 ```
+
+The custom domain (`anyview.anyapps.cloud`) is part of the same apply:
+Firebase issues the record values and Route 53 receives them in one run.
+The certificate follows a few minutes after the records propagate.
 
 ## Build order
 

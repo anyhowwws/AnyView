@@ -23,3 +23,13 @@ output "project_id" {
   description = "Set as GitHub variable GCP_PROJECT_ID."
   value       = var.project_id
 }
+
+output "app_url" {
+  description = "The frontend on its custom domain (ADR 0008)."
+  value       = "https://${var.app_domain}"
+}
+
+output "dns_records" {
+  description = "What Firebase asked Route 53 to hold for the custom domain."
+  value       = { for r in aws_route53_record.app : "${r.type} ${r.name}" => r.records }
+}
