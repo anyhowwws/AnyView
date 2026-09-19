@@ -61,12 +61,6 @@ variable "app_domain" {
   default     = "anyview.anyapps.cloud"
 }
 
-variable "dns_zone_name" {
-  description = "Route 53 hosted zone that holds app_domain's records."
-  type        = string
-  default     = "anyapps.cloud"
-}
-
 variable "cors_origins" {
   description = "Browser origins allowed to call the API (ADR 0006): the custom domain plus the two default Hosting origins."
   type        = list(string)

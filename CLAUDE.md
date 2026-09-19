@@ -48,7 +48,8 @@ backend/tests/         pytest; pythonpath=src set in pyproject.
 frontend/app/          Next.js App Router. output: "export" → frontend/out.
 frontend/firebase.json Hosting config: static files + SPA fallback only. No API rewrite (ADR 0006).
 infra/bootstrap/       State bucket only. Local state. Run once.
-infra/                 Main stack. GCS backend, bucket via -backend-config. domain.tf needs `aws login` too.
+infra/                 Main GCP stack. GCS backend, bucket via -backend-config. No AWS credentials needed (ADR 0012).
+infra/dns/              The one AWS resource (Route 53 CNAME). Own state, own `aws login`. Applied rarely (ADR 0012).
 adr/                   Decision records, numbered. Write one *as* a decision is made.
 .github/workflows/     ci.yml (lint/test/validate), deploy.yml (WIF → Artifact Registry → Cloud Run → Hosting)
 ```

@@ -9,12 +9,6 @@ terraform {
       source  = "hashicorp/google-beta"
       version = "~> 6.0"
     }
-    # The anyapps.cloud zone lives in Route 53 (ADR 0008). Only DNS records are
-    # managed on the AWS side; every other resource is GCP.
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 6.0"
-    }
     # Ephemeral random_password for the one database password (ADR 0011).
     random = {
       source  = "hashicorp/random"
@@ -42,10 +36,4 @@ provider "google-beta" {
 
   user_project_override = true
   billing_project       = var.project_id
-}
-
-# Credentials come from the local `aws login` session; Route 53 is a global
-# service, the region only satisfies the provider.
-provider "aws" {
-  region = "us-east-1"
 }

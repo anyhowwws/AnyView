@@ -67,10 +67,8 @@ cd infra/bootstrap
 terraform init && terraform apply
 ```
 
-Then the main stack. It touches two clouds: everything is GCP except the
-DNS records for the custom domain, which live in the Route 53 zone for
-`anyapps.cloud` (ADR 0008) — so both `gcloud auth application-default login`
-and `aws login` need to be live.
+Then the main stack. It is pure GCP — only `gcloud auth application-default
+login` needs to be live (ADR 0012).
 
 ```sh
 cd infra
@@ -79,11 +77,21 @@ terraform init -backend-config="bucket=<state bucket from bootstrap output>"
 terraform plan
 ```
 
-The custom domain (`anyview.anyapps.cloud`) is part of the same apply: the
-domain is registered on Firebase Hosting and a CNAME is written to Route 53.
-Firebase verifies over HTTP through the CNAME and issues the certificate a few
-minutes later; `terraform output firebase_dns_requests` shows anything it is
-still waiting for.
+This registers the custom domain (`anyview.anyapps.cloud`) on Firebase
+Hosting and drives certificate provisioning. The DNS record that actually
+points the domain there — a Route 53 CNAME — lives in a separate stack,
+`infra/dns`, applied only when the domain itself changes and needing
+`aws login` instead (ADR 0008, ADR 0012):
+
+```sh
+cd infra/dns
+terraform init
+terraform plan
+```
+
+Firebase verifies over HTTP through the CNAME and issues the certificate a
+few minutes after the record exists; `terraform output firebase_dns_requests`
+(main stack) shows anything it is still waiting for.
 
 ## Turning sign-in on (once)
 

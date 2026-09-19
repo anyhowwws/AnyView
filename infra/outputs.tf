@@ -29,11 +29,6 @@ output "app_url" {
   value       = "https://${var.app_domain}"
 }
 
-output "dns_record" {
-  description = "The Route 53 record that points the custom domain at Firebase Hosting."
-  value       = "${aws_route53_record.app.type} ${aws_route53_record.app.fqdn} → ${one(aws_route53_record.app.records)}"
-}
-
 output "firebase_dns_requests" {
   description = "Records Firebase still wants for the custom domain (empty once verified). Diagnostic only."
   value = [

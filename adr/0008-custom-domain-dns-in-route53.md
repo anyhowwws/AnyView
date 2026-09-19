@@ -1,6 +1,6 @@
 # 0008 — Custom domain on Firebase Hosting, DNS records managed in Route 53
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by 0012
 - **Date:** 2026-09-18
 
 ## Context
