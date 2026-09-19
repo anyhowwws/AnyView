@@ -8,6 +8,7 @@ Runs at app startup and as `python -m anyview.db.migrate`.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -16,7 +17,17 @@ from sqlalchemy.engine import Engine
 
 log = logging.getLogger(__name__)
 
-MIGRATIONS_DIR = Path(__file__).resolve().parents[3] / "migrations"
+# In local dev (`pip install -e .`), this file's real location is
+# backend/src/anyview/db/migrate.py, so walking up 3 parents reaches
+# backend/ and finds backend/migrations/. That relationship only holds for
+# an editable install: once the package is installed normally (as in the
+# Docker image, `pip install .`), this file lives inside site-packages and
+# the same walk lands somewhere with no migrations/ directory at all. The
+# Dockerfile copies migrations/ to /app/migrations and sets MIGRATIONS_DIR
+# to point at it explicitly, which takes priority here.
+MIGRATIONS_DIR = Path(
+    os.environ.get("MIGRATIONS_DIR") or Path(__file__).resolve().parents[3] / "migrations"
+)
 LOCK_KEY = 7_140_926  # arbitrary, fixed: "the anyview migrations lock"
 
 

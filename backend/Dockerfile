@@ -12,7 +12,13 @@ WORKDIR /app
 # Install deps from the manifest first so this layer caches across code changes.
 COPY pyproject.toml ./
 COPY src ./src
+COPY migrations ./migrations
 RUN pip install .
+
+# The installed package (site-packages) has no fixed path relationship to
+# this directory once pip install copies files out of src/, so migrate.py
+# needs to be told explicitly where the SQL files ended up.
+ENV MIGRATIONS_DIR=/app/migrations
 
 # Run as a non-root user; Cloud Run does not require it but least privilege applies in the container too.
 RUN useradd --create-home --uid 1000 app

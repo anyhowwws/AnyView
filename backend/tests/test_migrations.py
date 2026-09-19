@@ -6,11 +6,28 @@ import pytest
 import sqlalchemy
 from sqlalchemy.exc import IntegrityError
 
-from anyview.db.migrate import migrate
+from anyview.db.migrate import MIGRATIONS_DIR, migrate
 
 
 def test_migrations_are_idempotent(db_engine):
     assert migrate(db_engine) == []  # a second run applies nothing
+
+
+def test_migrations_dir_actually_has_the_schema_files():
+    # Caught a real production incident: MIGRATIONS_DIR's fallback path math
+    # only holds for an editable local install. Installed non-editably (as
+    # in the Docker image), the same traversal lands somewhere with no
+    # migrations/ directory, glob("*.sql") silently returns nothing, and
+    # migrate() "succeeds" having applied zero migrations — the app boots
+    # against a database with only an empty schema_migrations table. This
+    # guards that MIGRATIONS_DIR resolves to a real, non-empty directory
+    # under whatever install produced this test run.
+    assert MIGRATIONS_DIR.is_dir(), (
+        f"MIGRATIONS_DIR ({MIGRATIONS_DIR}) does not exist — migrate() would "
+        "silently apply nothing. Set the MIGRATIONS_DIR env var if this "
+        "package was installed non-editably."
+    )
+    assert list(MIGRATIONS_DIR.glob("*.sql")), f"no .sql files found in {MIGRATIONS_DIR}"
 
 
 def _seed(conn):

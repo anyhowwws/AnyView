@@ -54,6 +54,14 @@ def main() -> None:
     api, owner = quoted(API_USER), quoted(OWNER_USER)
     statements = [
         "CREATE EXTENSION IF NOT EXISTS vector",
+        # Postgres requires the granting role to already hold membership in a
+        # role before it can transfer ownership to it (ALTER ... OWNER TO
+        # checks SET-role privilege, not just superuser status). `postgres`
+        # is a member of cloudsqlsuperuser, which can self-grant IAM roles —
+        # this is Cloud SQL's documented pattern for handing IAM users
+        # ownership. Without this line, the ALTER statements below fail with
+        # "must be able to SET ROLE".
+        f"GRANT {api} TO postgres",
         f"ALTER DATABASE {quoted(DB)} OWNER TO {api}",
         f"ALTER SCHEMA public OWNER TO {api}",
         f"GRANT ALL ON SCHEMA public TO {api}",
