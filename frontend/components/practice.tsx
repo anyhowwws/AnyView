@@ -71,7 +71,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, busy, error }: P
   const canAnswer = !streaming && !streamError && answer.trim().length > 0 && !busy;
 
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-col gap-8">
+    <div className="workspace-panel mx-auto flex w-full max-w-3xl flex-col gap-8">
       <div className="flex items-center gap-3 text-xs text-muted-foreground">
         <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted" aria-hidden>
           <motion.div

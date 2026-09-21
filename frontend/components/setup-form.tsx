@@ -74,7 +74,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
 
   return (
     <form
-      className="mx-auto flex w-full max-w-2xl flex-col gap-6"
+      className="setup-workspace mx-auto flex w-full max-w-3xl flex-col gap-7"
       onSubmit={(e) => {
         e.preventDefault();
         if (!seniority || !canSubmit) return;
@@ -89,13 +89,16 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
         });
       }}
     >
-      <header className="space-y-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Practice an interview</h1>
+      <header className="page-heading">
+        <div><p className="eyebrow">Your next chapter starts here</p>
+        <h1>Make your experience<br />speak for itself<span className="text-primary">.</span></h1>
         <p className="text-sm text-muted-foreground">
-          Upload your resume and name the target. Maya, an AI interviewer, will ask five questions
-          tailored to you and score your answers.
+          Five thoughtful questions. Feedback grounded in your experience.
+          A little more confidence for the real conversation.
         </p>
+        </div>
       </header>
+      <div className="practice-steps" aria-label="How practice works"><span><b>01</b> Bring your experience</span><span><b>02</b> Practice with Maya</span><span><b>03</b> Find your next step</span></div>
 
       {brainSize !== null && brainSize > 0 && (
         <div className="flex flex-wrap gap-1.5" role="group" aria-label="Where should Maya read about you?">
@@ -111,7 +114,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
               type="button"
               aria-pressed={source === value}
               onClick={() => setSource(value)}
-              className={`rounded-full border px-3 py-1 text-sm ${source === value ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+              className={`min-h-11 rounded-lg border px-3 py-2 text-sm ${source === value ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground"}`}
             >
               {label}
             </button>
@@ -155,7 +158,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
             onChange={(e) => pick(e.target.files)}
           />
           <div
-            className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed p-4"
+            className="upload-area flex flex-wrap items-center gap-3 rounded-xl border border-dashed p-7"
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();

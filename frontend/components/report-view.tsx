@@ -14,14 +14,15 @@ interface Props {
 export function ReportView({ report, onRestart }: Props) {
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <header className="flex flex-wrap items-end justify-between gap-3">
+      <header className="page-heading">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Your report</h1>
+          <p className="eyebrow">A clearer picture of your strengths</p>
+          <h1>Your next step<span className="text-primary">.</span></h1>
           <p className="text-sm text-muted-foreground">
             {report.role} · {report.company} · {report.seniority}
           </p>
           <p className="text-xs text-muted-foreground">
-            Scores and ideal answers are AI-generated from your answers and your resume. Check the
+            Scores and ideal answers are AI-generated from your answers and your {report.source === "brain" ? "confirmed brain" : "resume"}. Check the
             facts before you reuse them.
           </p>
         </div>

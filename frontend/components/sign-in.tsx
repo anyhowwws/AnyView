@@ -14,9 +14,10 @@ export function SignIn({ configured }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col gap-6 py-16 text-center">
+    <div className="workspace-panel mx-auto mt-12 flex w-full max-w-lg flex-col gap-7 text-center">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">AnyView</h1>
+        <p className="eyebrow">AnyView · Your career, connected</p>
+        <h1 className="py-4 text-4xl font-semibold tracking-tight">Good stories.<br />Better conversations.</h1>
         <p className="text-sm text-muted-foreground">
           Practice interviews with Maya, an AI interviewer, and get per-dimension feedback on
           every answer.

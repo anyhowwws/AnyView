@@ -10,7 +10,7 @@ interface Props {
   onProposal: (p: Proposal) => void;
 }
 
-/** The persistent "dump something" box, pinned at the top of the Brain screen. */
+/** Capture stays above the map so a new memory is always one scroll away. */
 export function CaptureBox({ onProposal }: Props) {
   const [text, setText] = useState("");
   const [stage, setStage] = useState<"idle" | "uploading" | "reading">("idle");
@@ -31,11 +31,9 @@ export function CaptureBox({ onProposal }: Props) {
   }
 
   return (
-    // Pinned at the top on wide screens (brief). On a phone a pinned box would
-    // hold a quarter of the viewport, so it scrolls with the page there.
-    <section className="-mx-4 border-b bg-background/95 px-4 py-4 backdrop-blur sm:sticky sm:top-0 sm:z-10 sm:-mx-6 sm:px-6">
+    <section className="capture-panel">
       <form
-        className="mx-auto flex w-full max-w-4xl flex-col gap-2"
+        className="flex w-full flex-col gap-3"
         onSubmit={(e) => {
           e.preventDefault();
           if (text.trim().length < 20 || busy) return;
@@ -44,20 +42,20 @@ export function CaptureBox({ onProposal }: Props) {
         }}
       >
         <label className="text-sm font-medium" htmlFor="dump">
-          Dump something
+          What’s worth remembering?
         </label>
         <Textarea
           id="dump"
           value={text}
           onChange={(e) => setText(e.target.value)}
           placeholder="A project you shipped, a story from a hard week, a skill you picked up, a certification… Maya turns it into entries for you to review."
-          rows={3}
+          rows={2}
           maxLength={20000}
           disabled={busy}
         />
         <div className="flex flex-wrap items-center gap-3">
           <Button type="submit" className="h-11 px-5 text-base" disabled={busy || text.trim().length < 20}>
-            {stage === "reading" ? "Maya is reading…" : "Add to brain"}
+            {stage === "reading" ? "Maya is reading…" : "Find the stories"}
           </Button>
           <input
             ref={fileInput}
@@ -82,7 +80,7 @@ export function CaptureBox({ onProposal }: Props) {
             {stage === "uploading" ? "Uploading…" : "Upload a resume"}
           </Button>
           <span className="text-xs text-muted-foreground">
-            {busy ? "About 20 seconds." : "Nothing is saved until you confirm it in the queue."}
+            {busy ? "About 20 seconds." : "Maya drafts. You review. Only confirmed entries enter your brain."}
           </span>
         </div>
         {error && (
