@@ -101,7 +101,7 @@ function ProposalCard({
   }
 
   const source =
-    proposal.dump_kind === "text" ? "from a note" : proposal.dump_kind === "resume_pdf" ? "from a PDF resume" : proposal.dump_kind === "resume_docx" ? "from a Word resume" : "from an architecture diagram";
+    proposal.dump_kind === "text" ? "from a capture" : proposal.dump_kind === "resume_pdf" ? "from a PDF resume" : "from a Word resume";
 
   return (
     <Card>

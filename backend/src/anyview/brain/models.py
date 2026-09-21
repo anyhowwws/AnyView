@@ -245,7 +245,7 @@ class Brain(BaseModel):
 
 class RawDump(BaseModel):
     id: str
-    kind: Literal["text", "resume_pdf", "resume_docx", "diagram_image"]
+    kind: Literal["text", "resume_pdf", "resume_docx"]
     text: str
     object_name: str | None
     created_at: dt.datetime
@@ -260,7 +260,7 @@ class Proposal(BaseModel):
     created_at: dt.datetime
     resolved_at: dt.datetime | None
     # Filled in for the queue so it can name the source without sending its text.
-    dump_kind: Literal["text", "resume_pdf", "resume_docx", "diagram_image"] | None = None
+    dump_kind: Literal["text", "resume_pdf", "resume_docx"] | None = None
 
 
 class Event(BaseModel):

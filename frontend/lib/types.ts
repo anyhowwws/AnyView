@@ -291,7 +291,7 @@ export interface Proposal {
   model: string;
   created_at: string;
   resolved_at: string | null;
-  dump_kind: "text" | "resume_pdf" | "resume_docx" | "diagram_image" | null;
+  dump_kind: "text" | "resume_pdf" | "resume_docx" | null;
 }
 
 export interface BrainEvent {
@@ -306,7 +306,7 @@ export interface BrainEvent {
 
 export interface RawDump {
   id: string;
-  kind: "text" | "resume_pdf" | "resume_docx" | "diagram_image";
+  kind: "text" | "resume_pdf" | "resume_docx";
   text: string;
   object_name: string | null;
   created_at: string;

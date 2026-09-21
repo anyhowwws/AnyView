@@ -2,10 +2,6 @@
 -- Certifications remain achievements with kind = 'credential'; education and
 -- languages need distinct, editable projections and retain event provenance.
 
-ALTER TABLE raw_dumps DROP CONSTRAINT raw_dumps_kind_check;
-ALTER TABLE raw_dumps ADD CONSTRAINT raw_dumps_kind_check
-  CHECK (kind IN ('text', 'resume_pdf', 'resume_docx', 'diagram_image'));
-
 CREATE TABLE education (
   id            uuid PRIMARY KEY,
   user_id       text NOT NULL REFERENCES users (uid),

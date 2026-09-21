@@ -100,7 +100,11 @@ def create_dump_from_upload(
         elif body.resume_object.endswith((".png", ".jpg", ".webp")):
             suffix = body.resume_object.rsplit(".", 1)[-1]
             mime = {value.lstrip("."): key for key, value in ALLOWED_TYPES.items()}[suffix]
-            kind = "diagram_image"
+            # The original image remains in Cloud Storage as `object_name`; its
+            # extracted description uses the existing text dump category. This
+            # keeps production migrations additive: the app identity is not
+            # allowed to alter the original raw_dumps check constraint.
+            kind = "text"
             text = diagram_to_text(
                 data, mime, model=model, session_id=f"upload-{uuid.uuid4().hex[:8]}"
             )
