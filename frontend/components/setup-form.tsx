@@ -98,10 +98,10 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
         </p>
         </div>
       </header>
-      <div className="practice-steps" aria-label="How practice works"><span><b>01</b> Bring your experience</span><span><b>02</b> Practice with Maya</span><span><b>03</b> Find your next step</span></div>
+      <div className="practice-steps" aria-label="How practice works"><span><b>01</b> Bring your experience</span><span><b>02</b> Practice with Donna</span><span><b>03</b> Find your next step</span></div>
 
       {brainSize !== null && brainSize > 0 && (
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Where should Maya read about you?">
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Where should Donna read about you?">
           {(
             [
               ["upload", "Upload a resume"],
@@ -124,7 +124,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
 
       {source === "brain" ? (
         <p className="rounded-lg border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-          Maya will interview you from your confirmed brain and cite its entries ([R1], [S2]…) in
+          Donna will interview you from your confirmed Digital Garden and cite its entries ([R1], [S2]…) in
           the ideal answers.
         </p>
       ) : pasting ? (

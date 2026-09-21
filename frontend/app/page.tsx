@@ -1,10 +1,5 @@
-import { App } from "@/components/app";
-import { AuthShell } from "@/components/shell";
+import { BrainScreen } from "@/components/brain/brain-screen";
 
 export default function Home() {
-  return (
-    <AuthShell>
-      <App />
-    </AuthShell>
-  );
+  return <BrainScreen />;
 }

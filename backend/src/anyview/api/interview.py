@@ -55,7 +55,7 @@ def resolve_setup(
     sources = sum(bool(x) for x in (given.resume, given.resume_object, given.use_brain))
     if sources != 1:
         raise HTTPException(
-            422, "Upload a resume, paste its text, or use your brain — one of the three."
+            422, "Upload a resume, paste its text, or use your Digital Garden — one of the three."
         )
 
     if given.use_brain:
@@ -64,7 +64,9 @@ def resolve_setup(
         text = repo.brain_context(user_uid)
         if len(text.strip()) < 50:
             raise HTTPException(
-                422, "Your brain is still empty. Add something to it first, or upload a resume."
+                422,
+                "Your Digital Garden is still empty. Add something to it first, "
+                "or upload a resume.",
             )
         try:
             return Setup(
@@ -78,7 +80,7 @@ def resolve_setup(
             )
         except ValidationError as exc:
             raise HTTPException(
-                422, "Your brain is too large to fit in one interview prompt yet."
+                422, "Your Digital Garden is too large to fit in one interview prompt yet."
             ) from exc
 
     if given.resume_object:

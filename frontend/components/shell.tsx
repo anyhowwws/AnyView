@@ -40,7 +40,7 @@ export function AuthShell({ children, pending }: { children: React.ReactNode; pe
       aria-current={pathname === href ? "page" : undefined}
       className={`workspace-nav-link ${pathname === href ? "is-active" : ""}`}
     >
-      {href === "/brain" ? <Network size={16} aria-hidden /> : <AudioLines size={16} aria-hidden />}
+      {href === "/" || href === "/brain" ? <Network size={16} aria-hidden /> : <AudioLines size={16} aria-hidden />}
       {label}
       {count ? (
         <span className="ml-1.5 rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums">
@@ -56,8 +56,8 @@ export function AuthShell({ children, pending }: { children: React.ReactNode; pe
       <header className="workspace-header">
         <Link href="/" className="wordmark" aria-label="AnyView home"><span className="brand-mark"><Network size={20} aria-hidden /></span>anyview<span className="brand-dot">.</span></Link>
         <nav className="flex items-center gap-1" aria-label="Sections">
-          {link("/", "Practice")}
-          {link("/brain", "Second brain", badge)}
+          {link("/", "Digital Garden", badge)}
+          {link("/practice", "Interview Practice")}
         </nav>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <span className="hidden lg:inline">{user.email}</span>

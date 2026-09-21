@@ -11,6 +11,7 @@ function fixture(): Brain {
     stories: [{ id: "s", label: "S1", role_id: "r", project_id: "p", title: "Cutover", situation: null, task: null, action: null, result: null, competencies: [], source }],
     skills: [{ id: "k", label: "K1", name: "Terraform", depth: 4, project_ids: ["p"], source }],
     achievements: [{ id: "a", label: "A1", title: "Certification", kind: "credential", issuer: null, achieved_on: null, source }],
+    education: [], languages: [],
     coverage: { competencies: [], roles: [], cells: {} }, pending_proposals: 2,
   };
 }
@@ -32,6 +33,6 @@ test("does not draw links to retired or missing entities", () => {
 
 test("empty brain has no synthetic nodes or edges", () => {
   const brain = fixture();
-  brain.roles = []; brain.projects = []; brain.stories = []; brain.skills = []; brain.achievements = [];
+  brain.roles = []; brain.projects = []; brain.stories = []; brain.skills = []; brain.achievements = []; brain.education = []; brain.languages = [];
   assert.deepEqual(buildBrainGraph(brain), { nodes: [], edges: [] });
 });

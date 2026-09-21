@@ -1,6 +1,6 @@
 # Workspace refresh
 
-The second brain is a map of the user's confirmed experience. The graph is a
+The Digital Garden is a map of the user's confirmed experience. The graph is a
 read-only projection of existing API data, rendered with SVG edges and native
 HTML buttons; it needs no graph database, inference call, or new dependency.
 

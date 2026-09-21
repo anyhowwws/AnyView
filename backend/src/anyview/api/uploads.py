@@ -50,7 +50,7 @@ def object_prefix(uid: str) -> str:
 @router.post("", response_model=UploadTicket)
 def create_upload(body: UploadRequest, user: CurrentUser, store: StoreDep) -> UploadTicket:
     if body.content_type not in ALLOWED_TYPES:
-        raise HTTPException(415, "Upload a PDF or a Word (.docx) file.")
+        raise HTTPException(415, "Upload a PDF, Word (.docx), PNG, JPG, or WebP file.")
     if body.size_bytes > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "That file is over 10 MB. Please upload a smaller one.")
 

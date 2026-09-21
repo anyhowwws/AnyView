@@ -51,7 +51,7 @@ def test_use_brain_renders_the_confirmed_record_with_labels(client):
     assert setup["resume"].startswith("## [R1] Senior Cloud Architect at Acme Corp")
     assert "[S1] On-call rota redesign after two Sev-1s" in setup["resume"]
     plan_call = next(c for c in client.fake.calls if c["call"] == "plan")
-    assert 'confirmed "second brain"' in plan_call["system"]
+    assert 'confirmed "Digital Garden"' in plan_call["system"]
     assert "cite these labels" in plan_call["system"]
 
 

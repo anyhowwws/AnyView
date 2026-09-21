@@ -52,6 +52,9 @@ export interface SetupInput {
 export const UPLOAD_TYPES: Record<string, string> = {
   "application/pdf": ".pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/webp": ".webp",
 };
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
@@ -106,9 +109,9 @@ export interface Report {
   items: QuestionReport[];
 }
 
-// --- The second brain (mirrors backend/src/anyview/brain/models.py) ---------
+// --- The Digital Garden (mirrors backend/src/anyview/brain/models.py) -------
 
-export type EntityKind = "role" | "project" | "story" | "skill" | "achievement";
+export type EntityKind = "role" | "project" | "story" | "skill" | "achievement" | "education" | "language";
 
 export interface Provenance {
   raw_dump_id: string;
@@ -172,6 +175,25 @@ export interface Achievement {
   source: Provenance;
 }
 
+export interface Education {
+  id: string;
+  label: string;
+  institution: string;
+  qualification: string | null;
+  field: string | null;
+  start_date: string | null;
+  end_date: string | null;
+  source: Provenance;
+}
+
+export interface Language {
+  id: string;
+  label: string;
+  name: string;
+  proficiency: string | null;
+  source: Provenance;
+}
+
 export interface Competency {
   key: string;
   label: string;
@@ -191,6 +213,8 @@ export interface Brain {
   stories: Story[];
   skills: Skill[];
   achievements: Achievement[];
+  education: Education[];
+  languages: Language[];
   coverage: Coverage;
   pending_proposals: number;
 }
@@ -238,12 +262,25 @@ export interface AchievementDraft extends Draft {
   issuer: string | null;
   achieved_on: string | null;
 }
+export interface EducationDraft extends Draft {
+  institution: string;
+  qualification: string | null;
+  field: string | null;
+  start_date: string | null;
+  end_date: string | null;
+}
+export interface LanguageDraft extends Draft {
+  name: string;
+  proficiency: string | null;
+}
 export interface Patch {
   roles: RoleDraft[];
   projects: ProjectDraft[];
   stories: StoryDraft[];
   skills: SkillDraft[];
   achievements: AchievementDraft[];
+  education: EducationDraft[];
+  languages: LanguageDraft[];
 }
 
 export interface Proposal {
@@ -254,8 +291,7 @@ export interface Proposal {
   model: string;
   created_at: string;
   resolved_at: string | null;
-  dump_kind: "text" | "resume_pdf" | "resume_docx" | null;
-  dump_excerpt: string | null;
+  dump_kind: "text" | "resume_pdf" | "resume_docx" | "diagram_image" | null;
 }
 
 export interface BrainEvent {
@@ -270,7 +306,7 @@ export interface BrainEvent {
 
 export interface RawDump {
   id: string;
-  kind: "text" | "resume_pdf" | "resume_docx";
+  kind: "text" | "resume_pdf" | "resume_docx" | "diagram_image";
   text: string;
   object_name: string | null;
   created_at: string;

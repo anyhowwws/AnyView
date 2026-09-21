@@ -19,7 +19,7 @@ export function SignIn({ configured }: Props) {
         <p className="eyebrow">AnyView · Your career, connected</p>
         <h1 className="py-4 text-4xl font-semibold tracking-tight">Good stories.<br />Better conversations.</h1>
         <p className="text-sm text-muted-foreground">
-          Practice interviews with Maya, an AI interviewer, and get per-dimension feedback on
+          Practice interviews with Donna, an AI interviewer, and get per-dimension feedback on
           every answer.
         </p>
       </header>

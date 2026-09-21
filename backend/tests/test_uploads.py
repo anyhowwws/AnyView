@@ -67,7 +67,7 @@ def test_filename_never_reaches_the_object_name(client):
 
 
 def test_wrong_type_is_415_and_too_big_is_413(client):
-    assert _ticket(client, "image/png").status_code == 415
+    assert _ticket(client, "image/png").status_code == 200
     assert _ticket(client, PDF, size=11 * 1024 * 1024).status_code == 413
 
 

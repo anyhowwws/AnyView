@@ -15,7 +15,13 @@ from anyview.api.uploads import StoreDep, object_prefix
 from anyview.brain.extract import ExtractionFailed, propose
 from anyview.brain.models import Brain, Event, Patch, Proposal, RawDump
 from anyview.db.repository import Conflict, NotFound, Repository
-from anyview.uploads.extract import ExtractionError, docx_to_text, pdf_to_text
+from anyview.uploads.extract import (
+    ALLOWED_TYPES,
+    ExtractionError,
+    diagram_to_text,
+    docx_to_text,
+    pdf_to_text,
+)
 
 router = APIRouter(prefix="/brain", tags=["brain"], dependencies=[Depends(current_user)])
 
@@ -61,7 +67,7 @@ def _propose(
     if patch.is_empty():
         raise HTTPException(
             422,
-            "Maya found nothing about your work in that. "
+            "Donna found nothing about your experience in that. "
             "Try describing a role, a project, or a story.",
         )
     return repo.create_proposal(
@@ -91,8 +97,15 @@ def create_dump_from_upload(
             )
         elif body.resume_object.endswith(".docx"):
             kind, text = "resume_docx", docx_to_text(data)
+        elif body.resume_object.endswith((".png", ".jpg", ".webp")):
+            suffix = body.resume_object.rsplit(".", 1)[-1]
+            mime = {value.lstrip("."): key for key, value in ALLOWED_TYPES.items()}[suffix]
+            kind = "diagram_image"
+            text = diagram_to_text(
+                data, mime, model=model, session_id=f"upload-{uuid.uuid4().hex[:8]}"
+            )
         else:
-            raise HTTPException(415, "Upload a PDF or a Word (.docx) file.")
+            raise HTTPException(415, "Upload a PDF, Word (.docx), PNG, JPG, or WebP file.")
     except ExtractionError as exc:
         raise HTTPException(422, exc.user_message) from exc
     if len(text.strip()) < 20:
@@ -142,7 +155,7 @@ def discard_proposal(proposal_id: str, user: CurrentUser, repo: RepoDep) -> Brai
     return repo.brain(user.uid)
 
 
-Kind = Literal["role", "project", "story", "skill", "achievement"]
+Kind = Literal["role", "project", "story", "skill", "achievement", "education", "language"]
 
 
 @router.patch("/entities/{kind}/{entity_id}", response_model=EventOut)

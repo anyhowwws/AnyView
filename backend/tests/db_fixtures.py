@@ -19,7 +19,8 @@ TEST_DATABASE_URL = os.environ.get(
 )
 
 ALL_TABLES = [
-    "skill_evidence", "skills", "achievements", "stories", "projects", "roles",
+    "skill_evidence", "skills", "achievements", "education", "languages",
+    "stories", "projects", "roles",
     "events", "proposals", "raw_dumps", "usage_events", "users",
 ]  # fmt: skip
 

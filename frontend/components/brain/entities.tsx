@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, editEntity, getDump, retireEntity, type EventOut } from "@/lib/api";
-import type { Achievement, Brain, EntityKind, Project, Role, Skill, Story } from "@/lib/types";
+import type { Achievement, Brain, Education, EntityKind, Language, Project, Role, Skill, Story } from "@/lib/types";
 
 interface Props {
   brain: Brain;
@@ -17,8 +17,11 @@ interface Props {
  *  and Achievements. Every card can be edited in place or retired, and links
  *  to the dump it came from. */
 export function Entities({ brain, onChanged }: Props) {
+  // During a rolling deploy an older API response can lack newly added arrays.
+  const education = brain.education ?? [];
+  const languages = brain.languages ?? [];
   const labelOf = new Map<string, string>(
-    [...brain.roles, ...brain.projects, ...brain.stories, ...brain.skills, ...brain.achievements].map((e) => [e.id, e.label]),
+    [...brain.roles, ...brain.projects, ...brain.stories, ...brain.skills, ...brain.achievements, ...education, ...languages].map((e) => [e.id, e.label]),
   );
   const projectsOf = (roleId: string | null) => brain.projects.filter((p) => p.role_id === roleId);
   const storiesOf = (roleId: string | null, projectId: string | null) =>
@@ -27,12 +30,12 @@ export function Entities({ brain, onChanged }: Props) {
   const orphanStories = brain.stories.filter(
     (s) => !s.project_id && (!s.role_id || !brain.roles.some((r) => r.id === s.role_id)),
   );
-  const empty = brain.roles.length + brain.projects.length + brain.stories.length + brain.skills.length + brain.achievements.length === 0;
+  const empty = brain.roles.length + brain.projects.length + brain.stories.length + brain.skills.length + brain.achievements.length + education.length + languages.length === 0;
 
   if (empty) {
     return (
       <section className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-        Your brain is empty. Dump something above — a role, a project, a story — or upload a resume.
+        Your Digital Garden is empty. Capture a role, project, story, certification, education entry, language, or upload a resume or diagram.
       </section>
     );
   }
@@ -40,7 +43,7 @@ export function Entities({ brain, onChanged }: Props) {
   return (
     <section aria-labelledby="entities-heading" className="space-y-6">
       <h2 id="entities-heading" className="text-lg font-semibold tracking-tight">
-        What&apos;s in your brain
+        What&apos;s growing in your Digital Garden
       </h2>
       {brain.roles.map((role) => (
         <div key={role.id} className="space-y-3">
@@ -83,7 +86,7 @@ export function Entities({ brain, onChanged }: Props) {
       )}
       {brain.achievements.length > 0 && (
         <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">Achievements and credentials</h3>
+          <h3 className="text-sm font-medium text-muted-foreground">Certifications &amp; achievements</h3>
           <div className="grid gap-2 sm:grid-cols-2">
             {brain.achievements.map((a) => (
               <EntityCard key={a.id} kind="achievement" entity={a} title={a.title} onChanged={onChanged}
@@ -91,6 +94,28 @@ export function Entities({ brain, onChanged }: Props) {
                 fields={[["title", "Title"], ["issuer", "Issuer"], ["achieved_on", "Date (YYYY-MM-DD)"]]}
               />
             ))}
+          </div>
+        </div>
+      )}
+      {education.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium text-muted-foreground">Education</h3>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {education.map((e) => <EntityCard key={e.id} kind="education" entity={e} title={e.institution} onChanged={onChanged}
+              meta={[e.qualification, e.field, e.start_date?.slice(0, 7), e.end_date?.slice(0, 7)].filter(Boolean).join(" · ")}
+              fields={[["institution", "Institution"], ["qualification", "Qualification"], ["field", "Field of study"], ["start_date", "Start (YYYY-MM-DD)"], ["end_date", "End (YYYY-MM-DD)"]]}
+            />)}
+          </div>
+        </div>
+      )}
+      {languages.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium text-muted-foreground">Languages</h3>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {languages.map((language) => <EntityCard key={language.id} kind="language" entity={language} title={language.name} onChanged={onChanged}
+              meta={language.proficiency ?? "proficiency not recorded"}
+              fields={[["name", "Language"], ["proficiency", "Proficiency"]]}
+            />)}
           </div>
         </div>
       )}
@@ -118,7 +143,7 @@ function StoryCard({ story, labelOf, onChanged }: { story: Story; labelOf: Map<s
   );
 }
 
-type Entity = Role | Project | Story | Skill | Achievement;
+type Entity = Role | Project | Story | Skill | Achievement | Education | Language;
 type FieldSpec = [name: string, label: string, multiline?: boolean];
 
 function EntityCard({

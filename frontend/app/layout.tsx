@@ -7,7 +7,7 @@ const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: "AnyView",
-  description: "Interview preparation with a second brain",
+  description: "Interview preparation with a Digital Garden",
 };
 
 export default function RootLayout({

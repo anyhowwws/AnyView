@@ -95,7 +95,7 @@ def test_empty_resume_is_a_readable_422(client, setup):
     body = {"session_id": "sess-0001", "setup": {**setup.model_dump(), "resume": ""}}
     r = client.post("/interview/start", json=body)
     assert r.status_code == 422
-    assert "Upload a resume, paste its text, or use your brain" in r.json()["detail"]
+    assert "Upload a resume, paste its text, or use your Digital Garden" in r.json()["detail"]
 
     short = {"session_id": "sess-0001", "setup": {**setup.model_dump(), "resume": "too short"}}
     r = client.post("/interview/start", json=short)

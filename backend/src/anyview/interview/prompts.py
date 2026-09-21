@@ -21,7 +21,7 @@ def session_system(setup: Setup) -> str:
     jd = setup.job_description.strip() if setup.job_description else "(none provided)"
     if setup.source == "brain":
         record_note = (
-            'The candidate\'s record below is their confirmed "second brain": every entry was '
+            'The candidate\'s record below is their confirmed "Digital Garden": every entry was '
             "reviewed by them and carries a label like [R1] (role), [P2] (project), [S3] (story), "
             "[K1] (skill), [A1] (achievement). When you cite the record, cite these labels."
         )
@@ -83,7 +83,7 @@ meaning exactly:
 {question.text}
 </question>
 
-Reply with only what Maya would say aloud. Two or three sentences at most."""
+Reply with only what Donna would say aloud. Two or three sentences at most."""
 
 
 def score_user(question: Question, answer: str) -> str:

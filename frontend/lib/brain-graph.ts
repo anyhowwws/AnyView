@@ -10,9 +10,9 @@ export interface BrainNode {
 }
 export interface BrainEdge { from: string; to: string; relation: string }
 
-export const GRAPH_KINDS: EntityKind[] = ["role", "project", "story", "skill", "achievement"];
+export const GRAPH_KINDS: EntityKind[] = ["role", "project", "story", "skill", "achievement", "education", "language"];
 export const KIND_NAMES: Record<EntityKind, string> = {
-  role: "Roles", project: "Projects", story: "Stories", skill: "Skills", achievement: "Achievements",
+  role: "Roles", project: "Projects", story: "Stories", skill: "Skills", achievement: "Certifications", education: "Education", language: "Languages",
 };
 
 /** Read-only view of confirmed relationships. No inferred or synthetic edges. */
@@ -23,6 +23,8 @@ export function buildBrainGraph(brain: Brain): { nodes: BrainNode[]; edges: Brai
     ...brain.stories.map((s) => ({ ...s, kind: "story" as const, detail: [s.situation, s.task, s.action, s.result, s.competencies.join(", ")].filter(Boolean).join("\n\n") })),
     ...brain.skills.map((s) => ({ ...s, kind: "skill" as const, title: s.name, detail: `Self-rated depth ${s.depth} of 5` })),
     ...brain.achievements.map((a) => ({ ...a, kind: "achievement" as const, detail: [a.kind, a.issuer, a.achieved_on].filter(Boolean).join(" · ") })),
+    ...(brain.education ?? []).map((e) => ({ ...e, kind: "education" as const, title: e.institution, detail: [e.qualification, e.field, e.start_date, e.end_date].filter(Boolean).join(" · ") })),
+    ...(brain.languages ?? []).map((l) => ({ ...l, kind: "language" as const, title: l.name, detail: l.proficiency ?? "Proficiency not recorded" })),
   ];
   const ids = new Set(nodes.map((n) => n.id));
   const edges: BrainEdge[] = [];

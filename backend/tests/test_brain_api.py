@@ -50,7 +50,7 @@ def test_dump_creates_a_pending_proposal_with_evidence(client):
     assert p["status"] == "pending"
     assert p["patch"]["roles"][0]["company"] == "Acme Corp"
     assert p["patch"]["stories"][0]["evidence"].startswith("Ran the on-call rota redesign")
-    assert p["dump_kind"] == "text" and p["dump_excerpt"].startswith("At Acme Corp")
+    assert p["dump_kind"] == "text" and "dump_excerpt" not in p
     assert client.get("/brain").json()["pending_proposals"] == 1
     assert [q["id"] for q in client.get("/brain/proposals").json()] == [p["id"]]
 
@@ -178,7 +178,7 @@ def test_useless_dump_is_a_422(client):
     r = client.post(
         "/brain/dumps", json={"text": "The weather was nice today and I had a sandwich."}
     )
-    assert r.status_code == 422 and "nothing about your work" in r.json()["detail"]
+    assert r.status_code == 422 and "nothing about your experience" in r.json()["detail"]
 
 
 def test_brain_routes_require_sign_in(signed_in):

@@ -52,7 +52,7 @@ export function ReportView({ report, onRestart }: Props) {
               <Column title="Your answer">
                 <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.answer}</p>
               </Column>
-              <Column title={report.source === "brain" ? "Ideal answer, from your brain" : "Ideal answer, from your resume"}>
+              <Column title={report.source === "brain" ? "Ideal answer, from your Digital Garden" : "Ideal answer, from your resume"}>
                 {item.ideal.resume_has_material ? (
                   <>
                     <p className="whitespace-pre-wrap text-sm">{item.ideal.answer}</p>

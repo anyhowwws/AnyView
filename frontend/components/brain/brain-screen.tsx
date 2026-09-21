@@ -28,15 +28,15 @@ export function BrainScreen() {
         setBrain(b);
         setProposals(p);
       })
-      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "Couldn't load your brain."));
+      .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "Couldn't load your Digital Garden."));
   }, [user]);
 
   return (
     <AuthShell pending={proposals.length}>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-7">
         <header className="page-heading">
-          <div><p className="eyebrow">Your personal knowledge space</p><h1>Your second brain<span className="text-primary">.</span></h1><p>The work you’ve done. The stories worth remembering. All connected.</p></div>
-          <Link href="/" className="workspace-link">Put it into practice <ArrowUpRight size={17} aria-hidden /></Link>
+          <div><p className="eyebrow">A bird’s-eye view of your career</p><h1>Your Digital Garden<span className="text-primary">.</span></h1><p>Capture the work you’ve done, cultivate the stories worth remembering, and see the connections grow.</p></div>
+          <Link href="/practice" className="workspace-link">Put it into practice <ArrowUpRight size={17} aria-hidden /></Link>
         </header>
         <CaptureBox onProposal={(p) => setProposals((prev) => [...prev, p])} />
         {error && (
@@ -44,16 +44,6 @@ export function BrainScreen() {
             {error}
           </p>
         )}
-        <div className="brain-section-heading">
-          <div><h2 className="text-lg font-semibold">Explore your experience</h2><p className="mt-1 text-sm text-muted-foreground">{brain ? `${brain.roles.length + brain.projects.length + brain.stories.length + brain.skills.length + brain.achievements.length} confirmed entries · ${proposals.length} awaiting review` : "Loading your knowledge space…"}</p></div>
-          <div className="view-switch" role="group" aria-label="Brain view">
-            {([{ id: "graph", label: "Graph", Icon: Network }, { id: "list", label: "Entries", Icon: List }, { id: "coverage", label: "Coverage", Icon: Grid2X2 }] as const).map(({ id, label, Icon }) => <button key={id} aria-pressed={view === id} onClick={() => setView(id)}><Icon size={16} aria-hidden />{label}</button>)}
-          </div>
-        </div>
-        {!brain && !error && <div className="loading-space" role="status"><Network size={32} aria-hidden /><p>Connecting your experience…</p></div>}
-        {brain && view === "graph" && <BrainGraph brain={brain} onBrowse={() => setView("list")} />}
-        {brain && view === "coverage" && <div className="workspace-panel"><CoverageHeatmap coverage={brain.coverage} /></div>}
-        {brain && view === "list" && <Entities brain={brain} onChanged={(out) => setBrain(out.brain)} />}
         <ReviewQueue
           proposals={proposals}
           competencies={brain?.coverage.competencies ?? []}
@@ -66,6 +56,16 @@ export function BrainScreen() {
             setProposals((prev) => prev.filter((p) => p.id !== id));
           }}
         />
+        <div className="brain-section-heading">
+          <div><h2 className="text-lg font-semibold">Explore your experience</h2><p className="mt-1 text-sm text-muted-foreground">{brain ? `${brain.roles.length + brain.projects.length + brain.stories.length + brain.skills.length + brain.achievements.length + (brain.education?.length ?? 0) + (brain.languages?.length ?? 0)} confirmed entries · ${proposals.length} awaiting review` : "Loading your Digital Garden…"}</p></div>
+          <div className="view-switch" role="group" aria-label="Brain view">
+            {([{ id: "graph", label: "Graph", Icon: Network }, { id: "list", label: "Entries", Icon: List }, { id: "coverage", label: "Coverage", Icon: Grid2X2 }] as const).map(({ id, label, Icon }) => <button key={id} aria-pressed={view === id} onClick={() => setView(id)}><Icon size={16} aria-hidden />{label}</button>)}
+          </div>
+        </div>
+        {!brain && !error && <div className="loading-space" role="status"><Network size={32} aria-hidden /><p>Connecting your experience…</p></div>}
+        {brain && view === "graph" && <BrainGraph brain={brain} onBrowse={() => setView("list")} />}
+        {brain && view === "coverage" && <div className="workspace-panel"><CoverageHeatmap coverage={brain.coverage} /></div>}
+        {brain && view === "list" && <Entities brain={brain} onChanged={(out) => setBrain(out.brain)} />}
       </div>
     </AuthShell>
   );

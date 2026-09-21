@@ -40,7 +40,7 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
   );
 
   return (
-    <section className="brain-map" aria-label="Second brain relationship map">
+    <section className="brain-map" aria-label="Digital Garden relationship map">
       <div className="graph-toolbar">
         <label className="graph-search"><Search size={17} aria-hidden /><span className="sr-only">Search brain graph</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a story, skill, or project…" /></label>
         <label className="sr-only" htmlFor="graph-type">Entry type</label>
@@ -96,7 +96,7 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
             <Network size={25} className="text-primary" aria-hidden />
             <h3>Follow the connections.</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">See how your roles connect to projects, the stories behind them, and the skills they demonstrate.</p>
-            <p className="mt-4 text-xs leading-relaxed text-muted-foreground">Every line is a relationship in your confirmed brain. Achievements without a recorded link stand on their own.</p>
+            <p className="mt-4 text-xs leading-relaxed text-muted-foreground">Every line is a relationship in your confirmed Digital Garden. Certifications, education, and languages without a recorded link stand on their own.</p>
           </>}
           <details className="mt-6 border-t pt-4">
             <summary className="cursor-pointer text-sm font-medium">Find an entry ({matches.length})</summary>

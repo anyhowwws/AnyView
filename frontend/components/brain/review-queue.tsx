@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, confirmProposal, discardProposal } from "@/lib/api";
@@ -26,8 +26,8 @@ export function ReviewQueue({ proposals, competencies, onConfirmed, onDiscarded 
         Review queue <Badge variant="secondary">{proposals.length}</Badge>
       </h2>
       <p className="text-sm text-muted-foreground">
-        Maya proposed these from what you gave her. Edit anything, untick what you don&apos;t
-        want, then confirm. Each card shows the exact words it came from.
+        Donna proposed these from what you gave her. Edit anything, untick what you don&apos;t
+        want, then confirm. Every entry keeps its exact evidence quote.
       </p>
       <AnimatePresence initial={false}>
         {proposals.map((p) => (
@@ -46,7 +46,9 @@ const GROUPS: { key: Group; label: string }[] = [
   { key: "projects", label: "Projects" },
   { key: "stories", label: "Stories" },
   { key: "skills", label: "Skills" },
-  { key: "achievements", label: "Achievements" },
+  { key: "achievements", label: "Certifications & achievements" },
+  { key: "education", label: "Education" },
+  { key: "languages", label: "Languages" },
 ];
 
 function ProposalCard({
@@ -60,7 +62,11 @@ function ProposalCard({
   onConfirmed: Props["onConfirmed"];
   onDiscarded: Props["onDiscarded"];
 }) {
-  const [patch, setPatch] = useState<Patch>(structuredClone(proposal.patch));
+  const [patch, setPatch] = useState<Patch>(() => ({
+    ...structuredClone(proposal.patch),
+    education: proposal.patch.education ?? [],
+    languages: proposal.patch.languages ?? [],
+  }));
   const [dropped, setDropped] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +77,8 @@ function ProposalCard({
     stories: patch.stories.filter((d) => !dropped.has(d.key)),
     skills: patch.skills.filter((d) => !dropped.has(d.key)),
     achievements: patch.achievements.filter((d) => !dropped.has(d.key)),
+    education: patch.education.filter((d) => !dropped.has(d.key)),
+    languages: patch.languages.filter((d) => !dropped.has(d.key)),
   });
   const keptCount = GROUPS.reduce((n, g) => n + patch[g.key].filter((d) => !dropped.has(d.key)).length, 0);
 
@@ -93,25 +101,20 @@ function ProposalCard({
   }
 
   const source =
-    proposal.dump_kind === "text" ? "from a dump" : proposal.dump_kind === "resume_pdf" ? "from a PDF resume" : "from a Word resume";
+    proposal.dump_kind === "text" ? "from a note" : proposal.dump_kind === "resume_pdf" ? "from a PDF resume" : proposal.dump_kind === "resume_docx" ? "from a Word resume" : "from an architecture diagram";
 
   return (
     <Card>
       <CardHeader>
         <CardDescription>
-          Proposal {source} · {new Date(proposal.created_at).toLocaleString()}
+          New proposal {source} · {new Date(proposal.created_at).toLocaleString()}
         </CardDescription>
-        {proposal.dump_excerpt && (
-          <CardTitle className="text-sm font-normal text-muted-foreground line-clamp-2">
-            “{proposal.dump_excerpt}”
-          </CardTitle>
-        )}
       </CardHeader>
       <CardContent className="space-y-5">
         {GROUPS.map(({ key, label }) =>
           patch[key].length ? (
             <div key={key} className="space-y-2">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</h3>
+              <h3 className="review-section-label">{label}</h3>
               {patch[key].map((draft) => (
                 <DraftCard
                   key={draft.key}
@@ -189,7 +192,7 @@ function DraftCard<G extends Group>({
     // A visible caption, so the field keeps its name once it has a value.
     return (
       <label className="flex flex-col gap-0.5">
-        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+        <span className="text-xs font-semibold uppercase tracking-[0.11em] text-foreground/75">{label}</span>
         {multiline ? <Textarea rows={2} {...props} /> : <Input {...props} />}
       </label>
     );
@@ -279,6 +282,15 @@ function DraftCard<G extends Group>({
             {text("achieved_on", "Date (YYYY-MM-DD)")}
           </>
         )}
+        {group === "education" && (
+          <>
+            {text("institution", "Institution")}
+            {text("qualification", "Qualification")}
+            {text("field", "Field of study")}
+            <div className="grid grid-cols-2 gap-2">{text("start_date", "Start (YYYY-MM-DD)")}{text("end_date", "End (YYYY-MM-DD)")}</div>
+          </>
+        )}
+        {group === "languages" && <>{text("name", "Language")}{text("proficiency", "Proficiency")}</>}
       </div>
       <blockquote className="mt-2 border-l-2 pl-2 text-xs text-muted-foreground">“{draft.evidence}”</blockquote>
     </div>

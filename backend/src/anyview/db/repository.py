@@ -29,8 +29,10 @@ from anyview.brain.models import (
     Brain,
     Competency,
     Coverage,
+    Education,
     EntityKind,
     Event,
+    Language,
     Patch,
     Project,
     Proposal,
@@ -47,6 +49,8 @@ TABLE: dict[EntityKind, str] = {
     "story": "stories",
     "skill": "skills",
     "achievement": "achievements",
+    "education": "education",
+    "language": "languages",
 }
 
 
@@ -121,8 +125,7 @@ class Repository:
                     "INSERT INTO proposals (id, user_id, raw_dump_id, patch, model) "
                     "SELECT :id, :uid, :dump, CAST(:patch AS jsonb), :model FROM raw_dumps d "
                     "WHERE d.id = :dump AND d.user_id = :uid "
-                    "RETURNING created_at, (SELECT kind FROM raw_dumps WHERE id = :dump), "
-                    "(SELECT left(text, 400) FROM raw_dumps WHERE id = :dump)"
+                    "RETURNING created_at, (SELECT kind FROM raw_dumps WHERE id = :dump)"
                 ),
                 {
                     "id": pid,
@@ -136,7 +139,7 @@ class Repository:
             raise NotFound("dump")
         return Proposal(
             id=pid, raw_dump_id=dump_id, status="pending", patch=patch, model=model,
-            created_at=row[0], resolved_at=None, dump_kind=row[1], dump_excerpt=row[2],
+            created_at=row[0], resolved_at=None, dump_kind=row[1],
         )  # fmt: skip
 
     def pending_proposals(self, uid: str) -> list[Proposal]:
@@ -144,7 +147,7 @@ class Repository:
             rows = c.execute(
                 _q(
                     "SELECT p.id, p.raw_dump_id, p.status, p.patch, p.model, p.created_at, "
-                    "p.resolved_at, d.kind, left(d.text, 400) "
+                    "p.resolved_at, d.kind "
                     "FROM proposals p JOIN raw_dumps d ON d.id = p.raw_dump_id "
                     "WHERE p.user_id = :uid AND p.status = 'pending' ORDER BY p.created_at"
                 ),
@@ -157,7 +160,7 @@ class Repository:
             row = c.execute(
                 _q(
                     "SELECT p.id, p.raw_dump_id, p.status, p.patch, p.model, p.created_at, "
-                    "p.resolved_at, d.kind, left(d.text, 400) "
+                    "p.resolved_at, d.kind "
                     "FROM proposals p JOIN raw_dumps d ON d.id = p.raw_dump_id "
                     "WHERE p.user_id = :uid AND p.id = :id"
                 ),
@@ -171,7 +174,7 @@ class Repository:
     def _proposal(r) -> Proposal:
         return Proposal(
             id=str(r[0]), raw_dump_id=str(r[1]), status=r[2], patch=Patch.model_validate(r[3]),
-            model=r[4], created_at=r[5], resolved_at=r[6], dump_kind=r[7], dump_excerpt=r[8],
+            model=r[4], created_at=r[5], resolved_at=r[6], dump_kind=r[7],
         )  # fmt: skip
 
     def discard_proposal(self, uid: str, proposal_id: str) -> None:
@@ -318,7 +321,15 @@ class Repository:
         with self.engine.begin() as c:
             c.execute(_q("SELECT 1 FROM users WHERE uid = :uid FOR UPDATE"), {"uid": uid})
             # Order matters for the foreign keys; skill_evidence cascades from skills.
-            for table in ("stories", "skills", "achievements", "projects", "roles"):
+            for table in (
+                "stories",
+                "skills",
+                "achievements",
+                "education",
+                "languages",
+                "projects",
+                "roles",
+            ):
                 c.execute(_q(f"DELETE FROM {table} WHERE user_id = :uid"), {"uid": uid})
             rows = c.execute(
                 _q(
@@ -334,14 +345,16 @@ class Repository:
 
     def brain(self, uid: str) -> Brain:
         with self.engine.begin() as c:
-            roles, projects, stories, skills, achievements = self._entities(c, uid)
+            roles, projects, stories, skills, achievements, education, languages = self._entities(
+                c, uid
+            )
             pending = c.execute(
                 _q("SELECT count(*) FROM proposals WHERE user_id = :uid AND status = 'pending'"),
                 {"uid": uid},
             ).scalar_one()
             competencies = self._competencies(c)
         return Brain(
-            roles=roles, projects=projects, stories=stories, skills=skills, achievements=achievements,
+            roles=roles, projects=projects, stories=stories, skills=skills, achievements=achievements, education=education, languages=languages,
             coverage=_coverage(competencies, roles, projects, stories), pending_proposals=pending,
         )  # fmt: skip
 
@@ -361,7 +374,9 @@ class Repository:
         """One line per live entity for prompts, plus the label → id map so a
         model's reference ("R2") resolves to a real id."""
         with self.engine.begin() as c:
-            roles, projects, stories, skills, achievements = self._entities(c, uid)
+            roles, projects, stories, skills, achievements, education, languages = self._entities(
+                c, uid
+            )
         by_id = {r.id: r for r in roles}
         lines: list[str] = []
         for r in roles:
@@ -378,9 +393,19 @@ class Repository:
             lines.append(f"[{k.label}] {k.name} (depth {k.depth}/5)")
         for a in achievements:
             lines.append(f"[{a.label}] {a.kind}: {a.title}" + (f", {a.issuer}" if a.issuer else ""))
+        for e in education:
+            lines.append(
+                f"[{e.label}] education: {e.institution}"
+                + (f", {e.qualification}" if e.qualification else "")
+            )
+        for language in languages:
+            lines.append(
+                f"[{language.label}] language: {language.name}"
+                + (f", {language.proficiency}" if language.proficiency else "")
+            )
         labels = {
             e.label: e.id
-            for group in (roles, projects, stories, skills, achievements)
+            for group in (roles, projects, stories, skills, achievements, education, languages)
             for e in group
         }
         return "\n".join(lines), labels
@@ -390,7 +415,9 @@ class Repository:
         prompts: fuller than the index, still one entity per block, labels kept
         so answers can cite them."""
         with self.engine.begin() as c:
-            roles, projects, stories, skills, achievements = self._entities(c, uid)
+            roles, projects, stories, skills, achievements, education, languages = self._entities(
+                c, uid
+            )
         role_by_id = {r.id: r for r in roles}
         out: list[str] = []
         for r in roles:
@@ -415,10 +442,24 @@ class Repository:
             out.append("## Skills")
             out.extend(f"[{k.label}] {k.name} — self-rated {k.depth}/5" for k in skills)
         if achievements:
-            out.append("## Achievements and credentials")
+            out.append("## Achievements and certifications")
             out.extend(
                 f"[{a.label}] {a.title}" + (f" ({a.issuer})" if a.issuer else "")
                 for a in achievements
+            )
+        if education:
+            out.append("## Education")
+            out.extend(
+                f"[{e.label}] {e.institution}"
+                + (f" — {e.qualification}" if e.qualification else "")
+                for e in education
+            )
+        if languages:
+            out.append("## Languages")
+            out.extend(
+                f"[{language.label}] {language.name}"
+                + (f" — {language.proficiency}" if language.proficiency else "")
+                for language in languages
             )
         return "\n".join(out)
 
@@ -460,17 +501,27 @@ class Repository:
         return [Competency(key=r[0], label=r[1]) for r in rows]
 
     def _labels(self, c: Connection, uid: str) -> dict[str, str]:
-        roles, projects, stories, skills, achievements = self._entities(c, uid)
+        roles, projects, stories, skills, achievements, education, languages = self._entities(
+            c, uid
+        )
         return {
             e.label: e.id
-            for group in (roles, projects, stories, skills, achievements)
+            for group in (roles, projects, stories, skills, achievements, education, languages)
             for e in group
         }
 
     @staticmethod
     def _entities(
         c: Connection, uid: str
-    ) -> tuple[list[Role], list[Project], list[Story], list[Skill], list[Achievement]]:
+    ) -> tuple[
+        list[Role],
+        list[Project],
+        list[Story],
+        list[Skill],
+        list[Achievement],
+        list[Education],
+        list[Language],
+    ]:
         """Live entities in creation order (event id, then id) — the order labels
         are numbered in, so a label is stable until something before it retires."""
 
@@ -584,7 +635,40 @@ class Repository:
                 1,
             )
         ]
-        return roles, projects, stories, skills, achievements
+        education = [
+            Education(
+                id=str(r[0]),
+                label=f"E{i}",
+                institution=r[1],
+                qualification=r[2],
+                field=r[3],
+                start_date=r[4],
+                end_date=r[5],
+                source=Provenance(raw_dump_id=str(r[6]), event_id=r[7]),
+            )
+            for i, r in enumerate(
+                rows(
+                    "SELECT id, institution, qualification, field, start_date, end_date, raw_dump_id, event_id FROM education WHERE user_id = :uid"
+                ),
+                1,
+            )
+        ]
+        languages = [
+            Language(
+                id=str(r[0]),
+                label=f"L{i}",
+                name=r[1],
+                proficiency=r[2],
+                source=Provenance(raw_dump_id=str(r[3]), event_id=r[4]),
+            )
+            for i, r in enumerate(
+                rows(
+                    "SELECT id, name, proficiency, raw_dump_id, event_id FROM languages WHERE user_id = :uid"
+                ),
+                1,
+            )
+        ]
+        return roles, projects, stories, skills, achievements, education, languages
 
 
 # --- Resolving a reviewed patch into an event payload -----------------------
@@ -612,6 +696,8 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
         ("story", patch.stories),
         ("skill", patch.skills),
         ("achievement", patch.achievements),
+        ("education", patch.education),
+        ("language", patch.languages),
     ):
         mint(drafts, kind)
 
@@ -682,6 +768,21 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
                 "achieved_on": d.achieved_on,
             }  # fmt: skip
             for d in patch.achievements
+        ],
+        "education": [
+            {
+                "id": ids[d.key],
+                "institution": d.institution,
+                "qualification": d.qualification,
+                "field": d.field,
+                "start_date": d.start_date,
+                "end_date": d.end_date,
+            }
+            for d in patch.education
+        ],
+        "languages": [
+            {"id": ids[d.key], "name": d.name, "proficiency": d.proficiency}
+            for d in patch.languages
         ],
     }
 
@@ -764,6 +865,23 @@ def _apply_patch(c: Connection, uid: str, event_id: int, p: dict) -> None:
                 "ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind, title = EXCLUDED.title, "
                 "issuer = EXCLUDED.issuer, achieved_on = EXCLUDED.achieved_on, "
                 "raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
+            ),
+            {**base, **r},
+        )
+    for r in p.get("education", []):
+        c.execute(
+            _q(
+                "INSERT INTO education (id, user_id, institution, qualification, field, start_date, end_date, raw_dump_id, event_id) "
+                "VALUES (:id, :uid, :institution, :qualification, :field, :start_date, :end_date, :d, :e) "
+                "ON CONFLICT (id) DO UPDATE SET institution = EXCLUDED.institution, qualification = EXCLUDED.qualification, field = EXCLUDED.field, start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date, raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
+            ),
+            {**base, **r},
+        )
+    for r in p.get("languages", []):
+        c.execute(
+            _q(
+                "INSERT INTO languages (id, user_id, name, proficiency, raw_dump_id, event_id) VALUES (:id, :uid, :name, :proficiency, :d, :e) "
+                "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, proficiency = EXCLUDED.proficiency, raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
             ),
             {**base, **r},
         )

@@ -76,7 +76,7 @@ async function request<T>(method: "GET" | "PATCH" | "DELETE", path: string): Pro
   return (await res.json()) as T;
 }
 
-// --- The second brain -------------------------------------------------------
+// --- The Digital Garden -----------------------------------------------------
 
 export interface EventOut {
   event: BrainEvent;

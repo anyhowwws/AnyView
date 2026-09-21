@@ -36,8 +36,8 @@ class ExtractionFailed(Exception):
 
 def extraction_system(brain_index: str) -> str:
     index = brain_index.strip() or "(empty — this is the first dump)"
-    return f"""You maintain a job-seeker's "second brain": a structured record of their roles,
-projects, stories, skills, and achievements, built only from what they tell you.
+    return f"""You maintain a job-seeker's "Digital Garden": a structured record of their roles,
+projects, stories, skills, certifications, education, languages, and achievements, built only from what they tell you.
 
 You will be given one new dump of text. Propose what it adds or changes, as a patch.
 
@@ -52,7 +52,7 @@ Rules:
 - If the dump is about an entity already in the brain, reference it: set `existing` to its
   label (e.g. "R2") and give the full updated fields. Never create a duplicate of something
   in the index.
-- Give every draft a short `key` ("r1", "p1", "s1", "k1", "a1", numbered within this patch)
+- Give every draft a short `key` ("r1", "p1", "s1", "k1", "a1", "e1", "l1", numbered within this patch)
   and use keys or existing labels to link: a project's `role`, a story's `role`/`project`,
   a skill's `projects`.
 - `evidence` must be a verbatim quote from the dump (a sentence or fragment, under 300
@@ -167,8 +167,36 @@ PATCH_SCHEMA = {
                 ["kind", "title", "issuer", "achieved_on"],
             ),
         },
+        "education": {
+            "type": "array",
+            "items": _draft(
+                {
+                    "institution": _STR,
+                    "qualification": _S,
+                    "field": _S,
+                    "start_date": _S,
+                    "end_date": _S,
+                },
+                ["institution", "qualification", "field", "start_date", "end_date"],
+            ),
+        },
+        "languages": {
+            "type": "array",
+            "items": _draft(
+                {"name": _STR, "proficiency": _S},
+                ["name", "proficiency"],
+            ),
+        },
     },
-    "required": ["roles", "projects", "stories", "skills", "achievements"],
+    "required": [
+        "roles",
+        "projects",
+        "stories",
+        "skills",
+        "achievements",
+        "education",
+        "languages",
+    ],
     "additionalProperties": False,
 }
 
@@ -188,14 +216,14 @@ def propose(dump_text: str, *, brain_index: str, model: Model, session_id: str) 
         max_tokens=8192,
     )
     if reply.refused:
-        raise ExtractionFailed("Maya declined to read that dump.")
+        raise ExtractionFailed("Donna declined to read that dump.")
     if reply.truncated or reply.data is None:
         raise ExtractionFailed("That dump is too long to read in one go. Try a shorter one.")
     try:
         patch = Patch.model_validate(reply.data)
     except ValidationError as exc:
         log.warning("extraction returned a malformed patch: %s", exc)
-        raise ExtractionFailed("Maya's proposal came back malformed. Please try again.") from exc
+        raise ExtractionFailed("Donna's proposal came back malformed. Please try again.") from exc
     return _keep_only_evidenced(patch, dump_text)
 
 
@@ -216,12 +244,22 @@ def _keep_only_evidenced(patch: Patch, dump_text: str) -> Patch:
         stories=[d for d in patch.stories if ok(d)],
         skills=[d for d in patch.skills if ok(d)],
         achievements=[d for d in patch.achievements if ok(d)],
+        education=[d for d in patch.education if ok(d)],
+        languages=[d for d in patch.languages if ok(d)],
     )
     # A dropped draft may be referenced by a kept one; sever those links rather
     # than fail the whole patch (the user can re-link in the queue).
     keys = {
         d.key
-        for g in (kept.roles, kept.projects, kept.stories, kept.skills, kept.achievements)
+        for g in (
+            kept.roles,
+            kept.projects,
+            kept.stories,
+            kept.skills,
+            kept.achievements,
+            kept.education,
+            kept.languages,
+        )
         for d in g
     }
 

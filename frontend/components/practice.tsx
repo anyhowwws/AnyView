@@ -96,7 +96,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, busy, error }: P
           className="min-h-40 space-y-4"
         >
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Maya · {question.competency}
+            Donna · {question.competency}
           </p>
           <p className="text-xl leading-relaxed sm:text-2xl" aria-hidden={streaming}>
             {text}
@@ -104,7 +104,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, busy, error }: P
           </p>
           {/* One announcement per question for screen readers, not one per token. */}
           <p className="sr-only" role="status">
-            {streaming ? "Maya is speaking." : text}
+            {streaming ? "Donna is speaking." : text}
           </p>
           {streamError && (
             <div className="flex flex-wrap items-center gap-3 text-sm text-destructive" role="alert">
@@ -152,7 +152,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, busy, error }: P
 
 function TypingDots() {
   return (
-    <span className="ml-1 inline-flex gap-0.5 align-middle" aria-label="Maya is typing">
+    <span className="ml-1 inline-flex gap-0.5 align-middle" aria-label="Donna is typing">
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}

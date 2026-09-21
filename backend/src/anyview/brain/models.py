@@ -24,14 +24,24 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-EntityKind = Literal["role", "project", "story", "skill", "achievement"]
-KINDS: tuple[EntityKind, ...] = ("role", "project", "story", "skill", "achievement")
+EntityKind = Literal["role", "project", "story", "skill", "achievement", "education", "language"]
+KINDS: tuple[EntityKind, ...] = (
+    "role",
+    "project",
+    "story",
+    "skill",
+    "achievement",
+    "education",
+    "language",
+)
 LABEL_PREFIX: dict[EntityKind, str] = {
     "role": "R",
     "project": "P",
     "story": "S",
     "skill": "K",
     "achievement": "A",
+    "education": "E",
+    "language": "L",
 }
 
 
@@ -86,15 +96,38 @@ class AchievementDraft(Draft):
     achieved_on: dt.date | None = None
 
 
+class EducationDraft(Draft):
+    institution: str = Field(min_length=1, max_length=200)
+    qualification: str | None = Field(default=None, max_length=200)
+    field: str | None = Field(default=None, max_length=200)
+    start_date: dt.date | None = None
+    end_date: dt.date | None = None
+
+
+class LanguageDraft(Draft):
+    name: str = Field(min_length=1, max_length=100)
+    proficiency: str | None = Field(default=None, max_length=100)
+
+
 class Patch(BaseModel):
     roles: list[RoleDraft] = []
     projects: list[ProjectDraft] = []
     stories: list[StoryDraft] = []
     skills: list[SkillDraft] = []
     achievements: list[AchievementDraft] = []
+    education: list[EducationDraft] = []
+    languages: list[LanguageDraft] = []
 
     def is_empty(self) -> bool:
-        return not (self.roles or self.projects or self.stories or self.skills or self.achievements)
+        return not (
+            self.roles
+            or self.projects
+            or self.stories
+            or self.skills
+            or self.achievements
+            or self.education
+            or self.languages
+        )
 
 
 # --- The brain as the app reads it ------------------------------------------
@@ -162,6 +195,25 @@ class Achievement(BaseModel):
     source: Provenance
 
 
+class Education(BaseModel):
+    id: str
+    label: str
+    institution: str
+    qualification: str | None
+    field: str | None
+    start_date: dt.date | None
+    end_date: dt.date | None
+    source: Provenance
+
+
+class Language(BaseModel):
+    id: str
+    label: str
+    name: str
+    proficiency: str | None
+    source: Provenance
+
+
 class Competency(BaseModel):
     key: str
     label: str
@@ -185,13 +237,15 @@ class Brain(BaseModel):
     stories: list[Story]
     skills: list[Skill]
     achievements: list[Achievement]
+    education: list[Education]
+    languages: list[Language]
     coverage: Coverage
     pending_proposals: int
 
 
 class RawDump(BaseModel):
     id: str
-    kind: Literal["text", "resume_pdf", "resume_docx"]
+    kind: Literal["text", "resume_pdf", "resume_docx", "diagram_image"]
     text: str
     object_name: str | None
     created_at: dt.datetime
@@ -205,9 +259,8 @@ class Proposal(BaseModel):
     model: str
     created_at: dt.datetime
     resolved_at: dt.datetime | None
-    # Filled in for the queue: the dump's text so the UI can show the source.
-    dump_kind: Literal["text", "resume_pdf", "resume_docx"] | None = None
-    dump_excerpt: str | None = None
+    # Filled in for the queue so it can name the source without sending its text.
+    dump_kind: Literal["text", "resume_pdf", "resume_docx", "diagram_image"] | None = None
 
 
 class Event(BaseModel):
@@ -229,4 +282,6 @@ EDITABLE: dict[EntityKind, frozenset[str]] = {
     ),
     "skill": frozenset({"name", "depth", "project_ids"}),
     "achievement": frozenset({"kind", "title", "issuer", "achieved_on"}),
+    "education": frozenset({"institution", "qualification", "field", "start_date", "end_date"}),
+    "language": frozenset({"name", "proficiency"}),
 }
