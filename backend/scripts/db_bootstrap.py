@@ -65,6 +65,17 @@ def main() -> None:
         f"ALTER DATABASE {quoted(DB)} OWNER TO {api}",
         f"ALTER SCHEMA public OWNER TO {api}",
         f"GRANT ALL ON SCHEMA public TO {api}",
+        # Schema ownership only covers CREATE/USAGE on the schema itself — it
+        # does not retroactively grant privileges on tables that already
+        # exist inside it (e.g. created by a manual break-glass migration run
+        # as the owner IAM user before this script's first run, which is
+        # exactly what happened in production: every brain table ended up
+        # owned by the owner, and the API got "permission denied" on its own
+        # tables). Without these, that gap resurfaces any time a table gets
+        # created by a role other than the API's own. Idempotent and safe to
+        # re-run after every migration that adds a table.
+        f"GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO {api}",
+        f"GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO {api}",
         f"GRANT {api} TO {owner}",
     ]
     with Connector() as connector:
