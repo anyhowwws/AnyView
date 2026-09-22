@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { MotionConfig } from "framer-motion";
@@ -8,7 +8,18 @@ import { SignIn } from "@/components/sign-in";
 import { Button } from "@/components/ui/button";
 import { getBrain } from "@/lib/api";
 import { signOut, useAuth } from "@/lib/auth";
-import { Brain, AudioLines } from "lucide-react";
+import { Brain, AudioLines, Loader2 } from "lucide-react";
+
+/** `useLinkStatus` only works inside a child of the `Link` it reports on, so
+ *  the spinner has to be its own component rather than inlined above. Without
+ *  this, a tab click gives no feedback until the destination route is fully
+ *  fetched and rendered — on a cold or slow load that can take a beat, and in
+ *  that gap the tab looks unresponsive even though the click registered. */
+function NavPending() {
+  const { pending } = useLinkStatus();
+  if (!pending) return null;
+  return <Loader2 size={13} className="ml-0.5 animate-spin" aria-hidden />;
+}
 
 /** Sign-in gate + top nav around every screen. The Brain badge is the
  *  pending-proposal count; a screen that knows a fresher number passes it. */
@@ -47,6 +58,7 @@ export function AuthShell({ children, pending }: { children: React.ReactNode; pe
           {count}
         </span>
       ) : null}
+      <NavPending />
     </Link>
   );
 
