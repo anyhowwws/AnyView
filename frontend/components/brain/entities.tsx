@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ApiError, editEntity, getDump, retireEntity, type EventOut } from "@/lib/api";
-import type { Achievement, Brain, Education, EntityKind, Language, Project, Role, Skill, Story } from "@/lib/types";
+import type { Achievement, Brain, Education, EntityKind, Feedback, Language, Project, Role, Skill, Story } from "@/lib/types";
 
 interface Props {
   brain: Brain;
@@ -20,8 +20,9 @@ export function Entities({ brain, onChanged }: Props) {
   // During a rolling deploy an older API response can lack newly added arrays.
   const education = brain.education ?? [];
   const languages = brain.languages ?? [];
+  const feedback = brain.feedback ?? [];
   const labelOf = new Map<string, string>(
-    [...brain.roles, ...brain.projects, ...brain.stories, ...brain.skills, ...brain.achievements, ...education, ...languages].map((e) => [e.id, e.label]),
+    [...brain.roles, ...brain.projects, ...brain.stories, ...brain.skills, ...brain.achievements, ...education, ...languages, ...feedback].map((e) => [e.id, e.label]),
   );
   const projectsOf = (roleId: string | null) => brain.projects.filter((p) => p.role_id === roleId);
   const storiesOf = (roleId: string | null, projectId: string | null) =>
@@ -30,12 +31,12 @@ export function Entities({ brain, onChanged }: Props) {
   const orphanStories = brain.stories.filter(
     (s) => !s.project_id && (!s.role_id || !brain.roles.some((r) => r.id === s.role_id)),
   );
-  const empty = brain.roles.length + brain.projects.length + brain.stories.length + brain.skills.length + brain.achievements.length + education.length + languages.length === 0;
+  const empty = brain.roles.length + brain.projects.length + brain.stories.length + brain.skills.length + brain.achievements.length + education.length + languages.length + feedback.length === 0;
 
   if (empty) {
     return (
       <section className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-        Your Digital Garden is empty. Capture a role, project, story, certification, education entry, language, or upload a resume or diagram.
+        Your Digital Garden is empty. Capture a role, project, story, certification, education entry, language, feedback, or upload a resume or diagram.
       </section>
     );
   }
@@ -119,6 +120,14 @@ export function Entities({ brain, onChanged }: Props) {
           </div>
         </div>
       )}
+      {feedback.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium text-muted-foreground">Feedback</h3>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {feedback.map((f) => <FeedbackCard key={f.id} feedback={f} labelOf={labelOf} onChanged={onChanged} />)}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
@@ -143,7 +152,22 @@ function StoryCard({ story, labelOf, onChanged }: { story: Story; labelOf: Map<s
   );
 }
 
-type Entity = Role | Project | Story | Skill | Achievement | Education | Language;
+function FeedbackCard({ feedback, labelOf, onChanged }: { feedback: Feedback; labelOf: Map<string, string>; onChanged: Props["onChanged"] }) {
+  const about = feedback.project_id
+    ? labelOf.get(feedback.project_id)
+    : feedback.role_id
+      ? labelOf.get(feedback.role_id)
+      : undefined;
+  return (
+    <EntityCard kind="feedback" entity={feedback} title={feedback.given_by} onChanged={onChanged}
+      meta={[feedback.content, feedback.received_on].filter(Boolean).join(" · ")}
+      fields={[["given_by", "Who said it"], ["content", "What they said", true], ["received_on", "Date (YYYY-MM-DD)"]]}
+      footnote={about ? `about ${about}` : undefined}
+    />
+  );
+}
+
+type Entity = Role | Project | Story | Skill | Achievement | Education | Language | Feedback;
 type FieldSpec = [name: string, label: string, multiline?: boolean];
 
 function EntityCard({

@@ -161,7 +161,7 @@ export interface Report {
 
 // --- The Digital Garden (mirrors backend/src/anyview/brain/models.py) -------
 
-export type EntityKind = "role" | "project" | "story" | "skill" | "achievement" | "education" | "language";
+export type EntityKind = "role" | "project" | "story" | "skill" | "achievement" | "education" | "language" | "feedback";
 
 export interface Provenance {
   raw_dump_id: string;
@@ -244,6 +244,17 @@ export interface Language {
   source: Provenance;
 }
 
+export interface Feedback {
+  id: string;
+  label: string;
+  role_id: string | null;
+  project_id: string | null;
+  given_by: string;
+  content: string;
+  received_on: string | null;
+  source: Provenance;
+}
+
 export interface Competency {
   key: string;
   label: string;
@@ -265,6 +276,7 @@ export interface Brain {
   achievements: Achievement[];
   education: Education[];
   languages: Language[];
+  feedback: Feedback[];
   coverage: Coverage;
   pending_proposals: number;
 }
@@ -323,6 +335,13 @@ export interface LanguageDraft extends Draft {
   name: string;
   proficiency: string | null;
 }
+export interface FeedbackDraft extends Draft {
+  role: string | null;
+  project: string | null;
+  given_by: string;
+  content: string;
+  received_on: string | null;
+}
 export interface Patch {
   roles: RoleDraft[];
   projects: ProjectDraft[];
@@ -331,6 +350,7 @@ export interface Patch {
   achievements: AchievementDraft[];
   education: EducationDraft[];
   languages: LanguageDraft[];
+  feedback: FeedbackDraft[];
 }
 
 export interface Proposal {

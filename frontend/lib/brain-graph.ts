@@ -10,9 +10,9 @@ export interface BrainNode {
 }
 export interface BrainEdge { from: string; to: string; relation: string }
 
-export const GRAPH_KINDS: EntityKind[] = ["role", "project", "story", "skill", "achievement", "education", "language"];
+export const GRAPH_KINDS: EntityKind[] = ["role", "project", "story", "skill", "achievement", "education", "language", "feedback"];
 export const KIND_NAMES: Record<EntityKind, string> = {
-  role: "Roles", project: "Projects", story: "Stories", skill: "Skills", achievement: "Certifications", education: "Education", language: "Languages",
+  role: "Roles", project: "Projects", story: "Stories", skill: "Skills", achievement: "Certifications", education: "Education", language: "Languages", feedback: "Feedback",
 };
 
 /** Read-only view of confirmed relationships. No inferred or synthetic edges. */
@@ -25,6 +25,7 @@ export function buildBrainGraph(brain: Brain): { nodes: BrainNode[]; edges: Brai
     ...brain.achievements.map((a) => ({ ...a, kind: "achievement" as const, detail: [a.kind, a.issuer, a.achieved_on].filter(Boolean).join(" · ") })),
     ...(brain.education ?? []).map((e) => ({ ...e, kind: "education" as const, title: e.institution, detail: [e.qualification, e.field, e.start_date, e.end_date].filter(Boolean).join(" · ") })),
     ...(brain.languages ?? []).map((l) => ({ ...l, kind: "language" as const, title: l.name, detail: l.proficiency ?? "Proficiency not recorded" })),
+    ...(brain.feedback ?? []).map((f) => ({ ...f, kind: "feedback" as const, title: f.given_by, detail: f.content })),
   ];
   const ids = new Set(nodes.map((n) => n.id));
   const edges: BrainEdge[] = [];
@@ -37,5 +38,9 @@ export function buildBrainGraph(brain: Brain): { nodes: BrainNode[]; edges: Brai
     link(s.project_id, s.id, "Story from project");
   });
   brain.skills.forEach((s) => s.project_ids.forEach((p) => link(p, s.id, "Evidence for skill")));
+  (brain.feedback ?? []).forEach((f) => {
+    link(f.role_id, f.id, "Feedback on role");
+    link(f.project_id, f.id, "Feedback on project");
+  });
   return { nodes, edges };
 }

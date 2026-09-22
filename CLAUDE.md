@@ -71,6 +71,12 @@ Backend modules:
   `active_resume` / `set_active_resume` are the resume on file; `dump_with_text` is the re-upload no-op check.
 - `anyview/brain/{models,extract}.py` — Patch drafts with verbatim evidence, the brain as read, coverage; the dump → Patch extraction call with the evidence check
   and `drop_unchanged`, which keeps drafts restating already-confirmed entities out of the review queue (ADR 0015).
+  Entity kinds: role, project, story, skill, achievement, education, language, **feedback** (label prefix `F`) —
+  a quote or close paraphrase of what someone else said about the candidate's work, optionally linked to the
+  role or project it concerns. Adding a kind touches `EntityKind`/`KINDS`/`LABEL_PREFIX`/`EDITABLE` in
+  `brain/models.py`, `TABLE` + every `_entities()` caller in `db/repository.py`, the extraction schema and
+  prompt in `brain/extract.py`, and on the frontend `types.ts`, `capture-templates.ts` (the dropdown),
+  `lib/brain-graph.ts` (nodes/edges) and `components/brain/{entities,review-queue,brain-graph}.tsx`.
 - `backend/migrations/NNN_*.sql` — the schema. Additive only; the DB enforces provenance, append-only events, the competency taxonomy, one live skill per name.
 
 ## Commands

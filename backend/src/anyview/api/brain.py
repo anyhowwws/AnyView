@@ -167,7 +167,9 @@ def discard_proposal(proposal_id: str, user: CurrentUser, repo: RepoDep) -> Brai
     return repo.brain(user.uid)
 
 
-Kind = Literal["role", "project", "story", "skill", "achievement", "education", "language"]
+Kind = Literal[
+    "role", "project", "story", "skill", "achievement", "education", "language", "feedback"
+]
 
 
 @router.patch("/entities/{kind}/{entity_id}", response_model=EventOut)

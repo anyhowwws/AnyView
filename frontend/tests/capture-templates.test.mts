@@ -36,3 +36,36 @@ test("requires only the identifying fields in formatted mode", () => {
     true,
   );
 });
+
+test("formats feedback fields into evidence-friendly source text", () => {
+  assert.equal(
+    formatCapture(
+      "feedback",
+      {
+        given_by: "Manager, 2024 review",
+        content: "You owned that migration end to end.",
+        received_on: "2024-11-01",
+      },
+      "",
+    ),
+    "Feedback entry:\n" +
+      "Who said it: Manager, 2024 review\n" +
+      "What they said: You owned that migration end to end.\n" +
+      "When: 2024-11-01",
+  );
+});
+
+test("feedback requires who said it and what they said", () => {
+  assert.equal(formattedCaptureIsValid("feedback", {}), false);
+  assert.equal(
+    formattedCaptureIsValid("feedback", { given_by: "Manager" }),
+    false,
+  );
+  assert.equal(
+    formattedCaptureIsValid("feedback", {
+      given_by: "Manager",
+      content: "Great work.",
+    }),
+    true,
+  );
+});

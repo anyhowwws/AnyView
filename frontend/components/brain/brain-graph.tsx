@@ -7,7 +7,7 @@ import type { Brain, EntityKind } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { constellation, visibleConstellationLabels } from "@/lib/constellation";
 
-const COLORS: Record<EntityKind, string> = { role: "#ffbe72", project: "#75e4cf", story: "#a5a3ff", skill: "#76c8ff", achievement: "#f1d78a", education: "#ed9dbf", language: "#b7da87" };
+const COLORS: Record<EntityKind, string> = { role: "#ffbe72", project: "#75e4cf", story: "#a5a3ff", skill: "#76c8ff", achievement: "#f1d78a", education: "#ed9dbf", language: "#b7da87", feedback: "#f2977a" };
 
 export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => void }) {
   const { nodes, edges } = useMemo(() => buildBrainGraph(brain), [brain]);

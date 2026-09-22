@@ -24,7 +24,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-EntityKind = Literal["role", "project", "story", "skill", "achievement", "education", "language"]
+EntityKind = Literal[
+    "role", "project", "story", "skill", "achievement", "education", "language", "feedback"
+]
 KINDS: tuple[EntityKind, ...] = (
     "role",
     "project",
@@ -33,6 +35,7 @@ KINDS: tuple[EntityKind, ...] = (
     "achievement",
     "education",
     "language",
+    "feedback",
 )
 LABEL_PREFIX: dict[EntityKind, str] = {
     "role": "R",
@@ -42,6 +45,7 @@ LABEL_PREFIX: dict[EntityKind, str] = {
     "achievement": "A",
     "education": "E",
     "language": "L",
+    "feedback": "F",
 }
 
 
@@ -109,6 +113,14 @@ class LanguageDraft(Draft):
     proficiency: str | None = Field(default=None, max_length=100)
 
 
+class FeedbackDraft(Draft):
+    role: str | None = None  # a role draft key ("r1") or an existing label ("R2")
+    project: str | None = None
+    given_by: str = Field(min_length=1, max_length=200)  # who said it, or where it came from
+    content: str = Field(min_length=1, max_length=2000)  # the feedback itself, verbatim or close
+    received_on: dt.date | None = None
+
+
 class Patch(BaseModel):
     roles: list[RoleDraft] = []
     projects: list[ProjectDraft] = []
@@ -117,6 +129,7 @@ class Patch(BaseModel):
     achievements: list[AchievementDraft] = []
     education: list[EducationDraft] = []
     languages: list[LanguageDraft] = []
+    feedback: list[FeedbackDraft] = []
 
     def is_empty(self) -> bool:
         return not (
@@ -127,6 +140,7 @@ class Patch(BaseModel):
             or self.achievements
             or self.education
             or self.languages
+            or self.feedback
         )
 
 
@@ -214,6 +228,17 @@ class Language(BaseModel):
     source: Provenance
 
 
+class Feedback(BaseModel):
+    id: str
+    label: str
+    role_id: str | None
+    project_id: str | None
+    given_by: str
+    content: str
+    received_on: dt.date | None
+    source: Provenance
+
+
 class Competency(BaseModel):
     key: str
     label: str
@@ -239,6 +264,7 @@ class Brain(BaseModel):
     achievements: list[Achievement]
     education: list[Education]
     languages: list[Language]
+    feedback: list[Feedback]
     coverage: Coverage
     pending_proposals: int
 
@@ -284,4 +310,5 @@ EDITABLE: dict[EntityKind, frozenset[str]] = {
     "achievement": frozenset({"kind", "title", "issuer", "achieved_on"}),
     "education": frozenset({"institution", "qualification", "field", "start_date", "end_date"}),
     "language": frozenset({"name", "proficiency"}),
+    "feedback": frozenset({"given_by", "content", "received_on", "role_id", "project_id"}),
 }

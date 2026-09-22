@@ -51,8 +51,8 @@ screening call would have taken at face value."""
 
 GARDEN_NOTE = (
     "Entries in <digital_garden> carry labels — [R1] role, [P2] project, [S3] story, "
-    "[K1] skill, [A1] achievement, [E1] education, [L1] language. Cite those labels "
-    "when you refer to one."
+    "[K1] skill, [A1] achievement, [E1] education, [L1] language, [F1] feedback. Cite these "
+    "labels when you refer to one."
 )
 
 

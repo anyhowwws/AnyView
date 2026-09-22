@@ -49,6 +49,7 @@ const GROUPS: { key: Group; label: string }[] = [
   { key: "achievements", label: "Certifications & achievements" },
   { key: "education", label: "Education" },
   { key: "languages", label: "Languages" },
+  { key: "feedback", label: "Feedback" },
 ];
 
 function ProposalCard({
@@ -66,6 +67,7 @@ function ProposalCard({
     ...structuredClone(proposal.patch),
     education: proposal.patch.education ?? [],
     languages: proposal.patch.languages ?? [],
+    feedback: proposal.patch.feedback ?? [],
   }));
   const [dropped, setDropped] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -79,6 +81,7 @@ function ProposalCard({
     achievements: patch.achievements.filter((d) => !dropped.has(d.key)),
     education: patch.education.filter((d) => !dropped.has(d.key)),
     languages: patch.languages.filter((d) => !dropped.has(d.key)),
+    feedback: patch.feedback.filter((d) => !dropped.has(d.key)),
   });
   const keptCount = GROUPS.reduce((n, g) => n + patch[g.key].filter((d) => !dropped.has(d.key)).length, 0);
 
@@ -291,6 +294,13 @@ function DraftCard<G extends Group>({
           </>
         )}
         {group === "languages" && <>{text("name", "Language")}{text("proficiency", "Proficiency")}</>}
+        {group === "feedback" && (
+          <>
+            {text("given_by", "Who said it")}
+            <div className="sm:col-span-2">{text("content", "What they said", true)}</div>
+            {text("received_on", "Date (YYYY-MM-DD)")}
+          </>
+        )}
       </div>
       <blockquote className="mt-2 border-l-2 pl-2 text-xs text-muted-foreground">“{draft.evidence}”</blockquote>
     </div>

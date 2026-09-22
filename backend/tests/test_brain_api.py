@@ -185,3 +185,48 @@ def test_brain_routes_require_sign_in(signed_in):
     c = TestClient(app)
     assert c.get("/brain").status_code == 401
     assert c.post("/brain/dumps", json={"text": DUMP}).status_code == 401
+
+
+def test_feedback_flows_through_the_review_queue(client):
+    fake = FakeModel(
+        {
+            "propose": {
+                "roles": [],
+                "projects": [],
+                "stories": [],
+                "skills": [],
+                "achievements": [],
+                "feedback": [
+                    {
+                        "key": "f1",
+                        "existing": None,
+                        "role": None,
+                        "project": None,
+                        "given_by": "Manager, 2024 review",
+                        "content": "You owned the migration end to end.",
+                        "received_on": "2024-11-01",
+                        "evidence": "You owned the migration end to end.",
+                    }
+                ],
+            }
+        }
+    )
+    app.dependency_overrides[interview.get_model] = lambda: fake
+    p = _dump(client, text="You owned the migration end to end.")
+    assert p["patch"]["feedback"][0]["given_by"] == "Manager, 2024 review"
+
+    r = client.post(f"/brain/proposals/{p['id']}/confirm", json={"patch": p["patch"]})
+    assert r.status_code == 200, r.text
+    feedback = r.json()["brain"]["feedback"]
+    assert feedback[0]["content"] == "You owned the migration end to end."
+
+    r = client.patch(
+        f"/brain/entities/feedback/{feedback[0]['id']}",
+        json={"fields": {"content": "Edited in review"}},
+    )
+    assert (
+        r.status_code == 200 and r.json()["brain"]["feedback"][0]["content"] == "Edited in review"
+    )
+
+    r = client.delete(f"/brain/entities/feedback/{feedback[0]['id']}")
+    assert r.status_code == 200 and r.json()["brain"]["feedback"] == []

@@ -64,7 +64,7 @@ export function BrainScreen() {
           }}
         />
         <div className="brain-section-heading">
-          <div><h2 className="text-lg font-semibold">Explore your experience</h2><p className="mt-1 text-sm text-muted-foreground">{brain ? `${brain.roles.length + brain.projects.length + brain.stories.length + brain.skills.length + brain.achievements.length + (brain.education?.length ?? 0) + (brain.languages?.length ?? 0)} confirmed entries · ${proposals.length} awaiting review` : "Loading your Digital Garden…"}</p></div>
+          <div><h2 className="text-lg font-semibold">Explore your experience</h2><p className="mt-1 text-sm text-muted-foreground">{brain ? `${brain.roles.length + brain.projects.length + brain.stories.length + brain.skills.length + brain.achievements.length + (brain.education?.length ?? 0) + (brain.languages?.length ?? 0) + (brain.feedback?.length ?? 0)} confirmed entries · ${proposals.length} awaiting review` : "Loading your Digital Garden…"}</p></div>
           <div className="view-switch" role="group" aria-label="Brain view">
             {([{ id: "graph", label: "Graph", Icon: Network }, { id: "list", label: "Entries", Icon: List }, { id: "coverage", label: "Coverage", Icon: Grid2X2 }] as const).map(({ id, label, Icon }) => <button key={id} aria-pressed={view === id} onClick={() => setView(id)}><Icon size={16} aria-hidden />{label}</button>)}
           </div>
