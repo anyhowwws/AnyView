@@ -62,6 +62,13 @@ def main() -> None:
         # ownership. Without this line, the ALTER statements below fail with
         # "must be able to SET ROLE".
         f"GRANT {api} TO postgres",
+        f"GRANT {owner} TO postgres",
+        # Earlier production migrations ran through the owner's break-glass
+        # connection, so their tables predate the API ownership convention.
+        # Table DDL (including ALTER TABLE) requires ownership; grants alone
+        # cannot make the startup migration runner work. This is scoped to
+        # objects owned by this app's configured DB owner in this database.
+        f"REASSIGN OWNED BY {owner} TO {api}",
         f"ALTER DATABASE {quoted(DB)} OWNER TO {api}",
         f"ALTER SCHEMA public OWNER TO {api}",
         f"GRANT ALL ON SCHEMA public TO {api}",
