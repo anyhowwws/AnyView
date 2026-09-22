@@ -37,8 +37,8 @@ export function AuthShell({ children, pending }: { children: React.ReactNode; pe
   const link = (href: string, label: string, count?: number) => (
     <Link
       href={href}
-      aria-current={pathname === href ? "page" : undefined}
-      className={`workspace-nav-link ${pathname === href ? "is-active" : ""}`}
+      aria-current={pathname === href || (href === "/" && pathname === "/brain") ? "page" : undefined}
+      className={`workspace-nav-link ${pathname === href || (href === "/" && pathname === "/brain") ? "is-active" : ""}`}
     >
       {href === "/" || href === "/brain" ? <Brain size={16} aria-hidden /> : <AudioLines size={16} aria-hidden />}
       {label}

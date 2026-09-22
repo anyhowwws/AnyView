@@ -1,0 +1,75 @@
+/* Shared Garden palette. Keep foreground/background pairs together, including
+   portalled menus and native controls; scoped graph colors caused pale buttons. */
+html:root, html.dark {
+  color-scheme: dark;
+  --background: #08191f;
+  --foreground: #e1eeeb;
+  --card: #0d2227;
+  --card-foreground: #e1eeeb;
+  --popover: #142e33;
+  --popover-foreground: #e1eeeb;
+  --primary: #83dfcc;
+  --primary-foreground: #08191f;
+  --secondary: #183237;
+  --secondary-foreground: #e1eeeb;
+  --muted: #183237;
+  --muted-foreground: #adc4bf;
+  --accent: #1d3c40;
+  --accent-foreground: #e1eeeb;
+  --destructive: #ffaaa5;
+  --border: #345257;
+  --input: #688b8e;
+  --ring: #83dfcc;
+  --chart-1: #83dfcc;
+  --chart-2: #76c8ff;
+  --chart-3: #a5a3ff;
+  --chart-4: #ffbe72;
+  --chart-5: #ed9dbf;
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--primary);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--accent);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--ring);
+}
+
+html body { background: radial-gradient(ellipse at 50% 0, #163438 0, transparent 45rem), var(--background); }
+html .brand-mark { color: var(--primary-foreground); }
+html .workspace-nav-link.is-active { background: var(--accent); color: var(--primary); box-shadow: inset 0 -2px var(--primary); }
+html .workspace-panel, html .setup-workspace { box-shadow: 0 12px 40px #03121635; }
+html .capture-template-row select, html .formatted-toggle, html .formatted-capture, html .upload-area { background: var(--background); border-color: var(--input); color: var(--foreground); }
+html .formatted-capture-grid input, html .formatted-capture-grid select, html .formatted-capture-grid textarea, html .capture-panel textarea { background: var(--background); color: var(--foreground); border-color: var(--input); }
+html .review-section-label { background: var(--accent); color: var(--foreground); font-size: .9375rem; letter-spacing: .055em; }
+html .view-switch { background: var(--background); border: 1px solid var(--border); }
+html .view-switch button[aria-pressed=true] { background: var(--accent); color: var(--primary); }
+html .constellation { --muted-foreground: #adc4bf; --border: #345257; }
+html .constellation-node text { font-size: 12px; }
+html .constellation-node:focus-visible { opacity: 1; }
+html .constellation-legend button { min-height: 44px; font-size: .8125rem; }
+html .connection-link { font-size: .8125rem; overflow-wrap: anywhere; }
+html .graph-inspector [data-slot=button] { max-width: 100%; height: auto; min-height: 44px; white-space: normal; padding: 10px 12px; }
+html .graph-filter { appearance: none; padding-right: 32px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23adc4bf' stroke-width='2'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
+html input::placeholder, html textarea::placeholder { color: var(--muted-foreground); opacity: 1; }
+html input:focus-visible, html textarea:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+html input[type=checkbox] { accent-color: var(--primary); width: 18px; height: 18px; }
+html [data-slot=button] { min-height: 40px; }
+html select { color: var(--foreground); }
+html option { background: var(--popover); color: var(--popover-foreground); }
+html * { scrollbar-color: #688b8e #0d2227; }
+html ::selection { background: var(--primary); color: var(--primary-foreground); }
+@media (pointer: coarse) {
+  html [data-slot=button], html .capture-template-row select, html .formatted-toggle { min-height: 44px; }
+  html input:not([type=checkbox]), html textarea, html select { font-size: 1rem; }
+}
+@media (max-width: 640px) {
+  html .workspace-nav-link { padding-inline: 10px; font-size: .8125rem; }
+  html .workspace-header nav { justify-content: space-between; }
+  html .capture-template-row select { max-width: 100%; }
+}
+@media (prefers-contrast: more) {
+  html:root, html.dark { --border: #8eadaa; --input: #adc4bf; --muted-foreground: #d6e6e2; }
+  html .constellation { --border: #8eadaa; --muted-foreground: #d6e6e2; }
+  html .constellation-node { opacity: 1; }
+}

@@ -39,7 +39,7 @@ export function CoverageHeatmap({ coverage }: { coverage: Coverage }) {
                 Competency
               </th>
               {cols.map((c) => (
-                <th key={c.id} scope="col" className="max-w-24 truncate px-1 pb-1 text-left text-xs font-medium text-muted-foreground">
+                <th key={c.id} scope="col" className="min-w-24 px-2 pb-2 text-left text-xs font-medium text-muted-foreground">
                   {c.label}
                 </th>
               ))}
@@ -59,8 +59,8 @@ export function CoverageHeatmap({ coverage }: { coverage: Coverage }) {
                         role="img"
                         aria-label={`${comp.label} at ${col.label}: ${WORD[s]}`}
                         title={`${comp.label} · ${col.label}: ${WORD[s]}`}
-                        className={`h-7 rounded ${CELL[s]}`}
-                      />
+                        className={`flex min-h-9 items-center justify-center rounded text-sm font-semibold ${s === "strong" ? "text-primary-foreground" : "text-foreground"} ${CELL[s]}`}
+                      ><span aria-hidden>{s === "strong" ? "✓" : s === "weak" ? "◐" : "—"}</span></div>
                     </td>
                   );
                 })}
@@ -69,10 +69,10 @@ export function CoverageHeatmap({ coverage }: { coverage: Coverage }) {
           </tbody>
         </table>
       </div>
-      <p className="flex items-center gap-3 text-xs text-muted-foreground" aria-hidden>
-        <span className="inline-flex items-center gap-1"><i className={`inline-block size-3 rounded ${CELL.none}`} /> none</span>
-        <span className="inline-flex items-center gap-1"><i className={`inline-block size-3 rounded ${CELL.weak}`} /> story, no result</span>
-        <span className="inline-flex items-center gap-1"><i className={`inline-block size-3 rounded ${CELL.strong}`} /> story with a result</span>
+      <p className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span>— No evidence</span>
+        <span>◐ Story, no result</span>
+        <span>✓ Story with a result</span>
       </p>
     </section>
   );

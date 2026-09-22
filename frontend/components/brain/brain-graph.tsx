@@ -69,7 +69,7 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
                 const muted = !matchIds.has(n.id) || Boolean(selected && !active && !neighbors.has(n.id));
                 const radius = 5 + Math.min(p.degree, 9) * 1.4;
                 return <g key={n.id} role="button" tabIndex={0} aria-pressed={active} aria-label={`${n.label}: ${n.title}, ${n.kind}`}
-                  className={`constellation-node ${active ? "selected" : ""}`} opacity={muted ? .16 : 1} transform={`translate(${p.x} ${p.y})`}
+                  className={`constellation-node ${active ? "selected" : ""}`} opacity={muted ? .4 : 1} transform={`translate(${p.x} ${p.y})`}
                   onClick={() => setSelectedId(active ? null : n.id)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(active ? null : n.id); } }}>
                   <title>{n.title}</title>
@@ -96,6 +96,7 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
         </div>
         <aside className="graph-inspector" aria-label="Entry details">
           {selected ? <>
+            <Button variant="ghost" onClick={() => setSelectedId(null)}>Clear selection</Button>
             <p className="eyebrow">{selected.kind} · {selected.label}</p>
             <h3>{selected.title}</h3>
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{selected.detail || "No additional details yet."}</p>
