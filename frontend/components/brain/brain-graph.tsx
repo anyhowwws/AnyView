@@ -5,6 +5,9 @@ import { Network, Search, Minus, Plus, RotateCcw, ArrowUpRight } from "lucide-re
 import { buildBrainGraph, GRAPH_KINDS, KIND_NAMES } from "@/lib/brain-graph";
 import type { Brain, EntityKind } from "@/lib/types";
 import { Button } from "@/components/ui/button";
+import { constellation } from "@/lib/constellation";
+
+const COLORS: Record<EntityKind, string> = { role: "#ffbe72", project: "#75e4cf", story: "#a5a3ff", skill: "#76c8ff", achievement: "#f1d78a", education: "#ed9dbf", language: "#b7da87" };
 
 export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => void }) {
   const { nodes, edges } = useMemo(() => buildBrainGraph(brain), [brain]);
@@ -12,22 +15,18 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
   const [kind, setKind] = useState<EntityKind | "all">("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
-  const viewport = useRef<HTMLDivElement>(null);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [labels, setLabels] = useState(true);
+  const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const positions = useMemo(() => constellation(nodes, edges), [nodes, edges]);
   const selected = nodes.find((n) => n.id === selectedId);
   const matches = nodes.filter((n) => (kind === "all" || n.kind === kind) && `${n.title} ${n.label} ${n.detail}`.toLowerCase().includes(query.toLowerCase()));
   const matchIds = new Set(matches.map((n) => n.id));
   const neighbors = new Set(edges.flatMap((e) => e.from === selectedId ? [e.to] : e.to === selectedId ? [e.from] : []));
-  const groups = GRAPH_KINDS.filter((k) => nodes.some((n) => n.kind === k));
-  const height = Math.max(400, ...groups.map((k) => nodes.filter((n) => n.kind === k).length * 110 + 90));
-  const width = Math.max(780, groups.length * 240 + 40);
-  const positions = new Map(nodes.map((n) => {
-    const peers = nodes.filter((p) => p.kind === n.kind);
-    return [n.id, { x: 30 + groups.indexOf(n.kind) * 240, y: 65 + (height - 90 - peers.length * 110) / 2 + peers.indexOf(n) * 110 }];
-  }));
   function inspect(id: string) {
     setSelectedId(id);
     const position = positions.get(id);
-    if (position) viewport.current?.scrollTo({ left: Math.max(0, position.x * zoom - 80), top: Math.max(0, position.y * zoom - 100) });
+    if (position) setPan({ x: (450 - position.x) * zoom, y: (320 - position.y) * zoom });
   }
 
   if (!nodes.length) return (
@@ -40,7 +39,8 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
   );
 
   return (
-    <section className="brain-map" aria-label="Digital Garden relationship map">
+    <section className="brain-map constellation" aria-label="Digital Garden relationship map">
+      <div className="constellation-heading"><div><span>YOUR KNOWLEDGE, CONNECTED</span><h3>Experience constellation</h3></div><span className="constellation-status">● {nodes.length} confirmed entries</span></div>
       <div className="graph-toolbar">
         <label className="graph-search"><Search size={17} aria-hidden /><span className="sr-only">Search brain graph</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a story, skill, or project…" /></label>
         <label className="sr-only" htmlFor="graph-type">Entry type</label>
@@ -52,34 +52,45 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
       </div>
       <div className="graph-layout">
         <div className="graph-stage">
-          <div ref={viewport} className="graph-viewport" tabIndex={0} aria-label="Scrollable graph. Use arrow keys to scroll, or select an entry below.">
-            <div style={{ width: width * zoom, height: height * zoom }}>
-              <div className="graph-world" style={{ width, height, transform: `scale(${zoom})` }}>
-                <svg width={width} height={height} aria-hidden className="graph-edges">
-                  {edges.map((e) => {
-                    const a = positions.get(e.from)!; const b = positions.get(e.to)!;
-                    const active = e.from === selectedId || e.to === selectedId;
-                    return <path key={`${e.from}-${e.to}`} d={`M ${a.x + 186} ${a.y + 36} C ${a.x + 218} ${a.y + 36}, ${b.x - 35} ${b.y + 36}, ${b.x} ${b.y + 36}`} className={active ? "graph-edge active" : "graph-edge"} />;
-                  })}
-                </svg>
-                {groups.map((k, i) => <div key={k} className="graph-column-label" style={{ left: 30 + i * 240 }}>{KIND_NAMES[k]} <span>{nodes.filter((n) => n.kind === k).length}</span></div>)}
-                {nodes.map((n) => {
-                  const pos = positions.get(n.id)!;
-                  const muted = !matchIds.has(n.id) || (selected && n.id !== selectedId && !neighbors.has(n.id));
-                  return <button key={n.id} type="button" className={`graph-node ${n.id === selectedId ? "selected" : ""} ${muted ? "muted-node" : ""}`} style={{ left: pos.x, top: pos.y }} aria-pressed={n.id === selectedId} aria-label={`${n.label}: ${n.title}, ${n.kind}`} onClick={() => setSelectedId(n.id === selectedId ? null : n.id)}>
-                    <span className="node-kind">{n.label} <span>{n.kind}</span></span><span className="node-title">{n.title}</span>
-                  </button>;
-                })}
-              </div>
-            </div>
-          </div>
+          <svg className="constellation-canvas" viewBox="0 0 900 640" aria-label="Knowledge constellation. Drag the background to pan; use the zoom controls below."
+            onPointerDown={(e) => { if ((e.target as Element).closest("[role=button]")) return; e.currentTarget.setPointerCapture(e.pointerId); drag.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y }; }}
+            onPointerMove={(e) => { if (!drag.current) return; const scale = 900 / e.currentTarget.getBoundingClientRect().width; setPan({ x: drag.current.px + (e.clientX - drag.current.x) * scale, y: drag.current.py + (e.clientY - drag.current.y) * scale }); }}
+            onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
+            <g className="constellation-rings" aria-hidden="true">{[100, 195, 285].map((r) => <circle key={r} cx="450" cy="320" r={r} />)}<path d="M 450 20 V 620 M 50 320 H 850" /></g>
+            <g transform={`translate(${450 + pan.x} ${320 + pan.y}) scale(${zoom}) translate(-450 -320)`}>
+              {edges.map((e) => {
+                const a = positions.get(e.from)!, b = positions.get(e.to)!;
+                const active = e.from === selectedId || e.to === selectedId;
+                return <line key={`${e.from}-${e.to}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`constellation-edge ${active ? "lit" : ""}`} opacity={selected && !active ? .12 : 1} />;
+              })}
+              {nodes.map((n) => {
+                const p = positions.get(n.id)!;
+                const active = n.id === selectedId;
+                const muted = !matchIds.has(n.id) || Boolean(selected && !active && !neighbors.has(n.id));
+                const radius = 5 + Math.min(p.degree, 9) * 1.4;
+                return <g key={n.id} role="button" tabIndex={0} aria-pressed={active} aria-label={`${n.label}: ${n.title}, ${n.kind}`}
+                  className={`constellation-node ${active ? "selected" : ""}`} opacity={muted ? .16 : 1} transform={`translate(${p.x} ${p.y})`}
+                  onClick={() => setSelectedId(active ? null : n.id)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(active ? null : n.id); } }}>
+                  <title>{n.title}</title>
+                  <circle r={radius + 12} fill={COLORS[n.kind]} opacity=".07" />
+                  <circle className="node-orbit" r={radius + 6} fill="none" stroke={COLORS[n.kind]} opacity={active ? 1 : .3} />
+                  <circle r={radius} fill={COLORS[n.kind]} />
+                  <circle r="2" fill="#fff" />
+                  {(labels || active) && <text y={radius + 25} textAnchor="middle">{n.title.length > 25 ? n.title.slice(0, 24) + "…" : n.title}</text>}
+                </g>;
+              })}
+            </g>
+          </svg>
+          <div className="constellation-legend">{GRAPH_KINDS.filter((k) => nodes.some((n) => n.kind === k)).map((k) => <button key={k} aria-pressed={kind === k} onClick={() => setKind(kind === k ? "all" : k)}><i style={{ background: COLORS[k] }} />{KIND_NAMES[k]}</button>)}</div>
           <div className="graph-footer">
             <p>{edges.length} confirmed connections <span className="hidden sm:inline">· Select an entry to explore</span></p>
             <div className="flex items-center">
               <Button variant="ghost" size="icon" aria-label="Zoom out" disabled={zoom <= 0.6} onClick={() => setZoom((z) => Math.max(0.6, z - 0.2))}><Minus size={16} /></Button>
               <span className="w-12 text-center tabular-nums">{Math.round(zoom * 100)}%</span>
               <Button variant="ghost" size="icon" aria-label="Zoom in" disabled={zoom >= 1.8} onClick={() => setZoom((z) => Math.min(1.8, z + 0.2))}><Plus size={16} /></Button>
-              <Button variant="ghost" size="icon" aria-label="Reset graph view" onClick={() => { setZoom(1); setSelectedId(null); setQuery(""); setKind("all"); viewport.current?.scrollTo(0, 0); }}><RotateCcw size={15} /></Button>
+              <Button variant="ghost" size="icon" aria-label="Reset graph view" onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); setSelectedId(null); setQuery(""); setKind("all"); }}><RotateCcw size={15} /></Button>
+              <button className="constellation-label-toggle" aria-pressed={labels} onClick={() => setLabels(!labels)}>Labels</button>
             </div>
           </div>
         </div>
