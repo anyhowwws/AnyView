@@ -10,6 +10,7 @@ import sqlalchemy as sa
 
 from anyview.brain.models import (
     AchievementDraft,
+    FeedbackDraft,
     Patch,
     ProjectDraft,
     RoleDraft,
@@ -353,3 +354,92 @@ def test_identical_text_is_found_again_and_stays_scoped_to_its_owner(repo):
     assert repo.dump_with_text(UID, text).id == mine.id
     assert repo.dump_with_text(UID, text + " One more line.") is None
     assert repo.dump_with_text("uid-third", text) is None
+
+
+# --- Feedback (ADR: a Digital Garden entity kind, complementing stories) ----
+
+
+def test_feedback_confirms_edits_retires_and_rebuilds(repo, db):
+    patch = Patch(
+        roles=[
+            RoleDraft(
+                key="r1",
+                company="Acme Corp",
+                title="Senior Cloud Architect",
+                evidence="Acme Corp",
+            )
+        ],
+        feedback=[
+            FeedbackDraft(
+                key="f1",
+                role="r1",
+                given_by="Manager, 2024 review",
+                content="Owned the migration end to end.",
+                received_on=dt.date(2024, 11, 1),
+                evidence="Owned the migration end to end.",
+            )
+        ],
+    )
+    event = _confirm(repo, patch)
+    brain = repo.brain(UID)
+    assert brain.feedback[0].given_by == "Manager, 2024 review"
+    assert brain.feedback[0].role_id == brain.roles[0].id
+    assert brain.feedback[0].source.event_id == event.id
+
+    repo.edit_entity(UID, "feedback", brain.feedback[0].id, {"content": "Edited quote"})
+    assert repo.brain(UID).feedback[0].content == "Edited quote"
+
+    with pytest.raises(Conflict):  # not editable
+        repo.edit_entity(UID, "feedback", brain.feedback[0].id, {"user_id": "uid-other"})
+
+    before = _snapshot(db)
+    before["feedback"] = _rows(db, "feedback")
+    assert repo.rebuild(UID) == 2
+    after = _snapshot(db)
+    after["feedback"] = _rows(db, "feedback")
+    assert after == before
+
+    repo.retire_entity(UID, "feedback", brain.feedback[0].id)
+    assert repo.brain(UID).feedback == []
+
+
+def _rows(db, table: str) -> list[dict]:
+    with db.begin() as c:
+        return [
+            dict(r)
+            for r in c.execute(
+                sa.text(f"SELECT * FROM {table} WHERE user_id = :u ORDER BY id"), {"u": UID}
+            )
+            .mappings()
+            .all()
+        ]
+
+
+def test_feedback_appears_in_the_index_and_the_context(repo):
+    _confirm(
+        repo,
+        Patch(
+            roles=[
+                RoleDraft(
+                    key="r1", company="Acme Corp", title="Senior Cloud Architect", evidence="e"
+                )
+            ],
+            projects=[ProjectDraft(key="p1", role="r1", name="Billing migration", evidence="e")],
+            feedback=[
+                FeedbackDraft(
+                    key="f1",
+                    project="p1",
+                    given_by="Client",
+                    content="Extremely responsive and clear throughout.",
+                    evidence="e",
+                )
+            ],
+        ),
+    )
+    index, labels = repo.brain_index(UID)
+    assert "F1" in labels
+    assert "[F1] feedback from Client: Extremely responsive" in index
+
+    ctx = repo.brain_context(UID)
+    assert "## Feedback" in ctx
+    assert "[F1] Client — on Billing migration: Extremely responsive and clear throughout." in ctx

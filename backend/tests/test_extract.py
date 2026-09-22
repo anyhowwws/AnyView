@@ -19,6 +19,8 @@ from anyview.brain.models import (
     Coverage,
     Education,
     EducationDraft,
+    Feedback,
+    FeedbackDraft,
     Language,
     LanguageDraft,
     Patch,
@@ -132,6 +134,7 @@ def _brain(**over) -> Brain:
             "achievements",
             "education",
             "languages",
+            "feedback",
         )
     }
     return Brain(
@@ -215,6 +218,7 @@ def test_every_draft_field_has_something_to_compare_against():
         (RoleDraft, Role), (ProjectDraft, Project), (StoryDraft, Story),
         (SkillDraft, Skill), (AchievementDraft, Achievement),
         (EducationDraft, Education), (LanguageDraft, Language),
+        (FeedbackDraft, Feedback),
     ]  # fmt: skip
     for draft, entity in pairs:
         for name in draft.model_fields:
@@ -225,3 +229,109 @@ def test_every_draft_field_has_something_to_compare_against():
                 f"{draft.__name__}.{name} has no counterpart on {entity.__name__}; "
                 f"add it to FIELD_ALIAS or the projection"
             )
+
+
+# --- Feedback (a Digital Garden entity kind, complementing stories) ---------
+
+FEEDBACK_QUOTE = (
+    'My manager told me after the migration: "You owned that end to end and never '
+    'let the team lose momentum."'
+)
+
+
+def test_extraction_system_names_feedback_as_a_tracked_category():
+    text = extraction_system("")
+    assert "feedback" in text
+    assert "given_by" in text and "content" in text
+
+
+def test_propose_can_return_a_feedback_draft():
+    scripted = {**DEFAULTS["propose"], "roles": [], "feedback": []}
+    scripted["feedback"] = [
+        {
+            "key": "f1",
+            "existing": None,
+            "role": None,
+            "project": None,
+            "given_by": "Manager, 2024 review",
+            "content": FEEDBACK_QUOTE,
+            "received_on": "2024-11-01",
+            "evidence": FEEDBACK_QUOTE,
+        }
+    ]
+    patch = propose(
+        FEEDBACK_QUOTE, brain_index="", model=FakeModel({"propose": scripted}), session_id="s"
+    )
+    assert [f.given_by for f in patch.feedback] == ["Manager, 2024 review"]
+    assert patch.feedback[0].content == FEEDBACK_QUOTE
+
+
+def test_feedback_with_evidence_not_in_the_dump_is_dropped():
+    scripted = {**DEFAULTS["propose"], "roles": [], "feedback": []}
+    scripted["feedback"] = [
+        {
+            "key": "f1",
+            "existing": None,
+            "role": None,
+            "project": None,
+            "given_by": "Manager",
+            "content": "a quote that does not appear anywhere",
+            "received_on": None,
+            "evidence": "a quote that does not appear anywhere",
+        }
+    ]
+    patch = propose(RESUME, brain_index="", model=FakeModel({"propose": scripted}), session_id="s")
+    assert patch.feedback == []
+
+
+def _feedback_draft(**over) -> FeedbackDraft:
+    return FeedbackDraft(
+        **{
+            "key": "f1",
+            "existing": "F1",
+            "role": None,
+            "project": None,
+            "given_by": "Manager, 2024 review",
+            "content": FEEDBACK_QUOTE,
+            "received_on": dt.date(2024, 11, 1),
+            "evidence": FEEDBACK_QUOTE,
+            **over,
+        }
+    )
+
+
+FEEDBACK_ENTITY = Feedback(
+    id="22222222-2222-2222-2222-222222222222",
+    label="F1",
+    role_id=None,
+    project_id=None,
+    given_by="Manager, 2024 review",
+    content=FEEDBACK_QUOTE,
+    received_on=dt.date(2024, 11, 1),
+    source=SOURCE,
+)
+
+
+def test_a_feedback_draft_that_restates_a_confirmed_entry_is_dropped():
+    kept = drop_unchanged(Patch(feedback=[_feedback_draft()]), _brain(feedback=[FEEDBACK_ENTITY]))
+    assert kept.is_empty()
+
+
+def test_a_changed_feedback_draft_survives():
+    kept = drop_unchanged(
+        Patch(feedback=[_feedback_draft(content="a materially different quote entirely")]),
+        _brain(feedback=[FEEDBACK_ENTITY]),
+    )
+    assert len(kept.feedback) == 1
+
+
+def test_a_feedback_draft_linking_to_a_dropped_role_is_re_pointed():
+    feedback = FeedbackDraft(
+        key="f1",
+        role="r1",
+        given_by="Peer",
+        content="Quote about the role",
+        evidence="Quote about the role",
+    )
+    kept = drop_unchanged(Patch(roles=[_role_draft()], feedback=[feedback]), _brain(roles=[ROLE]))
+    assert kept.roles == [] and kept.feedback[0].role == "R1"

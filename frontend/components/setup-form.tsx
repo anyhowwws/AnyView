@@ -94,7 +94,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
       .then((b) =>
         setBrainSize(
           b.roles.length + b.projects.length + b.stories.length + b.skills.length +
-            b.achievements.length + b.education.length + b.languages.length,
+            b.achievements.length + b.education.length + b.languages.length + b.feedback.length,
         ),
       )
       .catch(() => setBrainSize(null));

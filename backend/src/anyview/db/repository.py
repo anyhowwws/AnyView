@@ -33,6 +33,7 @@ from anyview.brain.models import (
     Education,
     EntityKind,
     Event,
+    Feedback,
     Language,
     Patch,
     Project,
@@ -52,6 +53,7 @@ TABLE: dict[EntityKind, str] = {
     "achievement": "achievements",
     "education": "education",
     "language": "languages",
+    "feedback": "feedback",
 }
 
 
@@ -392,6 +394,7 @@ class Repository:
             # Order matters for the foreign keys; skill_evidence cascades from skills.
             for table in (
                 "stories",
+                "feedback",
                 "skills",
                 "achievements",
                 "education",
@@ -414,8 +417,8 @@ class Repository:
 
     def brain(self, uid: str) -> Brain:
         with self.engine.begin() as c:
-            roles, projects, stories, skills, achievements, education, languages = self._entities(
-                c, uid
+            roles, projects, stories, skills, achievements, education, languages, feedback = (
+                self._entities(c, uid)
             )
             pending = c.execute(
                 _q("SELECT count(*) FROM proposals WHERE user_id = :uid AND status = 'pending'"),
@@ -423,7 +426,7 @@ class Repository:
             ).scalar_one()
             competencies = self._competencies(c)
         return Brain(
-            roles=roles, projects=projects, stories=stories, skills=skills, achievements=achievements, education=education, languages=languages,
+            roles=roles, projects=projects, stories=stories, skills=skills, achievements=achievements, education=education, languages=languages, feedback=feedback,
             coverage=_coverage(competencies, roles, projects, stories), pending_proposals=pending,
         )  # fmt: skip
 
@@ -443,8 +446,8 @@ class Repository:
         """One line per live entity for prompts, plus the label → id map so a
         model's reference ("R2") resolves to a real id."""
         with self.engine.begin() as c:
-            roles, projects, stories, skills, achievements, education, languages = self._entities(
-                c, uid
+            roles, projects, stories, skills, achievements, education, languages, feedback = (
+                self._entities(c, uid)
             )
         by_id = {r.id: r for r in roles}
         lines: list[str] = []
@@ -472,9 +475,20 @@ class Repository:
                 f"[{language.label}] language: {language.name}"
                 + (f", {language.proficiency}" if language.proficiency else "")
             )
+        for f in feedback:
+            lines.append(f"[{f.label}] feedback from {f.given_by}: {_excerpt(f.content)}")
         labels = {
             e.label: e.id
-            for group in (roles, projects, stories, skills, achievements, education, languages)
+            for group in (
+                roles,
+                projects,
+                stories,
+                skills,
+                achievements,
+                education,
+                languages,
+                feedback,
+            )  # fmt: skip
             for e in group
         }
         return "\n".join(lines), labels
@@ -484,10 +498,11 @@ class Repository:
         prompts: fuller than the index, still one entity per block, labels kept
         so answers can cite them."""
         with self.engine.begin() as c:
-            roles, projects, stories, skills, achievements, education, languages = self._entities(
-                c, uid
+            roles, projects, stories, skills, achievements, education, languages, feedback = (
+                self._entities(c, uid)
             )
         role_by_id = {r.id: r for r in roles}
+        project_by_id = {p.id: p for p in projects}
         out: list[str] = []
         for r in roles:
             out.append(
@@ -507,6 +522,16 @@ class Repository:
                     f"  Situation: {s.situation or '—'}\n  Task: {s.task or '—'}\n"
                     f"  Action: {s.action or '—'}\n  Result: {s.result or '—'}"
                 )
+        if feedback:
+            out.append("## Feedback")
+            for f in feedback:
+                about = ""
+                if f.project_id in project_by_id:
+                    about = f" — on {project_by_id[f.project_id].name}"
+                elif f.role_id in role_by_id:
+                    about = f" — at {role_by_id[f.role_id].title}"
+                when = f" ({f.received_on})" if f.received_on else ""
+                out.append(f"[{f.label}] {f.given_by}{when}{about}: {f.content}")
         if skills:
             out.append("## Skills")
             out.extend(f"[{k.label}] {k.name} — self-rated {k.depth}/5" for k in skills)
@@ -570,12 +595,21 @@ class Repository:
         return [Competency(key=r[0], label=r[1]) for r in rows]
 
     def _labels(self, c: Connection, uid: str) -> dict[str, str]:
-        roles, projects, stories, skills, achievements, education, languages = self._entities(
-            c, uid
+        roles, projects, stories, skills, achievements, education, languages, feedback = (
+            self._entities(c, uid)
         )
         return {
             e.label: e.id
-            for group in (roles, projects, stories, skills, achievements, education, languages)
+            for group in (
+                roles,
+                projects,
+                stories,
+                skills,
+                achievements,
+                education,
+                languages,
+                feedback,
+            )  # fmt: skip
             for e in group
         }
 
@@ -590,6 +624,7 @@ class Repository:
         list[Achievement],
         list[Education],
         list[Language],
+        list[Feedback],
     ]:
         """Live entities in creation order (event id, then id) — the order labels
         are numbered in, so a label is stable until something before it retires."""
@@ -737,7 +772,26 @@ class Repository:
                 1,
             )
         ]
-        return roles, projects, stories, skills, achievements, education, languages
+        feedback = [
+            Feedback(
+                id=str(r[0]),
+                label=f"F{i}",
+                role_id=str(r[1]) if r[1] else None,
+                project_id=str(r[2]) if r[2] else None,
+                given_by=r[3],
+                content=r[4],
+                received_on=r[5],
+                source=Provenance(raw_dump_id=str(r[6]), event_id=r[7]),
+            )  # fmt: skip
+            for i, r in enumerate(
+                rows(
+                    "SELECT id, role_id, project_id, given_by, content, received_on, raw_dump_id, "
+                    "event_id FROM feedback WHERE user_id = :uid"
+                ),
+                1,
+            )
+        ]
+        return roles, projects, stories, skills, achievements, education, languages, feedback
 
 
 # --- Resolving a reviewed patch into an event payload -----------------------
@@ -767,6 +821,7 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
         ("achievement", patch.achievements),
         ("education", patch.education),
         ("language", patch.languages),
+        ("feedback", patch.feedback),
     ):
         mint(drafts, kind)
 
@@ -852,6 +907,17 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
         "languages": [
             {"id": ids[d.key], "name": d.name, "proficiency": d.proficiency}
             for d in patch.languages
+        ],
+        "feedback": [
+            {
+                "id": ids[d.key],
+                "role_id": ref(d.role, "role"),
+                "project_id": ref(d.project, "project"),
+                "given_by": d.given_by,
+                "content": d.content,
+                "received_on": d.received_on,
+            }  # fmt: skip
+            for d in patch.feedback
         ],
     }
 
@@ -954,6 +1020,17 @@ def _apply_patch(c: Connection, uid: str, event_id: int, p: dict) -> None:
             ),
             {**base, **r},
         )
+    for r in p.get("feedback", []):
+        c.execute(
+            _q(
+                "INSERT INTO feedback (id, user_id, role_id, project_id, given_by, content, received_on, raw_dump_id, event_id) "
+                "VALUES (:id, :uid, :role_id, :project_id, :given_by, :content, :received_on, :d, :e) "
+                "ON CONFLICT (id) DO UPDATE SET role_id = EXCLUDED.role_id, project_id = EXCLUDED.project_id, "
+                "given_by = EXCLUDED.given_by, content = EXCLUDED.content, received_on = EXCLUDED.received_on, "
+                "raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
+            ),
+            {**base, **r},
+        )
 
 
 def _apply_edit(c: Connection, uid: str, event_id: int, p: dict) -> None:
@@ -1013,6 +1090,12 @@ def _coverage(
 def _span(start: dt.date | None, end: dt.date | None) -> str:
     fmt = lambda d: d.strftime("%Y-%m") if d else None  # noqa: E731
     return f"{fmt(start) or '?'} → {fmt(end) or 'now'}"
+
+
+def _excerpt(text: str, limit: int = 80) -> str:
+    """A feedback quote can run to a paragraph; the index stays scannable by
+    showing only its opening. `brain_context` shows the full text."""
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
 def _project_block(p: Project) -> str:

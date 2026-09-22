@@ -6,7 +6,8 @@ export type CaptureTemplate =
   | "skill"
   | "certification"
   | "education"
-  | "language";
+  | "language"
+  | "feedback";
 
 export interface CaptureField {
   key: string;
@@ -92,6 +93,15 @@ export const CAPTURE_TEMPLATES: Record<
     fields: [
       { key: "name", label: "Language", placeholder: "e.g. English", required: true },
       { key: "proficiency", label: "Proficiency", placeholder: "", type: "select", options: ["Basic", "Conversational", "Professional", "Fluent", "Native"] },
+    ],
+  },
+  feedback: {
+    label: "Feedback",
+    description: "Capture what someone said about your work, in their words.",
+    fields: [
+      { key: "given_by", label: "Who said it", placeholder: "e.g. Manager, 2024 performance review", required: true, wide: true },
+      { key: "content", label: "What they said", placeholder: "Quote it as closely as you can remember", type: "textarea", required: true, wide: true },
+      { key: "received_on", label: "When", placeholder: "", type: "date" },
     ],
   },
 };

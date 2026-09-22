@@ -12,7 +12,7 @@ function fixture(): Brain {
     stories: [{ id: "s", label: "S1", role_id: "r", project_id: "p", title: "Cutover", situation: null, task: null, action: null, result: null, competencies: [], source }],
     skills: [{ id: "k", label: "K1", name: "Terraform", depth: 4, project_ids: ["p"], source }],
     achievements: [{ id: "a", label: "A1", title: "Certification", kind: "credential", issuer: null, achieved_on: null, source }],
-    education: [], languages: [],
+    education: [], languages: [], feedback: [],
     coverage: { competencies: [], roles: [], cells: {} }, pending_proposals: 2,
   };
 }
@@ -36,6 +36,28 @@ test("empty brain has no synthetic nodes or edges", () => {
   const brain = fixture();
   brain.roles = []; brain.projects = []; brain.stories = []; brain.skills = []; brain.achievements = []; brain.education = []; brain.languages = [];
   assert.deepEqual(buildBrainGraph(brain), { nodes: [], edges: [] });
+});
+
+test("feedback complements the graph: it becomes a node and links to what it is about", () => {
+  const brain = fixture();
+  brain.feedback = [
+    { id: "f", label: "F1", role_id: "r", project_id: null, given_by: "Manager", content: "Owned it end to end.", received_on: null, source },
+  ];
+  const graph = buildBrainGraph(brain);
+  assert.equal(graph.nodes.length, 6);
+  const feedbackNode = graph.nodes.find((n) => n.id === "f");
+  assert.equal(feedbackNode?.kind, "feedback");
+  assert.equal(feedbackNode?.title, "Manager");
+  assert.ok(graph.edges.some((e) => e.from === "r" && e.to === "f"));
+});
+
+test("a feedback entry with no role or project link stands on its own", () => {
+  const brain = fixture();
+  brain.feedback = [
+    { id: "f", label: "F1", role_id: null, project_id: null, given_by: "Client", content: "Great to work with.", received_on: null, source },
+  ];
+  const graph = buildBrainGraph(brain);
+  assert.ok(graph.edges.every((e) => e.from !== "f" && e.to !== "f"));
 });
 
 test("suppresses overlapping constellation labels deterministically", () => {
