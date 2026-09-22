@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildBrainGraph } from "../lib/brain-graph.ts";
+import { visibleConstellationLabels, type ConstellationPoint } from "../lib/constellation.ts";
 import type { Brain } from "../lib/types.ts";
 
 const source = { raw_dump_id: "dump", event_id: 1 };
@@ -35,4 +36,13 @@ test("empty brain has no synthetic nodes or edges", () => {
   const brain = fixture();
   brain.roles = []; brain.projects = []; brain.stories = []; brain.skills = []; brain.achievements = []; brain.education = []; brain.languages = [];
   assert.deepEqual(buildBrainGraph(brain), { nodes: [], edges: [] });
+});
+
+test("suppresses overlapping constellation labels deterministically", () => {
+  const nodes = buildBrainGraph(fixture()).nodes;
+  const points = new Map<string, ConstellationPoint>(nodes.map((node) => [node.id, { id: node.id, x: 450, y: 320, degree: node.id === "r" ? 4 : 0 }]));
+  const first = visibleConstellationLabels(nodes, points);
+  assert.deepEqual([...first], [...visibleConstellationLabels(nodes, points)]);
+  assert.equal(first.size, 1);
+  assert.ok(first.has("r"));
 });

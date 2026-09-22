@@ -15,7 +15,7 @@ interface Props {
   session: Session;
   spoken: string | undefined; // already-streamed text for this question (after a reload)
   onSpoken: (questionId: number, text: string) => void;
-  onAnswer: (text: string) => Promise<void>;
+  onAnswer: (text: string) => Promise<boolean>;
   busy: boolean;
   error: string | null;
 }
@@ -160,7 +160,8 @@ export function Practice({ session, spoken, onSpoken, onAnswer, busy, error }: P
     const trimmed = answer.trim();
     if (!trimmed || busy) return;
     setCountdown(null);
-    return onAnswer(trimmed).then(() => {
+    return onAnswer(trimmed).then((saved) => {
+      if (!saved) return;
       setAnswer("");
       setTurn(voiceOn ? "listening" : "typing");
     });

@@ -5,7 +5,7 @@ import { Network, Search, Minus, Plus, RotateCcw, ArrowUpRight } from "lucide-re
 import { buildBrainGraph, GRAPH_KINDS, KIND_NAMES } from "@/lib/brain-graph";
 import type { Brain, EntityKind } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { constellation } from "@/lib/constellation";
+import { constellation, visibleConstellationLabels } from "@/lib/constellation";
 
 const COLORS: Record<EntityKind, string> = { role: "#ffbe72", project: "#75e4cf", story: "#a5a3ff", skill: "#76c8ff", achievement: "#f1d78a", education: "#ed9dbf", language: "#b7da87" };
 
@@ -19,6 +19,7 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
   const [labels, setLabels] = useState(true);
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
   const positions = useMemo(() => constellation(nodes, edges), [nodes, edges]);
+  const visibleLabels = useMemo(() => visibleConstellationLabels(nodes, positions), [nodes, positions]);
   const selected = nodes.find((n) => n.id === selectedId);
   const matches = nodes.filter((n) => (kind === "all" || n.kind === kind) && `${n.title} ${n.label} ${n.detail}`.toLowerCase().includes(query.toLowerCase()));
   const matchIds = new Set(matches.map((n) => n.id));
@@ -77,7 +78,7 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
                   <circle className="node-orbit" r={radius + 6} fill="none" stroke={COLORS[n.kind]} opacity={active ? 1 : .3} />
                   <circle r={radius} fill={COLORS[n.kind]} />
                   <circle r="2" fill="#fff" />
-                  {(labels || active) && <text y={radius + 25} textAnchor="middle">{n.title.length > 25 ? n.title.slice(0, 24) + "…" : n.title}</text>}
+                  {(active || (labels && visibleLabels.has(n.id))) && <text y={radius + 25} textAnchor="middle">{n.title.length > 25 ? n.title.slice(0, 24) + "…" : n.title}</text>}
                 </g>;
               })}
             </g>

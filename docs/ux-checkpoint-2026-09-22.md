@@ -45,13 +45,17 @@ memory (Miller’s Law). No workflow steps added.
   selects, formatted capture, proposal review, editing, interview and report.
 - Keyboard and 200% text zoom walkthrough; verify increased-contrast mode on
   actual devices. The CSS supports larger touch targets and reduced motion.
-- Graph label collision management for dense gardens; muted nodes still trade
-  legibility for relationship focus (entry list is the full-text alternative).
-- Garden load failure needs an in-place retry action.
-- Interview answer submission: App.run catches failures, so Practice’s resolved
-  promise can clear the typed answer even when submission fails. Preserve the
-  draft on failure before expanding interview interactions.
-- A complete automated accessibility/interaction suite is not yet present.
+- Automated browser-level accessibility and interaction coverage is still not
+  present; current tests cover graph layout and color-token contrast only.
+
+## Completed after the audit
+- Dense graph labels now use a deterministic, connection-first collision pass.
+  The selected entry’s label always remains visible; the inspector and entry
+  finder retain full titles.
+- Garden load failures now present an in-place retry action rather than leaving
+  a dead-end error.
+- Interview submissions now preserve a typed or transcribed answer if the API
+  call fails. The draft clears only after a successful response.
 
 This checkpoint separates shipped presentation fixes from remaining flow work;
 do not describe the whole application as fully accessibility-verified.

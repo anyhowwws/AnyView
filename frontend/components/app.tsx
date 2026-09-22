@@ -28,17 +28,20 @@ export function App() {
     save(next);
   }
 
+  /** Returns whether the action completed so callers can retain unsaved input on failure. */
   async function run(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
     try {
       await action();
+      return true;
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
         // Token rejected: the session is over. Back to the gate with the reason.
         await signOut();
       }
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      return false;
     } finally {
       setBusy(false);
     }
@@ -85,7 +88,7 @@ export function App() {
   return (
     <>
       {saved.phase === "setup" && (
-        <SetupForm onStart={onStart} error={error} busy={busy} stage={stage} />
+        <SetupForm onStart={async (file, setup) => { await onStart(file, setup); }} error={error} busy={busy} stage={stage} />
       )}
 
       {saved.phase === "practice" && saved.session && (

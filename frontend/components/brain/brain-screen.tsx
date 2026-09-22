@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { CaptureBox } from "@/components/brain/capture-box";
 import { CoverageHeatmap } from "@/components/brain/coverage-heatmap";
 import { Entities } from "@/components/brain/entities";
@@ -9,6 +9,7 @@ import { AuthShell } from "@/components/shell";
 import { BrainGraph } from "@/components/brain/brain-graph";
 import { Network, List, Grid2X2, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/ui/button";
 import { ApiError, getBrain, listProposals } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Brain, Proposal } from "@/lib/types";
@@ -21,8 +22,9 @@ export function BrainScreen() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"graph" | "list" | "coverage">("graph");
 
-  useEffect(() => {
+  const reloadGarden = useCallback(() => {
     if (!user) return;
+    setError(null);
     Promise.all([getBrain(), listProposals()])
       .then(([b, p]) => {
         setBrain(b);
@@ -30,6 +32,10 @@ export function BrainScreen() {
       })
       .catch((err: unknown) => setError(err instanceof ApiError ? err.message : "Couldn't load your Digital Garden."));
   }, [user]);
+
+  useEffect(() => {
+    reloadGarden();
+  }, [reloadGarden]);
 
   return (
     <AuthShell pending={proposals.length}>
@@ -40,9 +46,10 @@ export function BrainScreen() {
         </header>
         <CaptureBox onProposal={(p) => setProposals((prev) => [...prev, p])} />
         {error && (
-          <p role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-            {error}
-          </p>
+          <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <p>{error}</p>
+            <Button variant="outline" onClick={reloadGarden}>Retry loading Garden</Button>
+          </div>
         )}
         <ReviewQueue
           proposals={proposals}
