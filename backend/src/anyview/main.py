@@ -58,7 +58,8 @@ app = FastAPI(title="AnyView API", version="0.0.1", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,  # explicit list from config, never "*"
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],  # edit and retire use PATCH/DELETE
+    # edit and retire use PATCH/DELETE; PUT is the fake-mode upload route only.
+    allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE"],
     allow_headers=["Content-Type", "Authorization"],
 )
 
@@ -78,6 +79,7 @@ def build_model() -> Model:
         region=settings.vertex_region,
         model=settings.model_id,
         fast_model=settings.fast_model_id,
+        tts_model=settings.tts_model_id,
     )
 
 

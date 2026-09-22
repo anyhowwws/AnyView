@@ -1,9 +1,10 @@
 """The one place the model SDK is imported (ADR 0004, superseded by 0007).
 
-Two operations, plain Python in and out:
+Three operations, plain Python in and out:
 
     generate(...) -> Reply      one complete response, optionally parsed JSON
     stream(...)   -> Iterator   text deltas as they arrive; usage at the end
+    speak(...)    -> bytes      one sentence spoken aloud, as a WAV file (ADR 0013)
 
 Everything else in the app talks in `str`, `dict`, and the small dataclasses
 below. No SDK object leaves this module. This is an indirection layer, not a
@@ -16,9 +17,11 @@ the same fields to a table.
 
 from __future__ import annotations
 
+import io
 import json
 import logging
 import time
+import wave
 from collections.abc import Callable, Iterator
 from dataclasses import asdict, dataclass
 from typing import Any, Literal, Protocol
@@ -120,6 +123,8 @@ class Model(Protocol):
         max_tokens: int = 1024,
     ) -> Iterator[str]: ...
 
+    def speak(self, *, text: str, session_id: str, voice: str) -> bytes: ...
+
 
 def _log_usage(*, session_id: str, call: str, model: str, usage: Usage, latency_ms: int) -> None:
     record = {
@@ -186,24 +191,78 @@ def _translate(exc: Exception) -> ModelError:
     return ModelError("Unexpected model error.")
 
 
+# --- Audio (ADR 0013) -------------------------------------------------------
+
+# What Gemini's TTS models return when nothing says otherwise: raw 16-bit
+# little-endian PCM, one channel. The mime type carries the sample rate, e.g.
+# "audio/L16;rate=24000".
+PCM_SAMPLE_RATE = 24_000
+
+
+def _rate_from(mime: str | None) -> int:
+    """Pull `rate=N` out of an audio mime type, falling back to the documented
+    24 kHz. The parameters are `;`-separated, so this is a split, not a regex."""
+    for part in (mime or "").split(";")[1:]:
+        key, _, value = part.strip().partition("=")
+        if key == "rate" and value.isdigit():
+            return int(value)
+    return PCM_SAMPLE_RATE
+
+
+def wav(pcm: bytes, *, rate: int = PCM_SAMPLE_RATE) -> bytes:
+    """Wrap raw PCM in a WAV container so a browser can decode it directly.
+
+    The model hands back headerless samples, which no `<audio>` element or
+    `decodeAudioData` call will touch. `wave` is in the standard library and
+    writes the 44-byte header for us — no dependency, no bit-twiddling.
+    """
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as out:
+        out.setnchannels(1)
+        out.setsampwidth(2)  # 16-bit samples
+        out.setframerate(rate)
+        out.writeframes(pcm)
+    return buffer.getvalue()
+
+
+def _audio_part(response: Any) -> Any | None:
+    """The first inline audio blob in a response, or None if it carries none."""
+    for candidate in response.candidates or []:
+        for part in getattr(candidate.content, "parts", None) or []:
+            blob = getattr(part, "inline_data", None)
+            if blob is not None and blob.data:
+                return blob
+    return None
+
+
 class VertexGemini:
     """Gemini on Vertex AI. Auth is Application Default Credentials — locally
     from `gcloud auth application-default login`, on Cloud Run from the
     service account. No API key exists.
 
-    Two models: `model` for judgement calls (plan, score, ideal) and
+    Three models: `model` for judgement calls (plan, score, ideal),
     `fast_model` for streamed conversational turns, where time-to-first-token
-    matters more than depth. The Pro model spent ~450 thinking tokens and 5 s
-    on a two-sentence greeting; Flash thinks near-zero at `low`.
+    matters more than depth, and `tts_model` for Donna's voice. The Pro model
+    spent ~450 thinking tokens and 5 s on a two-sentence greeting; Flash thinks
+    near-zero at `low`.
     """
 
     def __init__(
-        self, *, project_id: str, region: str, model: str, fast_model: str | None = None
+        self,
+        *,
+        project_id: str,
+        region: str,
+        model: str,
+        fast_model: str | None = None,
+        tts_model: str | None = None,
     ) -> None:
         if not project_id:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for Vertex model access")
         self.model = model
         self.fast_model = fast_model or model
+        # A third model, for speech. Text models cannot synthesise audio and TTS
+        # models cannot hold a conversation, so this is its own id (ADR 0013).
+        self.tts_model = tts_model or "gemini-2.5-flash-preview-tts"
         # Retry transient failures inside the SDK: a 429 "Resource exhausted"
         # in the middle of a ten-call report is a blip, not a quota problem.
         # 4 attempts with exponential backoff (1s, 2s, 4s) then give up.
@@ -329,3 +388,45 @@ class VertexGemini:
         candidates = getattr(last_chunk, "candidates", None) or []
         if candidates and _stop_reason(candidates[0].finish_reason) == "refusal":
             raise ModelError("The model declined to answer this turn.")
+
+    def speak(self, *, text: str, session_id: str, voice: str = "Kore") -> bytes:
+        """One line of dialogue as a WAV file, spoken by a prebuilt Vertex voice.
+
+        A TTS model takes no system instruction and does no thinking, so this
+        builds its own config rather than reusing `_config`. `response_modalities`
+        is what asks for audio instead of text; `voice` names one of Vertex's
+        prebuilt speakers (Donna's default is set by DONNA_VOICE).
+        """
+        started = time.monotonic()
+        try:
+            response = self._client.models.generate_content(
+                model=self.tts_model,
+                contents=text,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice)
+                        )
+                    ),
+                ),
+            )
+        except Exception as exc:
+            raise _translate(exc) from exc
+        latency_ms = int((time.monotonic() - started) * 1000)
+
+        # Audio output is billed as output tokens, so it lands in the usage log
+        # beside every other call. No exceptions, including this one.
+        _log_usage(
+            session_id=session_id,
+            call="speak",
+            model=self.tts_model,
+            usage=_usage_from(response.usage_metadata),
+            latency_ms=latency_ms,
+        )
+
+        blob = _audio_part(response)
+        if blob is None:
+            log.warning("tts returned no audio for %d characters", len(text))
+            raise ModelError("Donna's voice is unavailable right now.", retryable=True)
+        return wav(blob.data, rate=_rate_from(blob.mime_type))

@@ -33,3 +33,4 @@ record of having been wrong is the useful part.
 | [0010](0010-resume-upload-via-signed-urls.md) | Resume upload: signed URLs into Cloud Storage, PDF read by the model | Accepted |
 | [0011](0011-cloud-sql-iam-auth-and-event-log.md) | Cloud SQL access: IAM authentication, one state-free password, enforced event log | Accepted |
 | [0012](0012-split-dns-into-its-own-stack.md) | Split the Route 53 DNS record into its own Terraform stack | Accepted |
+| [0013](0013-voice-mode.md) | Voice mode: Gemini TTS for Donna, Gemini transcription for answers | Accepted |

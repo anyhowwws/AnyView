@@ -79,7 +79,10 @@ class MemoryUploadStore:
         self.objects: dict[str, bytes] = {}
 
     def signed_put_url(self, object_name: str, content_type: str) -> str:
-        return f"memory://upload/{object_name}?content_type={content_type}"
+        # Relative on purpose: there is no bucket to PUT to, so the browser
+        # sends the bytes back to the API's own fake-mode route instead. The
+        # frontend resolves a leading "/" against the API base.
+        return f"/uploads/memory/{object_name}"
 
     def put(self, object_name: str, data: bytes) -> None:
         self.objects[object_name] = data

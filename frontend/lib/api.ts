@@ -123,26 +123,56 @@ interface UploadTicket {
   expires_in_seconds: number;
 }
 
-/** Uploads a resume straight to Cloud Storage via a signed URL (ADR 0010) and
- *  returns the object name to pass as `resume_object`. The API never sees the bytes. */
-export async function uploadResume(file: File): Promise<string> {
-  const ticket = await post<UploadTicket>("/uploads", {
-    filename: file.name,
-    content_type: file.type,
-    size_bytes: file.size,
-  });
+/** PUTs bytes to the URL a ticket handed back. Normally that is a signed
+ *  Cloud Storage URL and the API never sees the bytes (ADR 0010). In local
+ *  fake mode it is a relative path back to the API, which needs the usual
+ *  auth header; a signed URL carries its own credentials and must not. */
+async function putTicket(ticket: UploadTicket, body: Blob, contentType: string): Promise<string> {
+  const relative = ticket.upload_url.startsWith("/");
+  const headers: Record<string, string> = { "Content-Type": contentType };
   let res: Response;
   try {
-    res = await fetch(ticket.upload_url, {
+    res = await fetch(relative ? `${BASE}${ticket.upload_url}` : ticket.upload_url, {
       method: "PUT",
-      headers: { "Content-Type": file.type },
-      body: file,
+      headers: relative ? { ...headers, ...(await authHeaders()) } : headers,
+      body,
     });
   } catch {
     throw new ApiError("The upload didn't go through. Check your connection and try again.", 0, true);
   }
   if (!res.ok) throw new ApiError(`The upload was rejected (${res.status}).`, res.status, true);
   return ticket.object_name;
+}
+
+/** Uploads a resume straight to Cloud Storage via a signed URL (ADR 0010) and
+ *  returns the object name to pass as `resume_object`. */
+export async function uploadResume(file: File): Promise<string> {
+  const ticket = await post<UploadTicket>("/uploads", {
+    filename: file.name,
+    content_type: file.type,
+    size_bytes: file.size,
+  });
+  return putTicket(ticket, file, file.type);
+}
+
+/** Uploads a recorded answer the same way, under the user's `audio/` prefix
+ *  (ADR 0013), and returns the object name to transcribe. */
+export async function uploadAnswerAudio(blob: Blob, contentType: string): Promise<string> {
+  const ticket = await post<UploadTicket>("/uploads", {
+    filename: "answer",
+    content_type: contentType,
+    size_bytes: blob.size,
+  });
+  return putTicket(ticket, blob, contentType);
+}
+
+/** Turns an uploaded recording into the words that were said. */
+export async function transcribeAnswer(sessionId: string, objectName: string): Promise<string> {
+  const { text } = await post<{ text: string }>("/interview/transcribe", {
+    session_id: sessionId,
+    object_name: objectName,
+  });
+  return text;
 }
 
 export function submitAnswer(session: Session, answer: Answer): Promise<Session> {
@@ -153,18 +183,29 @@ export function getReport(session: Session): Promise<Report> {
   return post<Report>("/interview/report", session);
 }
 
+export interface AskHandlers {
+  onToken: (text: string) => void;
+  /** Voice mode only: one base64 WAV clip per sentence, in speaking order. */
+  onAudio?: (b64: string) => void;
+  /** Voice mode only: synthesis failed, so no audio is coming. */
+  onVoiceOff?: (message: string) => void;
+}
+
 /** Streams the interviewer's words for the current question. Calls onToken per
  *  delta; resolves when the server sends `done`; rejects with ApiError on an
- *  `error` event or a non-200 status. */
+ *  `error` event or a non-200 status. With `voice`, the same stream also
+ *  carries Donna's spoken audio (ADR 0013). */
 export async function askQuestion(
   session: Session,
-  onToken: (text: string) => void,
+  handlers: AskHandlers,
   signal: AbortSignal,
+  voice = false,
 ): Promise<void> {
+  const { onToken, onAudio, onVoiceOff } = handlers;
   const auth = await authHeaders();
   let res: Response;
   try {
-    res = await fetch(`${BASE}/interview/ask`, {
+    res = await fetch(`${BASE}/interview/ask${voice ? "?voice=true" : ""}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...auth },
       body: JSON.stringify(session),
@@ -180,6 +221,10 @@ export async function askQuestion(
   for await (const { event, data } of readSse(res.body)) {
     if (event === "token") {
       onToken((data as { text: string }).text);
+    } else if (event === "audio") {
+      onAudio?.((data as { b64: string }).b64);
+    } else if (event === "voice_off") {
+      onVoiceOff?.((data as { message: string }).message);
     } else if (event === "error") {
       const { message, retryable } = data as { message: string; retryable: boolean };
       throw new ApiError(message, 502, retryable);

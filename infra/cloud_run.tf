@@ -45,6 +45,14 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.fast_model_id
       }
       env {
+        name  = "TTS_MODEL_ID"
+        value = var.tts_model_id
+      }
+      env {
+        name  = "DONNA_VOICE"
+        value = var.donna_voice
+      }
+      env {
         name  = "CORS_ORIGINS"
         value = join(",", var.cors_origins)
       }

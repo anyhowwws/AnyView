@@ -9,14 +9,22 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ValidationError
 
-from anyview.api.auth import CurrentUser, current_user
-from anyview.api.sse import stream_response
-from anyview.api.uploads import get_store, object_prefix
+from anyview.api.auth import CurrentUser, current_user, get_settings
+from anyview.api.sse import stream_response, tokens
+from anyview.api.uploads import audio_prefix, get_store, object_prefix
 from anyview.brain.extract import ExtractionFailed, propose
+from anyview.config import Settings
 from anyview.interview import engine
 from anyview.interview.models import Answer, Report, Session, Setup, SetupInput, State
+from anyview.interview.voice import voiced
 from anyview.llm.adapter import Model
-from anyview.uploads.extract import ExtractionError, docx_to_text, pdf_to_text
+from anyview.uploads.extract import (
+    EXTENSION_TYPES,
+    ExtractionError,
+    audio_to_text,
+    docx_to_text,
+    pdf_to_text,
+)
 from anyview.uploads.store import UploadStore
 
 log = logging.getLogger(__name__)
@@ -31,6 +39,7 @@ def get_model() -> Model:  # overridden in main.py and in tests
 
 ModelDep = Annotated[Model, Depends(get_model)]
 StoreDep = Annotated[UploadStore, Depends(get_store)]
+SettingsDep = Annotated[Settings, Depends(get_settings)]
 
 
 def get_repository_optional():  # overridden in main.py and tests; None = no database
@@ -165,11 +174,56 @@ def start(
 
 
 @router.post("/ask")
-def ask(session: Session, model: ModelDep):
+def ask(session: Session, model: ModelDep, settings: SettingsDep, voice: bool = False):
     # Validate state before opening the stream so a bad session is a plain 409,
     # not an error frame inside a 200.
     engine.require_state(session, State.ASK)
-    return stream_response(engine.ask(session, model=model))
+    words = engine.ask(session, model=model)
+    if not voice:
+        return stream_response(tokens(words))
+    # Voice mode: the same words, plus a spoken clip per sentence (ADR 0013).
+    return stream_response(
+        voiced(
+            words,
+            model=model,
+            session_id=session.session_id,
+            voice=settings.donna_voice,
+        )
+    )
+
+
+class TranscribeRequest(BaseModel):
+    session_id: str
+    object_name: str
+
+
+class Transcript(BaseModel):
+    text: str
+
+
+@router.post("/transcribe", response_model=Transcript)
+def transcribe(
+    body: TranscribeRequest, user: CurrentUser, model: ModelDep, store: StoreDep
+) -> Transcript:
+    """A recorded answer, turned into the text the engine already understands.
+
+    The browser uploads the recording straight to the bucket and sends only its
+    object name, the same shape as a resume upload (ADR 0010, 0013)."""
+    # Only the caller's own recordings, by the prefix the ticket route set from
+    # the verified uid. This is the whole authorisation check.
+    if not body.object_name.startswith(audio_prefix(user.uid)):
+        raise HTTPException(403, "That recording isn't yours.")
+    suffix = body.object_name[body.object_name.rfind(".") :]
+    mime = EXTENSION_TYPES.get(suffix)
+    if mime is None:
+        raise HTTPException(415, "That recording format isn't supported.")
+    data = store.read(body.object_name)
+    if data is None:
+        raise HTTPException(404, "The recording wasn't found. Please record it again.")
+    try:
+        return Transcript(text=audio_to_text(data, mime, model=model, session_id=body.session_id))
+    except ExtractionError as exc:
+        raise HTTPException(422, exc.user_message) from exc
 
 
 @router.post("/answer", response_model=Session)

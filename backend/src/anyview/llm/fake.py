@@ -1,11 +1,12 @@
 """A scripted stand-in for the real model.
 
-Same two methods as `VertexGemini`, no network, no tokens. Tests use it to
+Same three methods as `VertexGemini`, no network, no tokens. Tests use it to
 drive the engine and the API deterministically; `ANYVIEW_FAKE_MODEL=1` runs the
 whole app on it for a browser walk-through that costs nothing.
 
-Replies are keyed by the `call` name (`plan`, `ask`, `score`, `ideal`) so a
-test can script one kind of call without caring about the others.
+Replies are keyed by the `call` name (`plan`, `ask`, `score`, `ideal`,
+`transcribe`) so a test can script one kind of call without caring about the
+others. `speak` returns silence of a plausible length instead of a reply.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import json
 from collections.abc import Iterator
 from typing import Any
 
-from anyview.llm.adapter import Effort, ModelError, Reply, Usage, _log_usage
+from anyview.llm.adapter import PCM_SAMPLE_RATE, Effort, ModelError, Reply, Usage, _log_usage, wav
 
 _FAKE_USAGE = Usage(input_tokens=100, output_tokens=50, thinking_tokens=20, cache_read=80)
 
@@ -75,6 +76,21 @@ class FakeModel:
         # Yield word by word so streaming code paths see more than one frame.
         for i, word in enumerate(text.split(" ")):
             yield word if i == 0 else " " + word
+
+    def speak(self, *, text: str, session_id: str, voice: str = "Kore") -> bytes:
+        """Silence, one real WAV file, lasting about as long as the words would.
+
+        A browser decodes it like any other clip, so the whole voice path —
+        queueing, playback, "Donna has finished, your turn" — can be walked
+        through locally with nothing but a microphone.
+        """
+        self._record("speak", session_id, voice, text)
+        seconds = min(len(text) / SPOKEN_CHARS_PER_SECOND, 30)
+        return wav(bytes(2 * int(PCM_SAMPLE_RATE * seconds)))
+
+
+# Roughly conversational pace: ~150 words a minute at ~5.5 characters a word.
+SPOKEN_CHARS_PER_SECOND = 14
 
 
 def default_plan(count: int) -> dict[str, Any]:
@@ -160,6 +176,12 @@ DEFAULTS: dict[str, Any] = {
         "infra cost 38%.\n- Designed the Terraform module library now used by 6 product teams."
     ),
     "plan": default_plan(5),
+    "transcribe": (
+        "I led the billing service migration to Cloud Run. The situation was that our VM "
+        "estate was costing about forty thousand a month, and I owned the platform budget. "
+        "I ran the migration over two quarters and cut monthly infra cost by thirty-eight "
+        "percent."
+    ),
     "ask": "Thanks for that. Next: tell me about a time you led a project end to end.",
     "score": {
         "dimensions": [

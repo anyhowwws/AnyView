@@ -53,7 +53,8 @@ def test_ticket_names_object_under_the_users_prefix(client):
     ticket = r.json()
     assert ticket["object_name"].startswith(f"uploads/{UID}/")
     assert ticket["object_name"].endswith(".pdf")
-    assert ticket["upload_url"].startswith("memory://upload/")
+    # The in-memory store points the browser back at the API's fake-mode route.
+    assert ticket["upload_url"] == f"/uploads/memory/{ticket['object_name']}"
     assert ticket["expires_in_seconds"] == 900
 
 

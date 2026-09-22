@@ -2,6 +2,11 @@
 # written by the browser through short-lived signed URLs and read by the API.
 # These objects are the raw material Phase 2's RawDump provenance points at,
 # so nothing here expires them.
+#
+# Recorded answers (ADR 0013) share the bucket but sit under audio/<uid>/, and
+# those do expire: a recording of your own voice is worth keeping for a while,
+# not forever. A lifecycle rule matches a literal prefix and cannot wildcard
+# the uid, which is why audio is its own root rather than uploads/<uid>/audio/.
 
 resource "google_storage_bucket" "uploads" {
   name     = "${var.project_id}-uploads"
@@ -13,6 +18,16 @@ resource "google_storage_bucket" "uploads" {
   # A re-upload gets a new object name, so there is nothing for versioning to keep.
   versioning {
     enabled = false
+  }
+
+  lifecycle_rule {
+    condition {
+      age            = var.answer_audio_retention_days
+      matches_prefix = ["audio/"]
+    }
+    action {
+      type = "Delete"
+    }
   }
 
   # The browser PUTs directly to the bucket from the app's origins.

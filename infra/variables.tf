@@ -27,6 +27,24 @@ variable "fast_model_id" {
   default     = "gemini-3.5-flash-lite"
 }
 
+variable "tts_model_id" {
+  description = "Vertex AI model that speaks Donna's questions in voice mode (ADR 0013). A text model cannot synthesise audio, so this is its own id."
+  type        = string
+  default     = "gemini-2.5-flash-preview-tts"
+}
+
+variable "donna_voice" {
+  description = "Prebuilt Vertex voice for Donna. Female voices include Kore (firm), Aoede (breezy), Leda (youthful) and Zephyr (bright)."
+  type        = string
+  default     = "Kore"
+}
+
+variable "answer_audio_retention_days" {
+  description = "How long a recorded interview answer stays in the bucket before the lifecycle rule deletes it (ADR 0013)."
+  type        = number
+  default     = 30
+}
+
 variable "github_repo" {
   description = "GitHub repository allowed to deploy, as owner/name. Used in the WIF attribute condition."
   type        = string

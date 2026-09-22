@@ -3,9 +3,14 @@
 Wire format, one frame per event:
 
     event: token          data: {"text": "..."}
+    event: audio          data: {"seq": 0, "b64": "..."}   (voice mode, ADR 0013)
+    event: voice_off      data: {"message": "..."}         (voice mode, ADR 0013)
     event: done           data: {}
     event: error          data: {"message": "...", "retryable": true}
     : ping                (comment frame, every 15 s while waiting)
+
+A producer yields `(event, data)` pairs; `tokens()` adapts a plain text stream
+into the token frames that shape covers.
 
 The model stream is a blocking iterator (the SDK is sync), so it runs in a
 worker thread and hands chunks to the async response through a queue. That
@@ -37,13 +42,22 @@ def frame(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
 
-async def _events(chunks: Iterator[str]) -> AsyncIterator[str]:
-    q: queue.Queue[tuple[str, Any] | object] = queue.Queue()
+Frame = tuple[str, Any]
+
+
+def tokens(chunks: Iterator[str]) -> Iterator[Frame]:
+    """The silent path: one token frame per text delta."""
+    for text in chunks:
+        yield ("token", {"text": text})
+
+
+async def _events(frames: Iterator[Frame]) -> AsyncIterator[str]:
+    q: queue.Queue[Frame | object] = queue.Queue()
 
     def produce() -> None:
         try:
-            for text in chunks:
-                q.put(("token", {"text": text}))
+            for event, data in frames:
+                q.put((event, data))
             q.put(("done", {}))
         except ModelError as exc:
             q.put(("error", {"message": exc.user_message, "retryable": exc.retryable}))
@@ -70,9 +84,9 @@ async def _events(chunks: Iterator[str]) -> AsyncIterator[str]:
         yield frame(event, data)
 
 
-def stream_response(chunks: Iterator[str]) -> StreamingResponse:
+def stream_response(frames: Iterator[Frame]) -> StreamingResponse:
     return StreamingResponse(
-        _events(chunks),
+        _events(frames),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

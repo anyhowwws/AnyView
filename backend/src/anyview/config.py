@@ -17,6 +17,8 @@ class Settings:
     vertex_region: str
     model_id: str
     fast_model_id: str
+    tts_model_id: str = "gemini-2.5-flash-preview-tts"
+    donna_voice: str = "Kore"
     cors_origins: list[str] = field(default_factory=list)
     allowed_emails: frozenset[str] = frozenset()
     upload_bucket: str = ""
@@ -45,6 +47,10 @@ class Settings:
             vertex_region=os.environ.get("VERTEX_REGION", "global"),
             model_id=os.environ.get("MODEL_ID", "gemini-3.1-pro-preview"),
             fast_model_id=os.environ.get("MODEL_ID_FAST", "gemini-3.5-flash-lite"),
+            # Voice mode (ADR 0013). A TTS model is a different model family, so
+            # it gets its own id; the voice is one of Vertex's prebuilt speakers.
+            tts_model_id=os.environ.get("TTS_MODEL_ID", "gemini-2.5-flash-preview-tts"),
+            donna_voice=os.environ.get("DONNA_VOICE", "Kore"),
             cors_origins=origins or ["http://localhost:3000"],
             allowed_emails=emails,
             upload_bucket=os.environ.get("UPLOAD_BUCKET", ""),

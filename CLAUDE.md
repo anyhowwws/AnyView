@@ -26,6 +26,7 @@ writes simple scripts). So:
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
 | LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for streamed `ask` turns (0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first); Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. Claude returns as a second adapter once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
+| Voice | **Gemini TTS on Vertex** for Donna (prebuilt voice, `DONNA_VOICE`, default `Kore`); answers recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency | 0013 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
@@ -58,9 +59,12 @@ Backend modules:
 - `anyview/config.py` — `Settings` from env vars. Plain `os.environ`, no settings library.
 - `anyview/llm/adapter.py` — the only file that imports `google.genai`. `generate()` (optionally with `output_schema=` → parsed dict), `stream()`. Returns plain Python types. Every call logs one `anyview.usage` JSON line.
 - `anyview/llm/fake.py` — `FakeModel`, same surface, scripted replies. Used by tests and by `ANYVIEW_FAKE_MODEL=1`.
+- `anyview/interview/voice.py` — splits the `ask` stream into sentences and synthesises each
+  one while the next arrives; emits `audio` / `voice_off` frames beside the token frames.
 - `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; Phase 0 has `max_probes = 0`.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
-- `anyview/uploads/{store,extract}.py` — the upload store (GCS or in-memory) and resume → text extraction.
+- `anyview/uploads/{store,extract}.py` — the upload store (GCS or in-memory), resume → text
+  extraction, and recorded answer → transcript (`audio_to_text`).
 - `anyview/db/{connection,migrate,repository}.py` — engine (connector + IAM auth, or DATABASE_URL), numbered SQL migrations run at startup, and **the only file that runs SQL**: app-meaningful methods over an event log + projection (ADR 0011).
 - `anyview/brain/{models,extract}.py` — Patch drafts with verbatim evidence, the brain as read, coverage; the dump → Patch extraction call with the evidence check.
 - `backend/migrations/NNN_*.sql` — the schema. Additive only; the DB enforces provenance, append-only events, the competency taxonomy, one live skill per name.
@@ -104,7 +108,7 @@ terraform plan                                                   # terraform.tfv
   function and a test asserts equality.
 - Entity labels (R1, P2, S3, K1, A1) are computed per read from creation order, never
   stored. Prompts use them; the review queue resolves them back to ids at confirmation.
-- Every model call writes a usage row. No exceptions, including scoring calls.
+- Every model call writes a usage row. No exceptions, including scoring and `speak` calls.
 - `finish()` scores the five answers concurrently (thread pool; the SDK client is
   thread-safe). Keep new per-answer work inside `_score_one` so it stays parallel.
 - Scoring prompts use explicit rubric anchors. Per-dimension scores only; never
@@ -128,6 +132,16 @@ retrieval test set.
 
 - Cloud Run service is created with a placeholder image; `lifecycle.ignore_changes`
   on the image means Terraform never fights CI. Don't remove that.
+- Voice mode needs the TTS model enabled in Model Garden. It is a different model family
+  from the chat models, with its own id (`TTS_MODEL_ID`, default `gemini-2.5-flash-preview-tts`) —
+  confirm what the project actually has before the first real run. A failure there is not fatal:
+  the stream sends one `voice_off` frame and the interview carries on as text.
+- Recorded answers live under `audio/<uid>/` in the uploads bucket, not `uploads/<uid>/`, because
+  a GCS lifecycle rule matches a literal prefix and cannot wildcard the uid. They expire after 30
+  days (`answer_audio_retention_days`); resumes never do.
+- `ANYVIEW_FAKE_MODEL=1` makes `speak()` return silence of a realistic length and points the
+  "signed" upload URL back at `PUT /uploads/memory/...`, so the whole voice loop — mic, silence
+  detection, upload, transcript — can be walked through locally with no bucket and no tokens.
 - Cloud Run is publicly invokable; the sign-in gate is app-level (ADR 0009). An empty
   `ALLOWED_EMAILS` lets nobody in — check tfvars before assuming auth is broken.
 - Signed URLs are signed via IAM `signBlob` as `anyview-api@…`. **`roles/owner` does not

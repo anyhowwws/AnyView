@@ -42,3 +42,23 @@ export function clear(): void {
     // ignore
   }
 }
+
+// Voice mode is a preference, not session state, so it outlives the interview
+// in localStorage (ADR 0013).
+const VOICE_KEY = "anyview.voice";
+
+export function loadVoicePreference(): boolean {
+  try {
+    return localStorage.getItem(VOICE_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function saveVoicePreference(on: boolean): void {
+  try {
+    localStorage.setItem(VOICE_KEY, on ? "on" : "off");
+  } catch {
+    // storage unavailable; the preference lasts for this page only
+  }
+}
