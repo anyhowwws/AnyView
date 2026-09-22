@@ -9,6 +9,11 @@ project to it by label (an update) instead of inventing a duplicate. Every
 draft must quote the dump verbatim in `evidence`; the review queue shows the
 quote beside the card, and a draft whose quote is not in the dump is dropped
 before the user sees it.
+
+Two filters run over the model's patch before anyone sees it, both pure
+functions and neither costing a call: `_keep_only_evidenced` drops what the
+dump does not support, and `drop_unchanged` (ADR 0015) drops what the user has
+already confirmed.
 """
 
 from __future__ import annotations
@@ -17,7 +22,7 @@ import logging
 
 from pydantic import ValidationError
 
-from anyview.brain.models import Patch
+from anyview.brain.models import Brain, Patch
 from anyview.llm.adapter import Model
 
 log = logging.getLogger(__name__)
@@ -273,3 +278,139 @@ def _keep_only_evidenced(patch: Patch, dump_text: str) -> Patch:
     for k in kept.skills:
         k.projects = [p for p in k.projects if link(p)]
     return kept
+
+
+# --- Delta detection (ADR 0015) ----------------------------------------------
+
+# Draft field -> the entity field it corresponds to, where the two names differ.
+# Everything else is compared under its own name, so a field added to a draft
+# and to its projection is compared from the moment it exists.
+FIELD_ALIAS = {"role": "role_id", "project": "project_id", "projects": "project_ids"}
+
+# Bookkeeping, not content. A fresh quote for a fact already confirmed is not a
+# change to that fact, and a draft's key is meaningful only inside its patch.
+NOT_CONTENT = frozenset({"key", "existing", "evidence"})
+
+
+def drop_unchanged(patch: Patch, brain: Brain) -> Patch:
+    """Remove drafts that only restate something the user already confirmed.
+
+    `propose()` recognises an entity it has seen and tags it with `existing` —
+    and then describes it in full anyway. Re-uploading a resume with one new
+    bullet therefore produces a queue of cards that mostly repeat what the user
+    already agreed to. The review queue is the garden's whole safety property,
+    and a queue nobody reads is a queue approved unread, so the cost of this is
+    attention, not tokens.
+    """
+    by_label = {
+        e.label: e
+        for group in (
+            brain.roles,
+            brain.projects,
+            brain.stories,
+            brain.skills,
+            brain.achievements,
+            brain.education,
+            brain.languages,
+        )
+        for e in group
+    }
+    # One draft links to another by its patch key. When that other draft is
+    # itself an update to something confirmed, the key stands for that entity,
+    # so a link has to resolve through it before it can be compared with the
+    # id the projection holds.
+    by_key = {d.key: d.existing for d in _all(patch) if d.existing}
+    dropped: dict[str, str] = {}  # draft key -> the label it restated
+
+    def keep(drafts: list) -> list:
+        out = []
+        for d in drafts:
+            live = by_label.get(d.existing) if d.existing else None
+            if live is not None and not _differs(d, live, by_label, by_key):
+                log.info(
+                    "dropping %s draft %s: unchanged from %s", type(d).__name__, d.key, d.existing
+                )
+                dropped[d.key] = d.existing
+                continue
+            out.append(d)
+        return out
+
+    kept = Patch(
+        roles=keep(patch.roles),
+        projects=keep(patch.projects),
+        stories=keep(patch.stories),
+        skills=keep(patch.skills),
+        achievements=keep(patch.achievements),
+        education=keep(patch.education),
+        languages=keep(patch.languages),
+    )
+
+    # A kept draft may point at a dropped one by its patch key. The entity it
+    # named is still in the brain, so re-point the link at that entity's label
+    # rather than severing it the way the evidence filter has to.
+    def relink(ref: str | None) -> str | None:
+        return dropped.get(ref, ref) if ref else ref
+
+    for project in kept.projects:
+        project.role = relink(project.role)
+    for story in kept.stories:
+        story.role, story.project = relink(story.role), relink(story.project)
+    for skill in kept.skills:
+        skill.projects = [r for r in (relink(p) for p in skill.projects) if r]
+    return kept
+
+
+def _all(patch: Patch) -> list:
+    """Every draft in a patch, whatever its kind."""
+    return [
+        d
+        for group in (
+            patch.roles,
+            patch.projects,
+            patch.stories,
+            patch.skills,
+            patch.achievements,
+            patch.education,
+            patch.languages,
+        )
+        for d in group
+    ]
+
+
+def _differs(draft, live, by_label: dict, by_key: dict) -> bool:
+    """Field by field, walking the draft model rather than a hand-written list."""
+    for name in type(draft).model_fields:
+        if name in NOT_CONTENT:
+            continue
+        target = FIELD_ALIAS.get(name, name)
+        if not hasattr(live, target):
+            return True  # a draft field with nothing to compare against is new
+        proposed, confirmed = getattr(draft, name), getattr(live, target)
+        if name in FIELD_ALIAS:
+            if _refs(proposed, by_label, by_key) != _refs(confirmed, {}, {}):
+                return True
+        elif isinstance(proposed, list) or isinstance(confirmed, list):
+            if _phrases(proposed) != _phrases(confirmed):
+                return True
+        elif isinstance(proposed, str) or isinstance(confirmed, str):
+            if _normalise(proposed or "") != _normalise(confirmed or ""):
+                return True
+        elif proposed != confirmed:
+            return True
+    return False
+
+
+def _refs(value, by_label: dict, by_key: dict) -> frozenset[str]:
+    """A link field as a set of entity ids. A draft names a label ("P2") or a
+    patch key ("p1"); the entity holds ids. A reference that resolves to
+    neither — a key for something genuinely new in this patch — stays as
+    itself, and so can never equal an id. That is the answer we want: it is a
+    change."""
+    items = value if isinstance(value, list) else ([] if value is None else [value])
+    labels = [by_key.get(i, i) for i in items]
+    return frozenset(by_label[i].id if i in by_label else i for i in labels)
+
+
+def _phrases(value) -> frozenset[str]:
+    """Tech, metrics and competencies are sets; the model may list them in any order."""
+    return frozenset(_normalise(v) for v in (value or []) if v)

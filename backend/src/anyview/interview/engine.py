@@ -93,7 +93,7 @@ def start(setup: Setup, *, session_id: str, model: Model) -> Session:
 
     reply = model.generate(
         system=session_system(setup),
-        user=plan_user(),
+        user=plan_user(setup),
         session_id=session_id,
         call="plan",
         output_schema=PLAN_SCHEMA,
@@ -161,8 +161,8 @@ def submit_answer(session: Session, answer: Answer) -> Session:
 def _score_one(
     session: Session, system: str, question: Question, answer: Answer, *, model: Model
 ) -> QuestionReport:
-    """Two structured calls for one answer: the rubric score and the
-    resume-grounded ideal answer."""
+    """Two structured calls for one answer: the rubric score, and the ideal
+    answer grounded in whatever record the setup carries."""
     score_reply = model.generate(
         system=system,
         user=score_user(question, answer.text),
@@ -174,7 +174,7 @@ def _score_one(
     )
     ideal_reply = model.generate(
         system=system,
-        user=ideal_user(question),
+        user=ideal_user(question, session.setup),
         session_id=session.session_id,
         call="ideal",
         output_schema=IDEAL_SCHEMA,
@@ -218,6 +218,7 @@ def finish(session: Session, *, model: Model) -> Report:
         company=session.setup.company,
         role=session.setup.role,
         seniority=session.setup.seniority,
-        source=session.setup.source,
+        difficulty=session.setup.difficulty,
+        garden_used=bool(session.setup.garden and session.setup.garden.strip()),
         items=items,
     )

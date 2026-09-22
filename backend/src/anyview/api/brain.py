@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from anyview.api.auth import CurrentUser, current_user
 from anyview.api.interview import ModelDep
 from anyview.api.uploads import StoreDep, object_prefix
-from anyview.brain.extract import ExtractionFailed, propose
+from anyview.brain.extract import ExtractionFailed, drop_unchanged, propose
 from anyview.brain.models import Brain, Event, Patch, Proposal, RawDump
 from anyview.db.repository import Conflict, NotFound, Repository
 from anyview.uploads.extract import (
@@ -69,6 +69,14 @@ def _propose(
             422,
             "Donna found nothing about your experience in that. "
             "Try describing a role, a project, or a story.",
+        )
+    # Drafts that only restate something already confirmed never reach the
+    # queue: a queue of cards the user has already agreed to is a queue that
+    # gets approved unread (ADR 0015).
+    patch = drop_unchanged(patch, repo.brain(user.uid))
+    if patch.is_empty():
+        raise HTTPException(
+            422, "Nothing new in there — your Digital Garden already has all of it."
         )
     return repo.create_proposal(
         user.uid, dump_id=dump.id, patch=patch, model=getattr(model, "model", "fake")

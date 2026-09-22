@@ -5,10 +5,12 @@ import type {
   Brain,
   BrainEvent,
   EntityKind,
+  JobDocument,
   Patch,
   Proposal,
   RawDump,
   Report,
+  ResumeOnFile,
   Session,
   SetupInput,
 } from "@/lib/types";
@@ -116,6 +118,15 @@ async function patchJson<T>(path: string, body: unknown): Promise<T> {
 export function startInterview(sessionId: string, setup: SetupInput): Promise<Session> {
   return post<Session>("/interview/start", { session_id: sessionId, setup });
 }
+
+/** The resume an interviewer would have received, if we already have one
+ *  (ADR 0014). `dump_id === null` means the form must ask for it. */
+export const getResumeOnFile = () => request<ResumeOnFile>("GET", "/interview/resume");
+
+/** Reads an uploaded job description and hands back its text plus the fields
+ *  it suggests for the form. Nothing here is used until you confirm it. */
+export const parseJob = (objectName: string) =>
+  post<JobDocument>("/interview/job/parse", { object_name: objectName });
 
 interface UploadTicket {
   object_name: string;

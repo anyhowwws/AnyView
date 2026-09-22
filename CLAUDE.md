@@ -31,7 +31,7 @@ writes simple scripts). So:
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
 | Frontend | Next.js App Router, TS, Tailwind v4, shadcn/ui, Framer Motion; static export → Firebase Hosting (static files only) | brief |
-| Files | Cloud Storage bucket `<project>-uploads`, `uploads/<uid>/…`, V4 signed PUT URLs (never transit the API); PDF read by the model, DOCX by `python-docx` | 0010 |
+| Files | Cloud Storage bucket `<project>-uploads`, `uploads/<uid>/…`, V4 signed PUT URLs (never transit the API); PDF read by the model, DOCX by `python-docx`. Resumes **and** job descriptions take the same path | 0010, 0014 |
 | Async | Cloud Tasks | brief |
 | Auth | Identity Platform: Google sign-in only, email allow-list (`ALLOWED_EMAILS`), Firebase ID token verified by `google-auth` on every `/interview/*` route | 0009 |
 | Secrets | Secret Manager, Terraform provisions the *parameter*, never the value | brief |
@@ -62,11 +62,15 @@ Backend modules:
 - `anyview/interview/voice.py` — splits the `ask` stream into sentences and synthesises each
   one while the next arrives; emits `audio` / `voice_off` frames beside the token frames.
 - `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; Phase 0 has `max_probes = 0`.
+  `prompts.py` also owns **difficulty** (ADR 0014): `recruiter_screen` / `hiring_manager` / `panel` decide what the interviewer knows, and the garden reaches `session_system` at `panel` only.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
+  `interview.py` also serves `GET /interview/resume` (the resume on file) and `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields).
 - `anyview/uploads/{store,extract}.py` — the upload store (GCS or in-memory), resume → text
   extraction, and recorded answer → transcript (`audio_to_text`).
 - `anyview/db/{connection,migrate,repository}.py` — engine (connector + IAM auth, or DATABASE_URL), numbered SQL migrations run at startup, and **the only file that runs SQL**: app-meaningful methods over an event log + projection (ADR 0011).
-- `anyview/brain/{models,extract}.py` — Patch drafts with verbatim evidence, the brain as read, coverage; the dump → Patch extraction call with the evidence check.
+  `active_resume` / `set_active_resume` are the resume on file; `dump_with_text` is the re-upload no-op check.
+- `anyview/brain/{models,extract}.py` — Patch drafts with verbatim evidence, the brain as read, coverage; the dump → Patch extraction call with the evidence check
+  and `drop_unchanged`, which keeps drafts restating already-confirmed entities out of the review queue (ADR 0015).
 - `backend/migrations/NNN_*.sql` — the schema. Additive only; the DB enforces provenance, append-only events, the competency taxonomy, one live skill per name.
 
 ## Commands
@@ -124,7 +128,9 @@ terraform plan                                                   # terraform.tfv
 
 **Phase 1** — auth (0009), resume upload (0010), Cloud SQL + the second brain
 (0011): capture, review queue, event-sourced projection, coverage heatmap,
-`/brain` screen, and the brain as an interview source. Phase 2 next: embeddings
+`/brain` screen, and the brain as an interview source. Setup now describes a
+situation rather than a set of sources (0014), and a replaced resume queues
+only what changed (0015). Phase 2 next: embeddings
 (`gemini-embedding-2`), hybrid retrieval, Cloud Tasks for ingestion, golden
 retrieval test set.
 
@@ -175,5 +181,21 @@ retrieval test set.
   Gemini has a default quota. The app maps a 429 to a 503 either way.
 - Gemini counts thinking tokens against `max_output_tokens`; the adapter adds a
   per-effort allowance. The usage log's `thinking_tokens` shows the real spend.
+- The resume is a **property of the user**, not a per-interview choice (ADR 0014):
+  `users.resume_dump_id` points at a `raw_dumps` row, `/interview/start` with no
+  `resume`/`resume_object` uses it, and the stored text means a second interview
+  does not re-extract the PDF. Without a database the flow still works — it asks
+  for the file every time.
+- Difficulty gates *sourcing only*. `MAX_PROBES` stays 0 until Phase 3, so Panel
+  is harder because of what it asks, not because it interrupts. A Panel interview
+  with an empty garden uses `PANEL_WITHOUT_GARDEN`: never point the model at a
+  `<digital_garden>` block that is not in the prompt.
+- The report reads the garden at *every* difficulty, but below Panel it rides in
+  `ideal_user`'s user turn — after the cache breakpoint, where it cannot reach
+  the questions. Putting it in `session_system` instead would leak it to the
+  interviewer.
+- A role that vanishes from a re-uploaded resume is **not** retired. Absence is
+  not evidence; trimming a CV for one application is the normal reason. Retiring
+  stays a manual act in `/brain`.
 - Only the `-preview` build of Gemini 3.1 Pro is reachable; bare `gemini-3.1-pro`
   is a 404. `gemini-3.8-flash` is the GA step-down for judgement calls; it cannot disable thinking, so it is not a fit for `ask`.

@@ -11,6 +11,28 @@ export const SENIORITIES: { value: Seniority; label: string }[] = [
   { value: "principal", label: "Principal" },
 ];
 
+/** How much the interviewer knows, and so how far past the resume they push
+ *  (ADR 0014). Named for the room, because the room is what the level
+ *  simulates. */
+export type Difficulty = "recruiter_screen" | "hiring_manager" | "panel";
+export const DIFFICULTIES: { value: Difficulty; label: string; blurb: string }[] = [
+  {
+    value: "recruiter_screen",
+    label: "Recruiter screen",
+    blurb: "Only what your resume can answer. Everything is on the page in front of them.",
+  },
+  {
+    value: "hiring_manager",
+    label: "Hiring manager",
+    blurb: "Your resume and the job description. They will ask about what the role needs and your CV doesn't show.",
+  },
+  {
+    value: "panel",
+    label: "Panel",
+    blurb: "They have done their homework — your Digital Garden too. Expect the questions your resume alone could not have prompted.",
+  },
+];
+
 export type Dimension =
   | "star_completeness"
   | "specificity"
@@ -32,21 +54,47 @@ export interface Setup {
   company: string;
   role: string;
   seniority: Seniority;
+  difficulty: Difficulty;
   job_description: string | null;
   resume_object: string | null;
-  source: "resume" | "brain";
+  /** The confirmed garden, present only when the interviewer is allowed it. */
+  garden: string | null;
 }
 
-/** What the browser sends to start: uploaded object name or pasted text, not both. */
+/** What the browser sends to start (ADR 0014). Send no resume at all and the
+ *  one on file is used; `resume_object` replaces it. */
 export interface SetupInput {
-  resume?: string;
   resume_object?: string;
-  use_brain?: boolean;
-  add_to_brain?: boolean;
   company: string;
   role: string;
   seniority: Seniority;
+  difficulty: Difficulty;
   job_description: string | null;
+}
+
+/** The resume an interviewer would have received, as the setup form shows it.
+ *  `dump_id === null` means there is nothing on file yet. */
+export interface ResumeOnFile {
+  dump_id: string | null;
+  kind: string | null;
+  uploaded_at: string | null;
+  characters: number;
+}
+
+/** What Donna read out of an uploaded job description. Every field is a
+ *  suggestion that pre-fills the form for you to confirm. */
+export interface JobParse {
+  company: string | null;
+  role: string | null;
+  seniority: Seniority | null;
+  responsibilities: string[];
+  must_haves: string[];
+  nice_to_haves: string[];
+}
+
+export interface JobDocument {
+  text: string;
+  parsed: JobParse;
 }
 
 export const UPLOAD_TYPES: Record<string, string> = {
@@ -87,8 +135,9 @@ export interface DimensionScore {
 
 export interface IdealAnswer {
   answer: string;
-  cited_resume_lines: string[];
-  resume_has_material: boolean;
+  /** Resume lines, or garden entries by label ([S3]). */
+  cited_lines: string[];
+  has_material: boolean;
 }
 
 export interface QuestionReport {
@@ -105,7 +154,8 @@ export interface Report {
   company: string;
   role: string;
   seniority: Seniority;
-  source: "resume" | "brain";
+  difficulty: Difficulty;
+  garden_used: boolean;
   items: QuestionReport[];
 }
 

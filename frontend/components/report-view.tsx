@@ -3,7 +3,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { DIMENSION_LABELS, type DimensionScore, type Report } from "@/lib/types";
+import { DIFFICULTIES, DIMENSION_LABELS, type DimensionScore, type Report } from "@/lib/types";
 
 interface Props {
   report: Report;
@@ -19,11 +19,13 @@ export function ReportView({ report, onRestart }: Props) {
           <p className="eyebrow">A clearer picture of your strengths</p>
           <h1>Your next step<span className="text-primary">.</span></h1>
           <p className="text-sm text-muted-foreground">
-            {report.role} · {report.company} · {report.seniority}
+            {report.role} · {report.company} · {report.seniority} ·{" "}
+            {DIFFICULTIES.find((d) => d.value === report.difficulty)?.label}
           </p>
           <p className="text-xs text-muted-foreground">
-            Scores and ideal answers are AI-generated from your answers and your {report.source === "brain" ? "confirmed brain" : "resume"}. Check the
-            facts before you reuse them.
+            Scores and ideal answers are AI-generated from your answers, your resume
+            {report.garden_used && " and your Digital Garden"}. Check the facts before you
+            reuse them.
           </p>
         </div>
         <Button variant="outline" className="h-10" onClick={onRestart}>
@@ -52,13 +54,19 @@ export function ReportView({ report, onRestart }: Props) {
               <Column title="Your answer">
                 <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.answer}</p>
               </Column>
-              <Column title={report.source === "brain" ? "Ideal answer, from your Digital Garden" : "Ideal answer, from your resume"}>
-                {item.ideal.resume_has_material ? (
+              <Column
+                title={
+                  report.garden_used
+                    ? "Ideal answer, from your resume and Digital Garden"
+                    : "Ideal answer, from your resume"
+                }
+              >
+                {item.ideal.has_material ? (
                   <>
                     <p className="whitespace-pre-wrap text-sm">{item.ideal.answer}</p>
-                    {item.ideal.cited_resume_lines.length > 0 && (
+                    {item.ideal.cited_lines.length > 0 && (
                       <ul className="mt-3 space-y-1 border-l-2 pl-3 text-xs text-muted-foreground">
-                        {item.ideal.cited_resume_lines.map((line, j) => (
+                        {item.ideal.cited_lines.map((line: string, j: number) => (
                           <li key={j}>{line}</li>
                         ))}
                       </ul>

@@ -1,21 +1,39 @@
-"""Interview routes. The browser owns the session and posts it back each turn."""
+"""Interview routes. The browser owns the session and posts it back each turn.
+
+Setup describes a situation, not a set of sources (ADR 0014): the resume is a
+property of the user, the job is a document or a filled-in form, and difficulty
+decides what the interviewer is allowed to know.
+"""
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from anyview.api.auth import CurrentUser, current_user, get_settings
 from anyview.api.sse import stream_response, tokens
 from anyview.api.uploads import audio_prefix, get_store, object_prefix
-from anyview.brain.extract import ExtractionFailed, propose
+from anyview.brain.extract import ExtractionFailed, drop_unchanged, propose
 from anyview.config import Settings
 from anyview.interview import engine
-from anyview.interview.models import Answer, Report, Session, Setup, SetupInput, State
+from anyview.interview.models import (
+    JOB_SCHEMA,
+    Answer,
+    JobDocument,
+    JobParse,
+    Report,
+    Session,
+    Setup,
+    SetupInput,
+    State,
+)
+from anyview.interview.prompts import JOB_PARSE_SYSTEM, job_parse_user
 from anyview.interview.voice import voiced
 from anyview.llm.adapter import Model
 from anyview.uploads.extract import (
@@ -28,6 +46,11 @@ from anyview.uploads.extract import (
 from anyview.uploads.store import UploadStore
 
 log = logging.getLogger(__name__)
+
+# A garden can outgrow a prompt. `Setup.garden` caps it; this is where the cut
+# is made, with a line saying so rather than a sentence stopping mid-word.
+MAX_GARDEN_CHARS = 20_000
+MAX_JD_CHARS = 8_000
 
 # Every route here requires a signed-in, allow-listed user (api/auth.py).
 router = APIRouter(prefix="/interview", tags=["interview"], dependencies=[Depends(current_user)])
@@ -54,63 +77,86 @@ class StartRequest(BaseModel):
     setup: SetupInput
 
 
+def _truncate(text: str, limit: int, what: str) -> str:
+    if len(text) <= limit:
+        return text
+    cut = text.rfind("\n", 0, limit) or limit
+    return f"{text[:cut].rstrip()}\n\n[{what} continues past this point and was cut to fit.]"
+
+
+def _extract(
+    object_name: str, *, user_uid: str, store: UploadStore, model: Model, session_id: str
+) -> str:
+    """One uploaded PDF or Word file, as text (ADR 0010).
+
+    The prefix was set by /uploads from the verified uid, so checking it is the
+    whole authorisation check: an object outside the caller's own prefix is not
+    theirs to read."""
+    if not object_name.startswith(object_prefix(user_uid)):
+        raise HTTPException(403, "That upload isn't yours.")
+    data = store.read(object_name)
+    if data is None:
+        raise HTTPException(404, "The uploaded file wasn't found. Please upload it again.")
+    try:
+        if object_name.endswith(".pdf"):
+            return pdf_to_text(data, model=model, session_id=session_id)
+        if object_name.endswith(".docx"):
+            return docx_to_text(data)
+    except ExtractionError as exc:
+        raise HTTPException(422, exc.user_message) from exc
+    raise HTTPException(415, "Upload a PDF or a Word (.docx) file.")
+
+
+def _resume_on_file(repo: Any, user_uid: str) -> str:
+    if repo is None:
+        raise HTTPException(
+            422,
+            "There's no resume on file and no database to keep one in. "
+            "Upload the resume an interviewer would receive.",
+        )
+    dump = repo.active_resume(user_uid)
+    if dump is None:
+        raise HTTPException(
+            422, "Donna needs your resume first — upload the one an interviewer would receive."
+        )
+    return dump.text
+
+
+def _garden(repo: Any, user_uid: str) -> str | None:
+    """The confirmed garden as text, or None when there is nothing in it."""
+    if repo is None:
+        return None
+    text = repo.brain_context(user_uid)
+    if len(text.strip()) < 50:
+        return None
+    return _truncate(text, MAX_GARDEN_CHARS, "Your Digital Garden")
+
+
 def resolve_setup(
     body: StartRequest, *, user_uid: str, store: UploadStore, model: Model, repo: Any = None
 ) -> Setup:
-    """Turn the browser's SetupInput into a Setup with the candidate's record:
-    pasted text, an uploaded file's extracted text (ADR 0010), or the brain
-    rendered as text."""
-    given = body.setup
-    sources = sum(bool(x) for x in (given.resume, given.resume_object, given.use_brain))
-    if sources != 1:
-        raise HTTPException(
-            422, "Upload a resume, paste its text, or use your Digital Garden — one of the three."
-        )
+    """Turn the browser's SetupInput into the interview's situation.
 
-    if given.use_brain:
-        if repo is None:
-            raise HTTPException(503, "The brain needs a database and none is configured.")
-        text = repo.brain_context(user_uid)
-        if len(text.strip()) < 50:
-            raise HTTPException(
-                422,
-                "Your Digital Garden is still empty. Add something to it first, "
-                "or upload a resume.",
-            )
-        try:
-            return Setup(
-                resume=text,
-                company=given.company,
-                role=given.role,
-                seniority=given.seniority,
-                job_description=given.job_description,
-                resume_object=None,
-                source="brain",
-            )
-        except ValidationError as exc:
-            raise HTTPException(
-                422, "Your Digital Garden is too large to fit in one interview prompt yet."
-            ) from exc
+    The resume comes from a fresh upload, from already-extracted text, or — the
+    normal case — from the one on file. The garden is attached only at `panel`,
+    where the interviewer is allowed to have read it; the report picks it up
+    separately at every other level (ADR 0014)."""
+    given = body.setup
+    if given.resume and given.resume_object:
+        raise HTTPException(422, "Send an uploaded resume or its text, not both.")
 
     if given.resume_object:
-        # Only the caller's own uploads. The prefix is set by /uploads from the
-        # verified uid, so this is the whole authorisation check.
-        if not given.resume_object.startswith(object_prefix(user_uid)):
-            raise HTTPException(403, "That upload isn't yours.")
-        data = store.read(given.resume_object)
-        if data is None:
-            raise HTTPException(404, "The uploaded file wasn't found. Please upload it again.")
-        try:
-            if given.resume_object.endswith(".pdf"):
-                text = pdf_to_text(data, model=model, session_id=body.session_id)
-            elif given.resume_object.endswith(".docx"):
-                text = docx_to_text(data)
-            else:
-                raise HTTPException(415, "Upload a PDF or a Word (.docx) file.")
-        except ExtractionError as exc:
-            raise HTTPException(422, exc.user_message) from exc
+        text = _extract(
+            given.resume_object,
+            user_uid=user_uid,
+            store=store,
+            model=model,
+            session_id=body.session_id,
+        )
+    elif given.resume:
+        text = given.resume
     else:
-        text = given.resume or ""
+        text = _resume_on_file(repo, user_uid)
 
     try:
         return Setup(
@@ -118,8 +164,10 @@ def resolve_setup(
             company=given.company,
             role=given.role,
             seniority=given.seniority,
+            difficulty=given.difficulty,
             job_description=given.job_description,
             resume_object=given.resume_object,
+            garden=_garden(repo, user_uid) if given.difficulty == "panel" else None,
         )
     except ValidationError as exc:
         first = exc.errors()[0]
@@ -128,6 +176,33 @@ def resolve_setup(
                 422, "The resume needs at least 50 characters of text. Is the file empty?"
             ) from exc
         raise HTTPException(422, f"{'.'.join(map(str, first['loc']))}: {first['msg']}") from exc
+
+
+def _file_resume(
+    repo: Any, user: CurrentUser, setup: Setup, *, model: Model, session_id: str
+) -> None:
+    """Remember this upload as the resume on file, and offer what is new in it
+    to the review queue (ADR 0014, 0015).
+
+    Identical text to something the user has already given us is a no-op: the
+    pointer moves, nothing is proposed, and the queue stays worth reading."""
+    repo.ensure_user(user.uid, user.email)
+    seen = repo.dump_with_text(user.uid, setup.resume)
+    if seen is not None:
+        repo.set_active_resume(user.uid, seen.id)
+        return
+
+    kind = "resume_pdf" if setup.resume_object.endswith(".pdf") else "resume_docx"
+    dump = repo.create_dump(user.uid, kind=kind, text=setup.resume, object_name=setup.resume_object)
+    repo.set_active_resume(user.uid, dump.id)
+
+    index, _ = repo.brain_index(user.uid)
+    patch = propose(setup.resume, brain_index=index, model=model, session_id=session_id)
+    patch = drop_unchanged(patch, repo.brain(user.uid))
+    if not patch.is_empty():
+        repo.create_proposal(
+            user.uid, dump_id=dump.id, patch=patch, model=getattr(model, "model", "fake")
+        )
 
 
 class AnswerRequest(BaseModel):
@@ -141,36 +216,100 @@ def start(
 ) -> Session:
     setup = resolve_setup(body, user_uid=user.uid, store=store, model=model, repo=repo)
 
-    if not (body.setup.add_to_brain and setup.resume_object):
+    if not (setup.resume_object and repo is not None):
         return engine.start(setup, session_id=body.session_id, model=model)
-    if repo is None:
-        raise HTTPException(503, "The brain needs a database and none is configured.")
 
     # The same text feeds two independent model calls — plan the interview and
-    # propose brain entries — so run them side by side rather than back to back.
-    def add_to_brain() -> None:
-        repo.ensure_user(user.uid, user.email)
-        kind = "resume_pdf" if setup.resume_object.endswith(".pdf") else "resume_docx"
-        dump = repo.create_dump(
-            user.uid, kind=kind, text=setup.resume, object_name=setup.resume_object
-        )
-        index, _ = repo.brain_index(user.uid)
-        patch = propose(setup.resume, brain_index=index, model=model, session_id=body.session_id)
-        if not patch.is_empty():
-            repo.create_proposal(
-                user.uid, dump_id=dump.id, patch=patch, model=getattr(model, "model", "fake")
-            )
-
+    # propose what the resume adds to the garden — so run them side by side
+    # rather than back to back.
     with ThreadPoolExecutor(max_workers=2) as pool:
         planned = pool.submit(engine.start, setup, session_id=body.session_id, model=model)
-        proposed = pool.submit(add_to_brain)
+        filed = pool.submit(
+            _file_resume, repo, user, setup, model=model, session_id=body.session_id
+        )
         session = planned.result()
         try:
-            proposed.result()
+            filed.result()
         except ExtractionFailed as exc:
-            # The interview is what the user asked for; the brain entry is a bonus.
-            log.warning("add_to_brain failed for %s: %s", body.session_id, exc.user_message)
+            # The interview is what the user asked for; the garden entry is a bonus.
+            log.warning("filing the resume failed for %s: %s", body.session_id, exc.user_message)
     return session
+
+
+# --- The resume on file (ADR 0014) ------------------------------------------
+
+
+class ResumeOnFile(BaseModel):
+    """What the setup form shows in place of an upload zone. `dump_id` is None
+    when there is nothing on file yet, which is the only thing the form needs
+    in order to decide which of the two it draws."""
+
+    dump_id: str | None = None
+    kind: str | None = None
+    uploaded_at: dt.datetime | None = None
+    characters: int = 0
+
+
+@router.get("/resume", response_model=ResumeOnFile)
+def resume_on_file(user: CurrentUser, repo: RepoDep) -> ResumeOnFile:
+    if repo is None:
+        return ResumeOnFile()
+    repo.ensure_user(user.uid, user.email)
+    dump = repo.active_resume(user.uid)
+    if dump is None:
+        return ResumeOnFile()
+    return ResumeOnFile(
+        dump_id=dump.id,
+        kind=dump.kind,
+        uploaded_at=dump.created_at,
+        characters=len(dump.text),
+    )
+
+
+# --- The target job (ADR 0014) ----------------------------------------------
+
+
+class JobUploadRequest(BaseModel):
+    object_name: str = Field(max_length=200)
+
+
+@router.post("/job/parse", response_model=JobDocument)
+def parse_job(
+    body: JobUploadRequest, user: CurrentUser, model: ModelDep, store: StoreDep
+) -> JobDocument:
+    """An uploaded job description, read and turned into the fields the setup
+    form asks for. Everything it returns is a suggestion the user confirms
+    before it reaches a prompt."""
+    session_id = f"job-{uuid.uuid4().hex[:8]}"
+    text = _truncate(
+        _extract(
+            body.object_name, user_uid=user.uid, store=store, model=model, session_id=session_id
+        ),
+        MAX_JD_CHARS,
+        "The job description",
+    )
+    if len(text.strip()) < 50:
+        raise HTTPException(422, "There's almost no text in that file. Is it the right one?")
+
+    # Extraction, not judgement: the fields are filled in from what the posting
+    # says, and the user corrects anything the model read wrong.
+    reply = model.generate(
+        system=JOB_PARSE_SYSTEM,
+        user=job_parse_user(text),
+        session_id=session_id,
+        call="parse_job",
+        output_schema=JOB_SCHEMA,
+        effort="low",
+        max_tokens=2048,
+    )
+    if reply.refused or reply.truncated or reply.data is None:
+        raise HTTPException(502, "Donna couldn't read that job description. Please try again.")
+    try:
+        parsed = JobParse.model_validate(reply.data)
+    except ValidationError as exc:
+        log.warning("job parse came back malformed: %s", exc)
+        raise HTTPException(502, "That job description came back malformed. Please retry.") from exc
+    return JobDocument(text=text, parsed=parsed)
 
 
 @router.post("/ask")
@@ -232,5 +371,15 @@ def answer(body: AnswerRequest) -> Session:
 
 
 @router.post("/report", response_model=Report)
-def report(session: Session, model: ModelDep) -> Report:
+def report(session: Session, user: CurrentUser, model: ModelDep, repo: RepoDep) -> Report:
+    """The report is coaching, not simulation, so the ideal answers read the
+    garden at every difficulty (ADR 0014). At `panel` the session already
+    carries it; below that it is attached here, where it can reach the report
+    without ever having reached the questions."""
+    if session.setup.garden is None:
+        garden = _garden(repo, user.uid)
+        if garden:
+            session = session.model_copy(
+                update={"setup": session.setup.model_copy(update={"garden": garden})}
+            )
     return engine.finish(session, model=model)

@@ -37,7 +37,7 @@ def test_full_walk_produces_five_questions_and_a_report(setup):
             "quantified_outcome",
             "ownership_language",
         }
-        assert item.ideal.resume_has_material is True
+        assert item.ideal.has_material is True
     assert not hasattr(report, "total")
 
     # 1 plan + 5 ask + 5 score + 5 ideal, all tagged with the session id

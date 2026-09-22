@@ -5,8 +5,9 @@ drive the engine and the API deterministically; `ANYVIEW_FAKE_MODEL=1` runs the
 whole app on it for a browser walk-through that costs nothing.
 
 Replies are keyed by the `call` name (`plan`, `ask`, `score`, `ideal`,
-`transcribe`) so a test can script one kind of call without caring about the
-others. `speak` returns silence of a plausible length instead of a reply.
+`parse_job`, `transcribe`) so a test can script one kind of call without caring
+about the others. `speak` returns silence of a plausible length instead of a
+reply.
 """
 
 from __future__ import annotations
@@ -176,6 +177,15 @@ DEFAULTS: dict[str, Any] = {
         "infra cost 38%.\n- Designed the Terraform module library now used by 6 product teams."
     ),
     "plan": default_plan(5),
+    # A plausible read of a job description for the role in tests/conftest.py.
+    "parse_job": {
+        "company": "Initech",
+        "role": "Cloud Architect",
+        "seniority": "senior",
+        "responsibilities": ["Own the platform roadmap"],
+        "must_haves": ["Terraform", "Strong communication with product teams"],
+        "nice_to_haves": ["Cloud Run"],
+    },
     "transcribe": (
         "I led the billing service migration to Cloud Run. The situation was that our VM "
         "estate was costing about forty thousand a month, and I owned the platform budget. "
@@ -207,7 +217,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "ideal": {
         "answer": "Based on the resume: at Acme I led the migration of the billing service...",
-        "cited_resume_lines": ["Led migration of billing service to Cloud Run"],
-        "resume_has_material": True,
+        "cited_lines": ["Led migration of billing service to Cloud Run"],
+        "has_material": True,
     },
 }

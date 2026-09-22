@@ -8,7 +8,7 @@ limits are the input-size caps (a cost guard as much as a validation one).
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,13 @@ QUESTION_COUNT = 5
 MAX_PROBES = 0  # Phase 3 raises this to 2; the state exists now so the machine is complete.
 
 Seniority = Literal["junior", "mid", "senior", "staff", "principal"]
+SENIORITIES: tuple[str, ...] = get_args(Seniority)
+
+# How much the interviewer knows, and therefore how far past the resume they
+# can push (ADR 0014). Named for the room, because the room is the thing the
+# level simulates: a screen reads the page in front of them, a panel has done
+# its homework.
+Difficulty = Literal["recruiter_screen", "hiring_manager", "panel"]
 Dimension = Literal["star_completeness", "specificity", "quantified_outcome", "ownership_language"]
 
 
@@ -34,33 +41,69 @@ class State(StrEnum):
 
 
 class Setup(BaseModel):
+    """One interview's situation: a candidate, a job, and a room (ADR 0014).
+
+    `resume` is what an interviewer would have received. `garden` is the
+    candidate's confirmed Digital Garden — everything they know that the
+    interviewer did not get — and is filled in only at the difficulty that
+    lets the interviewer read it. Two fields, because they are two things;
+    the old single slot with a `source` flag was one thing pretending."""
+
     resume: str = Field(min_length=50, max_length=15_000)
     company: str = Field(min_length=1, max_length=120)
     role: str = Field(min_length=1, max_length=120)
     seniority: Seniority
+    difficulty: Difficulty = "hiring_manager"
     job_description: str | None = Field(default=None, max_length=8_000)
-    # Where `resume` came from: an uploaded object's name, or None when the
-    # text was pasted or rendered from the brain.
+    # The uploaded object the resume text was extracted from, when there is one.
     resume_object: str | None = None
-    # "resume" = a document the candidate gave us; "brain" = their confirmed
-    # record, rendered with [R1]/[P1]/[S1] labels the model can cite.
-    source: Literal["resume", "brain"] = "resume"
+    # The confirmed garden, rendered with [R1]/[P2]/[S3] labels the model can
+    # cite. Present at `panel`, or whenever an ideal answer can be improved by
+    # it — the report reads it even when the interviewer does not.
+    garden: str | None = Field(default=None, max_length=20_000)
 
 
 class SetupInput(BaseModel):
-    """What the browser sends to start. One of: pasted `resume` text, an
-    uploaded `resume_object` (ADR 0010), or `use_brain` (the confirmed brain
-    as the candidate's record). `add_to_brain` sends an uploaded resume
-    through the brain's review queue as well (ADR 0010)."""
+    """What the browser sends to start (ADR 0014).
+
+    The resume is a property of the user, not a choice made per interview:
+    send neither field and the resume on file is used. `resume_object`
+    replaces it — that is what the form's "Replace" does — and `resume` is the
+    same thing as already-extracted text, which the form does not offer but
+    the API accepts so an interview can run with no database behind it."""
 
     resume: str | None = Field(default=None, max_length=15_000)
     resume_object: str | None = Field(default=None, max_length=200)
-    use_brain: bool = False
-    add_to_brain: bool = False
     company: str = Field(min_length=1, max_length=120)
     role: str = Field(min_length=1, max_length=120)
     seniority: Seniority
+    difficulty: Difficulty = "hiring_manager"
     job_description: str | None = Field(default=None, max_length=8_000)
+
+
+# --- The target job ----------------------------------------------------------
+
+
+class JobParse(BaseModel):
+    """What the model pulls out of an uploaded job description (ADR 0014).
+
+    Every field is a suggestion: it pre-fills the same form the manual path
+    fills in, and the user confirms it before anything reaches a prompt."""
+
+    company: str | None = Field(default=None, max_length=120)
+    role: str | None = Field(default=None, max_length=120)
+    seniority: Seniority | None = None
+    responsibilities: list[str] = []
+    must_haves: list[str] = []
+    nice_to_haves: list[str] = []
+
+
+class JobDocument(BaseModel):
+    """The parse, plus the text it came from. The browser keeps both: the text
+    becomes `job_description`, the parse pre-fills the fields."""
+
+    text: str
+    parsed: JobParse
 
 
 class Question(BaseModel):
@@ -105,8 +148,10 @@ class DimensionScore(BaseModel):
 
 class IdealAnswer(BaseModel):
     answer: str
-    cited_resume_lines: list[str]
-    resume_has_material: bool
+    # Lines from the resume, or garden entries by label ([S3]). Named for what
+    # it is now that the report reads both (ADR 0014).
+    cited_lines: list[str]
+    has_material: bool
 
 
 class QuestionReport(BaseModel):
@@ -125,7 +170,10 @@ class Report(BaseModel):
     company: str
     role: str
     seniority: Seniority
-    source: Literal["resume", "brain"] = "resume"
+    # The room this was conducted in, which is what makes two attempts
+    # comparable, and whether the garden was available to the answers.
+    difficulty: Difficulty = "hiring_manager"
+    garden_used: bool = False
     items: list[QuestionReport]
 
 
@@ -191,10 +239,34 @@ IDEAL_SCHEMA = {
     "type": "object",
     "properties": {
         "answer": {"type": "string"},
-        "cited_resume_lines": {"type": "array", "items": {"type": "string"}},
-        "resume_has_material": {"type": "boolean"},
+        "cited_lines": {"type": "array", "items": {"type": "string"}},
+        "has_material": {"type": "boolean"},
     },
-    "required": ["answer", "cited_resume_lines", "resume_has_material"],
+    "required": ["answer", "cited_lines", "has_material"],
+    "additionalProperties": False,
+}
+
+_STRINGS = {"type": "array", "items": {"type": "string"}}
+
+JOB_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "company": {"type": ["string", "null"]},
+        "role": {"type": ["string", "null"]},
+        # Null is a legitimate answer: plenty of postings never state a level.
+        "seniority": {"type": ["string", "null"], "enum": [*SENIORITIES, None]},
+        "responsibilities": _STRINGS,
+        "must_haves": _STRINGS,
+        "nice_to_haves": _STRINGS,
+    },
+    "required": [
+        "company",
+        "role",
+        "seniority",
+        "responsibilities",
+        "must_haves",
+        "nice_to_haves",
+    ],
     "additionalProperties": False,
 }
 

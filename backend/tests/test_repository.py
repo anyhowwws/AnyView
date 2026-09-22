@@ -323,3 +323,33 @@ def test_usage_rows(repo):
         "output_tokens": 40,
         "thinking_tokens": 10,
     }
+
+
+# --- The resume on file (ADR 0014) and the no-op check (ADR 0015) -----------
+
+
+def test_the_resume_on_file_is_a_pointer_not_the_latest_dump(repo):
+    """Adding a second resume to the garden as raw material must not silently
+    change what interviewers see."""
+    assert repo.active_resume(UID) is None
+    first = repo.create_dump(UID, kind="resume_pdf", text="first resume" * 5, object_name="a.pdf")
+    repo.set_active_resume(UID, first.id)
+    repo.create_dump(UID, kind="resume_docx", text="an older CV" * 5, object_name="b.docx")
+    assert repo.active_resume(UID).id == first.id
+
+
+def test_a_dump_that_is_not_yours_cannot_become_your_resume(repo):
+    theirs = repo.create_dump("uid-other", kind="resume_pdf", text="not mine" * 8, object_name=None)
+    with pytest.raises(NotFound):
+        repo.set_active_resume(UID, theirs.id)
+    assert repo.active_resume(UID) is None
+
+
+def test_identical_text_is_found_again_and_stays_scoped_to_its_owner(repo):
+    text = "Jordan Lee — Cloud Solutions Architect. Acme Corp, 2021 to present."
+    mine = repo.create_dump(UID, kind="resume_pdf", text=text, object_name="a.pdf")
+    repo.create_dump("uid-other", kind="resume_pdf", text=text, object_name="b.pdf")
+
+    assert repo.dump_with_text(UID, text).id == mine.id
+    assert repo.dump_with_text(UID, text + " One more line.") is None
+    assert repo.dump_with_text("uid-third", text) is None

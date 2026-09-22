@@ -125,3 +125,35 @@ def test_pgvector_is_available(db):
             ).scalar_one()
             == 1.0
         )
+
+
+def test_the_resume_pointer_must_be_a_real_dump(db):
+    """`users.resume_dump_id` is a foreign key, so the resume on file cannot
+    point at a dump that does not exist (ADR 0014)."""
+    with db.begin() as conn:
+        dump, _ = _seed(conn)
+    with db.begin() as conn, pytest.raises(IntegrityError):
+        conn.execute(
+            sqlalchemy.text("UPDATE users SET resume_dump_id = :d WHERE uid = 'u1'"),
+            {"d": uuid.uuid4()},
+        )
+    with db.begin() as conn:
+        conn.execute(
+            sqlalchemy.text("UPDATE users SET resume_dump_id = :d WHERE uid = 'u1'"), {"d": dump}
+        )
+
+
+def test_the_backfilled_hash_matches_the_one_python_writes(db):
+    """Migration 003 backfills text_sha256 in SQL; the app computes it in
+    Python. If the two ever disagree, the no-op check silently stops working."""
+    from anyview.db.repository import text_sha256
+
+    with db.begin() as conn:
+        _seed(conn)
+        conn.execute(
+            sqlalchemy.text(
+                "UPDATE raw_dumps SET text_sha256 = encode(sha256(convert_to(text, 'UTF8')), 'hex')"
+            )
+        )
+        row = conn.execute(sqlalchemy.text("SELECT text, text_sha256 FROM raw_dumps")).one()
+    assert row[1] == text_sha256(row[0])

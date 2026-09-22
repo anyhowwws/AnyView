@@ -14,6 +14,7 @@ belonging to someone else is indistinguishable from a missing row.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import json
 import uuid
 from collections.abc import Iterable
@@ -70,6 +71,13 @@ def _json(value: Any) -> str:
     return json.dumps(value, default=str)
 
 
+def text_sha256(text: str) -> str:
+    """Hex digest of a dump's text (ADR 0015). The *extracted text*, never the
+    file bytes: the same CV exported twice from Word differs byte for byte and
+    extracts identically, and that is the case worth catching."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 class Repository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -93,12 +101,73 @@ class Repository:
         with self.engine.begin() as c:
             row = c.execute(
                 _q(
-                    "INSERT INTO raw_dumps (id, user_id, kind, text, object_name) "
-                    "VALUES (:id, :uid, :kind, :text, :obj) RETURNING created_at"
+                    "INSERT INTO raw_dumps (id, user_id, kind, text, object_name, text_sha256) "
+                    "VALUES (:id, :uid, :kind, :text, :obj, :sha) RETURNING created_at"
                 ),
-                {"id": dump_id, "uid": uid, "kind": kind, "text": text, "obj": object_name},
+                {
+                    "id": dump_id,
+                    "uid": uid,
+                    "kind": kind,
+                    "text": text,
+                    "obj": object_name,
+                    "sha": text_sha256(text),
+                },
             ).one()
         return RawDump(id=dump_id, kind=kind, text=text, object_name=object_name, created_at=row[0])
+
+    def dump_with_text(self, uid: str, text: str) -> RawDump | None:
+        """This user's existing dump holding exactly this text, if there is one.
+
+        Matched on the hash column so the comparison is an index lookup rather
+        than a table scan of everything they have ever written (ADR 0015)."""
+        with self.engine.begin() as c:
+            row = c.execute(
+                _q(
+                    "SELECT id, kind, text, object_name, created_at FROM raw_dumps "
+                    "WHERE user_id = :uid AND text_sha256 = :sha AND text = :text "
+                    "ORDER BY created_at DESC LIMIT 1"
+                ),
+                {"uid": uid, "sha": text_sha256(text), "text": text},
+            ).one_or_none()
+        if row is None:
+            return None
+        return RawDump(
+            id=str(row[0]), kind=row[1], text=row[2], object_name=row[3], created_at=row[4]
+        )
+
+    # --- the resume on file (ADR 0014) ---------------------------------------
+
+    def active_resume(self, uid: str) -> RawDump | None:
+        """The resume an interviewer would have received, or None if they have
+        not given us one yet."""
+        with self.engine.begin() as c:
+            row = c.execute(
+                _q(
+                    "SELECT d.id, d.kind, d.text, d.object_name, d.created_at "
+                    "FROM users u JOIN raw_dumps d ON d.id = u.resume_dump_id "
+                    "WHERE u.uid = :uid AND d.user_id = :uid"
+                ),
+                {"uid": uid},
+            ).one_or_none()
+        if row is None:
+            return None
+        return RawDump(
+            id=str(row[0]), kind=row[1], text=row[2], object_name=row[3], created_at=row[4]
+        )
+
+    def set_active_resume(self, uid: str, dump_id: str) -> None:
+        """Point the user at the dump that now holds their resume. Scoped to
+        their own dumps: the join is the whole authorisation check."""
+        with self.engine.begin() as c:
+            updated = c.execute(
+                _q(
+                    "UPDATE users SET resume_dump_id = d.id FROM raw_dumps d "
+                    "WHERE users.uid = :uid AND d.id = :dump AND d.user_id = :uid"
+                ),
+                {"uid": uid, "dump": dump_id},
+            ).rowcount
+        if not updated:
+            raise NotFound("dump")
 
     def dump(self, uid: str, dump_id: str) -> RawDump:
         with self.engine.begin() as c:

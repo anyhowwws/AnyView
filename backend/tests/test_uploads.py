@@ -153,7 +153,7 @@ def test_start_with_missing_object_is_404(client):
     assert r.status_code == 404
 
 
-def test_start_needs_exactly_one_resume_source(client):
+def test_start_takes_an_upload_or_text_but_not_both(client):
     assert (
         client.post("/interview/start", json={"session_id": "s", "setup": _setup()}).status_code
         == 422

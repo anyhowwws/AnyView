@@ -85,17 +85,20 @@ def test_full_journey_to_report(client, setup):
     assert len(report["items"]) == 5
     assert all(len(item["dimensions"]) == 4 for item in report["items"])
     assert "total" not in report
-    assert report["items"][0]["ideal"]["resume_has_material"] is True
+    assert report["items"][0]["ideal"]["has_material"] is True
 
 
 # --- Failure paths -------------------------------------------------------------
 
 
-def test_empty_resume_is_a_readable_422(client, setup):
+def test_no_resume_and_no_database_is_a_readable_422(client, setup):
+    """Nothing sent and nothing on file. With a database this would fall back to
+    the resume the user already gave us (ADR 0014); without one there is
+    nowhere for that to have been kept, and the message says so."""
     body = {"session_id": "sess-0001", "setup": {**setup.model_dump(), "resume": ""}}
     r = client.post("/interview/start", json=body)
     assert r.status_code == 422
-    assert "Upload a resume, paste its text, or use your Digital Garden" in r.json()["detail"]
+    assert "no resume on file" in r.json()["detail"]
 
     short = {"session_id": "sess-0001", "setup": {**setup.model_dump(), "resume": "too short"}}
     r = client.post("/interview/start", json=short)
