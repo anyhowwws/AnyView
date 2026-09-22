@@ -8,7 +8,7 @@ import { SignIn } from "@/components/sign-in";
 import { Button } from "@/components/ui/button";
 import { getBrain } from "@/lib/api";
 import { signOut, useAuth } from "@/lib/auth";
-import { Network, AudioLines } from "lucide-react";
+import { Brain, AudioLines } from "lucide-react";
 
 /** Sign-in gate + top nav around every screen. The Brain badge is the
  *  pending-proposal count; a screen that knows a fresher number passes it. */
@@ -40,7 +40,7 @@ export function AuthShell({ children, pending }: { children: React.ReactNode; pe
       aria-current={pathname === href ? "page" : undefined}
       className={`workspace-nav-link ${pathname === href ? "is-active" : ""}`}
     >
-      {href === "/" || href === "/brain" ? <Network size={16} aria-hidden /> : <AudioLines size={16} aria-hidden />}
+      {href === "/" || href === "/brain" ? <Brain size={16} aria-hidden /> : <AudioLines size={16} aria-hidden />}
       {label}
       {count ? (
         <span className="ml-1.5 rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums">
@@ -54,7 +54,7 @@ export function AuthShell({ children, pending }: { children: React.ReactNode; pe
     <MotionConfig reducedMotion="user">
       <a href="#main-content" className="skip-link">Skip to content</a>
       <header className="workspace-header">
-        <Link href="/" className="wordmark" aria-label="AnyView home"><span className="brand-mark"><Network size={20} aria-hidden /></span>anyview<span className="brand-dot">.</span></Link>
+        <Link href="/" className="wordmark" aria-label="AnyView home"><span className="brand-mark"><Brain size={20} aria-hidden /></span>anyview<span className="brand-dot">.</span></Link>
         <nav className="flex items-center gap-1" aria-label="Sections">
           {link("/", "Digital Garden", badge)}
           {link("/practice", "Interview Practice")}
