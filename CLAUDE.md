@@ -51,7 +51,7 @@ infra/bootstrap/       State bucket only. Local state. Run once.
 infra/                 Main GCP stack. GCS backend, bucket via -backend-config. No AWS credentials needed (ADR 0012).
 infra/dns/              The one AWS resource (Route 53 CNAME). Own state, own `aws login`. Applied rarely (ADR 0012).
 adr/                   Decision records, numbered. Write one *as* a decision is made.
-.github/workflows/     ci.yml (lint/test/validate), deploy.yml (WIF → Artifact Registry → Cloud Run → Hosting)
+.github/workflows/     ci.yml — lint/test/validate, then (push to main only, after those pass) WIF → Artifact Registry → Cloud Run → Hosting
 ```
 
 Backend modules:
