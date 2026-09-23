@@ -120,6 +120,28 @@
 .view-switch { display: flex; padding: 4px; background: #e8eeee; border-radius: 12px; gap: 2px; }
 .view-switch button { display: inline-flex; gap: 7px; align-items: center; min-height: 44px; padding: 9px 15px; color: var(--muted-foreground); font-size: 13px; border-radius: 8px; cursor: pointer; }
 .view-switch button[aria-pressed=true] { background: var(--card); color: var(--foreground); box-shadow: 0 2px 5px #2036380b; font-weight: 600; }
+/* Discover (ADR 0017): a conversation with Donna about the confirmed garden. */
+.discover-panel { display: flex; flex-direction: column; gap: 18px; }
+.discover-log { display: flex; flex-direction: column; gap: 14px; min-height: 180px; max-height: 60vh; overflow-y: auto; padding: 4px 2px; }
+.discover-starters { display: flex; flex-direction: column; gap: 10px; }
+.discover-starter { min-height: 40px; padding: 8px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--muted); color: var(--foreground); font-size: 13px; text-align: left; cursor: pointer; }
+.discover-starter:hover { border-color: var(--primary); }
+.discover-question { align-self: flex-end; max-width: 80%; padding: 10px 14px; border-radius: 14px 14px 4px 14px; background: var(--accent); color: var(--accent-foreground); font-size: 14px; line-height: 1.6; white-space: pre-wrap; }
+.discover-question[data-failed] { opacity: .6; }
+.discover-answer { max-width: 90%; font-size: 14px; line-height: 1.7; }
+.discover-answer > * + * { margin-top: 8px; }
+.discover-answer ul { list-style: disc; padding-left: 20px; }
+.discover-answer ol { list-style: decimal; padding-left: 20px; }
+.discover-cite { display: inline-block; margin: 0 2px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--muted); color: var(--primary); font-size: 11px; font-weight: 650; line-height: 1.6; font-variant-numeric: tabular-nums; vertical-align: 1px; cursor: pointer; }
+.discover-cite:hover, .discover-cite:focus-visible { border-color: var(--primary); }
+.discover-sources { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--border); list-style: none !important; padding-left: 0 !important; }
+.discover-sources button { min-height: 32px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; cursor: pointer; }
+.discover-sources button:hover { border-color: var(--primary); }
+.discover-compose { display: flex; align-items: flex-end; gap: 10px; }
+.discover-compose textarea { flex: 1; min-height: 52px; resize: vertical; font-size: 15px; line-height: 1.6; }
+.discover-compose button[type=submit] { width: 44px; height: 44px; border-radius: 12px; }
+.entity-card.is-cited { outline: 2px solid var(--primary); outline-offset: 2px; transition: outline-color .4s; }
+@media (max-width: 640px) { .discover-question, .discover-answer { max-width: 100%; } .view-switch button { padding-inline: 6px; gap: 5px; font-size: 12px; } }
 .brain-map { background: var(--card); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; }
 .graph-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 22px; border-bottom: 1px solid var(--border); }
 .graph-search { display: flex; align-items: center; gap: 10px; color: var(--muted-foreground); flex: 1; min-width: 210px; }
