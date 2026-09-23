@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
+  deleteUser,
   getRedirectResult,
   onAuthStateChanged,
   signInWithPopup,
@@ -69,6 +70,24 @@ export async function signInWithGoogle(): Promise<void> {
 export function signOut(): Promise<void> {
   if (FAKE_EMAIL) return Promise.resolve();
   return firebaseSignOut(firebaseAuth());
+}
+
+/** After an account is erased (ADR 0018): remove the Google sign-in record
+ *  from Identity Platform too. Firebase only lets a recently signed-in client
+ *  do that; if the sign-in is too old, sign out instead and report false. The
+ *  record holds only the email and uid; the data itself is already gone. */
+export async function deleteSignIn(): Promise<boolean> {
+  if (FAKE_EMAIL) return true;
+  const auth = firebaseAuth();
+  const user = auth.currentUser;
+  if (!user) return true;
+  try {
+    await deleteUser(user);
+    return true;
+  } catch {
+    await firebaseSignOut(auth);
+    return false;
+  }
 }
 
 /** The bearer token for API calls, refreshed by Firebase as needed. */

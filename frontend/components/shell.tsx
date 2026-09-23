@@ -72,7 +72,10 @@ export function AuthShell({ children, pending }: { children: React.ReactNode; pe
           {link("/practice", "Interview Practice")}
         </nav>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="hidden lg:inline">{user.email}</span>
+          <Link href="/account" className="hover:text-foreground">
+            <span className="hidden lg:inline">{user.email}</span>
+            <span className="lg:hidden">Account</span>
+          </Link>
           <Button variant="ghost" size="sm" onClick={() => void signOut()}>
             Sign out
           </Button>

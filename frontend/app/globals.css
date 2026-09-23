@@ -142,6 +142,9 @@
 .discover-compose button[type=submit] { width: 44px; height: 44px; border-radius: 12px; }
 .entity-card.is-cited { outline: 2px solid var(--primary); outline-offset: 2px; transition: outline-color .4s; }
 @media (max-width: 640px) { .discover-question, .discover-answer { max-width: 100%; } .view-switch button { padding-inline: 6px; gap: 5px; font-size: 12px; } }
+/* Account: erasing your data (ADR 0018). */
+.erase-panel { display: flex; flex-direction: column; gap: 20px; border-color: color-mix(in oklab, var(--destructive) 45%, var(--border)); }
+.erase-list { margin-top: 8px; padding-left: 18px; list-style: disc; color: var(--muted-foreground); font-size: 13px; line-height: 1.7; }
 .brain-map { background: var(--card); border: 1px solid var(--border); border-radius: 18px; overflow: hidden; }
 .graph-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 22px; border-bottom: 1px solid var(--border); }
 .graph-search { display: flex; align-items: center; gap: 10px; color: var(--muted-foreground); flex: 1; min-width: 210px; }
