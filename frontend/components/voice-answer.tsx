@@ -5,37 +5,66 @@ import { motion } from "framer-motion";
 import { Mic, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ApiError, transcribeAnswer, uploadAnswerAudio } from "@/lib/api";
-import { listen, type ListenEnd, type ListenHandle } from "@/lib/voice";
+import {
+  listen,
+  timedLimits,
+  UNTIMED,
+  type ListenEnd,
+  type ListenHandle,
+} from "@/lib/voice";
+
+/** What goes on the record when the clock runs out on someone who never
+ *  started. An answer has to be *something* — and this is the honest something. */
+export const NO_ANSWER = "(no answer given)";
 
 interface Props {
   sessionId: string;
-  /** The recording ends by itself after a pause; this is the text that came back. */
-  onTranscript: (text: string) => void;
+  /** This question's clock, or null when the interview is untimed. */
+  seconds: number | null;
+  onTranscript: (text: string, reason: ListenEnd | "manual") => void;
   onError: (message: string) => void;
+  /** Donna needs to say something: the clock ran out, or the silence got long. */
+  onInterject: (line: "time_up" | "stalled") => void;
   /** The candidate gave up on the microphone for this question. */
   onTypeInstead: () => void;
 }
 
 /** The candidate's turn: an open microphone that closes itself when they stop
- *  talking, then the recording on its way to being transcribed (ADR 0013). */
-export function VoiceAnswer({ sessionId, onTranscript, onError, onTypeInstead }: Props) {
+ *  talking — or when the clock runs out, whichever comes first (ADR 0013, 0016). */
+export function VoiceAnswer({
+  sessionId,
+  seconds,
+  onTranscript,
+  onError,
+  onInterject,
+  onTypeInstead,
+}: Props) {
   const [phase, setPhase] = useState<"listening" | "working">("listening");
   const [level, setLevel] = useState(0);
+  const [stalled, setStalled] = useState(false);
   const handle = useRef<ListenHandle | null>(null);
 
   useEffect(() => {
     let live = true;
 
-    async function send(blob: Blob, contentType: string, reason: ListenEnd | "manual") {
-      if (reason === "no-speech") {
-        onError("We didn't hear anything. Check your microphone, or type your answer.");
+    async function send(
+      blob: Blob,
+      contentType: string,
+      heardSpeech: boolean,
+      reason: ListenEnd | "manual",
+    ) {
+      if (reason === "no-speech" || !heardSpeech) {
+        // Nothing was ever said. Untimed that is a broken microphone worth
+        // mentioning; timed, the clock simply ran out and Donna moves on.
+        if (reason === "limit") onTranscript(NO_ANSWER, reason);
+        else onError("We didn't hear anything. Check your microphone, or type your answer.");
         return;
       }
       setPhase("working");
       try {
         const object = await uploadAnswerAudio(blob, contentType);
         const text = await transcribeAnswer(sessionId, object);
-        if (live) onTranscript(text);
+        if (live) onTranscript(text, reason);
       } catch (err) {
         if (!live) return;
         setPhase("listening");
@@ -44,9 +73,19 @@ export function VoiceAnswer({ sessionId, onTranscript, onError, onTypeInstead }:
     }
 
     void listen({
+      limits: seconds === null ? UNTIMED : timedLimits(seconds),
       onLevel: (l) => live && setLevel(l),
+      onStall: () => {
+        if (!live) return;
+        setStalled(true);
+        onInterject("stalled");
+      },
       onEnd: (recording, reason) => {
-        if (live) void send(recording.blob, recording.contentType, reason);
+        if (!live) return;
+        // Her cutting in should land while the recording is still being sent,
+        // not after, so this goes first.
+        if (reason === "limit") onInterject("time_up");
+        void send(recording.blob, recording.contentType, recording.heardSpeech, reason);
       },
       onError: (message) => live && onError(message),
     }).then((h) => {
@@ -60,7 +99,7 @@ export function VoiceAnswer({ sessionId, onTranscript, onError, onTypeInstead }:
       handle.current?.cancel();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, seconds]);
 
   if (phase === "working") {
     return (
@@ -91,10 +130,12 @@ export function VoiceAnswer({ sessionId, onTranscript, onError, onTypeInstead }:
         </span>
         <div className="flex-1">
           <p className="text-sm font-medium" role="status">
-            Listening — answer out loud.
+            {stalled ? "Still listening — take the moment you need." : "Listening — answer out loud."}
           </p>
           <p className="text-xs text-muted-foreground">
-            Stop talking for a couple of seconds and Donna takes it from there.
+            {seconds === null
+              ? "Stop talking for a couple of seconds and Donna takes it from there."
+              : "Stop talking and she moves on — or she will when the time is up."}
           </p>
         </div>
       </div>

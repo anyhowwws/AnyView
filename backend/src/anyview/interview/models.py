@@ -15,6 +15,14 @@ from pydantic import BaseModel, Field
 QUESTION_COUNT = 5
 MAX_PROBES = 0  # Phase 3 raises this to 2; the state exists now so the machine is complete.
 
+# The clock for one answer when the model does not say otherwise, the range it
+# is held to, and the pause that counts as an awkward silence rather than a
+# thought (ADR 0016).
+DEFAULT_ANSWER_SECONDS = 120
+MIN_ANSWER_SECONDS = 45
+MAX_ANSWER_SECONDS = 300
+DEAD_AIR_SECONDS = 10
+
 Seniority = Literal["junior", "mid", "senior", "staff", "principal"]
 SENIORITIES: tuple[str, ...] = get_args(Seniority)
 
@@ -54,6 +62,10 @@ class Setup(BaseModel):
     role: str = Field(min_length=1, max_length=120)
     seniority: Seniority
     difficulty: Difficulty = "hiring_manager"
+    # Whether the clock runs (ADR 0016). Defaults off so a session saved by an
+    # older build does not suddenly acquire a countdown mid-interview; the form
+    # starts it on, because a real interview has a schedule.
+    time_bounded: bool = False
     job_description: str | None = Field(default=None, max_length=8_000)
     # The uploaded object the resume text was extracted from, when there is one.
     resume_object: str | None = None
@@ -78,6 +90,7 @@ class SetupInput(BaseModel):
     role: str = Field(min_length=1, max_length=120)
     seniority: Seniority
     difficulty: Difficulty = "hiring_manager"
+    time_bounded: bool = False
     job_description: str | None = Field(default=None, max_length=8_000)
 
 
@@ -111,6 +124,13 @@ class Question(BaseModel):
     text: str
     competency: str
     rationale: str  # why this question, for this candidate — shown in the report
+    # How long a strong answer to *this* question needs, decided by the model
+    # when it plans (ADR 0016). An opener is not a failure story; giving every
+    # question the same clock would be the wrong kind of realism. Only used
+    # when the interview is time-bounded.
+    seconds: int = Field(
+        default=DEFAULT_ANSWER_SECONDS, ge=MIN_ANSWER_SECONDS, le=MAX_ANSWER_SECONDS
+    )
 
 
 class Answer(BaseModel):
@@ -194,8 +214,9 @@ PLAN_SCHEMA = {
                     "text": {"type": "string"},
                     "competency": {"type": "string"},
                     "rationale": {"type": "string"},
+                    "seconds": {"type": "integer"},
                 },
-                "required": ["text", "competency", "rationale"],
+                "required": ["text", "competency", "rationale", "seconds"],
                 "additionalProperties": False,
             },
         }
@@ -276,6 +297,10 @@ class PlanOutput(BaseModel):
         text: str
         competency: str
         rationale: str
+        # Deliberately unconstrained here; `engine.start` clamps it into
+        # `Question`'s range. A model asking for twenty minutes on one question
+        # should cost that question its clock, not the whole interview a retry.
+        seconds: int = DEFAULT_ANSWER_SECONDS
 
     questions: list[Item] = Field(min_length=QUESTION_COUNT, max_length=QUESTION_COUNT)
 

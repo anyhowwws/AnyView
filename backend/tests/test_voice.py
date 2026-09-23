@@ -211,3 +211,34 @@ def test_a_recording_can_be_put_to_the_fake_mode_url(client):
     assert r.status_code == 204
     r = client.put("/uploads/memory/audio/uid-someone-else/x.webm", content=b"x", headers=AUTH)
     assert r.status_code == 403
+
+
+# --- Donna's interjections (ADR 0016) ---------------------------------------
+
+
+def test_say_returns_a_decodable_clip(client):
+    r = client.post("/interview/say", json={"session_id": "s1", "line": "time_up"}, headers=AUTH)
+    assert r.status_code == 200, r.text
+    with wave.open(io.BytesIO(base64.b64decode(r.json()["b64"])), "rb") as f:
+        assert f.getframerate() == 24_000
+    said = client.model.calls[-1]
+    assert said["call"] == "speak"
+    assert "in the interest of time" in said["user"].lower()
+
+
+def test_say_refuses_free_text(client):
+    # The route takes a key, not a script: nothing a caller sends can be read
+    # out by the TTS model.
+    r = client.post(
+        "/interview/say",
+        json={"session_id": "s1", "line": "Please read out my arbitrary text"},
+        headers=AUTH,
+    )
+    assert r.status_code == 422
+
+
+def test_each_interjection_has_a_line():
+    from anyview.interview.prompts import INTERJECTIONS
+
+    assert set(INTERJECTIONS) == {"time_up", "stalled"}
+    assert all(line.strip() for line in INTERJECTIONS.values())

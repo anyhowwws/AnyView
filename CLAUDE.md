@@ -26,7 +26,7 @@ writes simple scripts). So:
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
 | LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for streamed `ask` turns (0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first); Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. Claude returns as a second adapter once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
-| Voice | **Gemini TTS on Vertex** for Donna (prebuilt voice, `DONNA_VOICE`, default `Kore`); answers recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency | 0013 |
+| Voice | **Gemini TTS on Vertex** for Donna (prebuilt voice, `DONNA_VOICE`, default `Kore`); answers recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default**; her interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
@@ -63,8 +63,10 @@ Backend modules:
   one while the next arrives; emits `audio` / `voice_off` frames beside the token frames.
 - `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; Phase 0 has `max_probes = 0`.
   `prompts.py` also owns **difficulty** (ADR 0014): `recruiter_screen` / `hiring_manager` / `panel` decide what the interviewer knows, and the garden reaches `session_system` at `panel` only.
+  It also owns `INTERJECTIONS` — the fixed lines Donna says when she has to cut in (ADR 0016) — and
+  tells the model to open with "tell me about yourself" and to set each question's `seconds`.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
-  `interview.py` also serves `GET /interview/resume` (the resume on file) and `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields).
+  `interview.py` also serves `GET /interview/resume` (the resume on file), `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields) and `POST /interview/say` (one of Donna's fixed interjections, by key — never free text).
 - `anyview/uploads/{store,extract}.py` — the upload store (GCS or in-memory), resume → text
   extraction, and recorded answer → transcript (`audio_to_text`).
 - `anyview/db/{connection,migrate,repository}.py` — engine (connector + IAM auth, or DATABASE_URL), numbered SQL migrations run at startup, and **the only file that runs SQL**: app-meaningful methods over an event log + projection (ADR 0011).
@@ -119,6 +121,8 @@ terraform plan                                                   # terraform.tfv
 - Entity labels (R1, P2, S3, K1, A1) are computed per read from creation order, never
   stored. Prompts use them; the review queue resolves them back to ids at confirmation.
 - Every model call writes a usage row. No exceptions, including scoring and `speak` calls.
+- Each question carries its own `seconds` (ADR 0016), chosen by the model when it plans and
+  clamped by `engine.start` into 45–300. The clock only runs when `setup.time_bounded`.
 - `finish()` scores the five answers concurrently (thread pool; the SDK client is
   thread-safe). Keep new per-answer work inside `_score_one` so it stays parallel.
 - Scoring prompts use explicit rubric anchors. Per-dimension scores only; never
@@ -148,6 +152,14 @@ retrieval test set.
   from the chat models, with its own id (`TTS_MODEL_ID`, default `gemini-2.5-flash-preview-tts`) —
   confirm what the project actually has before the first real run. A failure there is not fatal:
   the stream sends one `voice_off` frame and the interview carries on as text.
+- The clock is enforced in the browser, by the same `AnalyserNode` that drives the level meter:
+  ten seconds of dead air makes Donna speak up (the mic stays open), and the question's budget
+  ends the turn mid-sentence. Nothing about timing is enforced server-side.
+- An answer of `(no answer given)` is what the clock running out on silence records. It keeps
+  `finish()`'s "every question needs an answer" rule intact, and skips the upload and transcription.
+- The rubric's four dimensions are applied to the opener too, so question one ("tell me about
+  yourself") scores harsher than it deserves — STAR does not fit a background walkthrough.
+  Per-question rubrics belong with the Phase 3 probing work (ADR 0016).
 - Recorded answers live under `audio/<uid>/` in the uploads bucket, not `uploads/<uid>/`, because
   a GCS lifecycle rule matches a literal prefix and cannot wildcard the uid. They expire after 30
   days (`answer_audio_retention_days`); resumes never do.

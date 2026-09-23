@@ -98,6 +98,7 @@ export function App() {
           spoken={saved.spoken[saved.session.questions[saved.session.current].id]}
           onSpoken={(id, text) => update({ ...saved, spoken: { ...saved.spoken, [id]: text } })}
           onAnswer={onAnswer}
+          onEnd={onRestart}
           busy={busy}
           error={error}
         />

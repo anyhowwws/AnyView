@@ -33,6 +33,23 @@ export const DIFFICULTIES: { value: Difficulty; label: string; blurb: string }[]
   },
 ];
 
+/** Whether the clock runs (ADR 0016). Two options, so a boolean rather than a
+ *  named type — but the copy belongs beside the difficulty copy. */
+export const PACES: { value: boolean; label: string; blurb: string }[] = [
+  {
+    value: true,
+    label: "Interview pace",
+    blurb:
+      "Every question has a time limit. Donna moves on when it runs out, mid-sentence if she has to — the way an interviewer working to a schedule does.",
+  },
+  {
+    value: false,
+    label: "Take your time",
+    blurb:
+      "No clock. Think, restart, and finish the answer whenever you're ready. Better for a first run at a hard question.",
+  },
+];
+
 export type Dimension =
   | "star_completeness"
   | "specificity"
@@ -55,6 +72,8 @@ export interface Setup {
   role: string;
   seniority: Seniority;
   difficulty: Difficulty;
+  /** Whether the clock runs on each answer (ADR 0016). */
+  time_bounded: boolean;
   job_description: string | null;
   resume_object: string | null;
   /** The confirmed garden, present only when the interviewer is allowed it. */
@@ -69,6 +88,7 @@ export interface SetupInput {
   role: string;
   seniority: Seniority;
   difficulty: Difficulty;
+  time_bounded: boolean;
   job_description: string | null;
 }
 
@@ -111,6 +131,9 @@ export interface Question {
   text: string;
   competency: string;
   rationale: string;
+  /** This question's own clock, in seconds, set by the model when it planned
+   *  the interview (ADR 0016). Only enforced when the setup is time-bounded. */
+  seconds: number;
 }
 
 export interface Answer {

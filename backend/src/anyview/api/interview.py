@@ -7,11 +7,12 @@ decides what the interviewer is allowed to know.
 
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ValidationError
@@ -33,7 +34,7 @@ from anyview.interview.models import (
     SetupInput,
     State,
 )
-from anyview.interview.prompts import JOB_PARSE_SYSTEM, job_parse_user
+from anyview.interview.prompts import INTERJECTIONS, JOB_PARSE_SYSTEM, job_parse_user
 from anyview.interview.voice import voiced
 from anyview.llm.adapter import Model
 from anyview.uploads.extract import (
@@ -165,6 +166,7 @@ def resolve_setup(
             role=given.role,
             seniority=given.seniority,
             difficulty=given.difficulty,
+            time_bounded=given.time_bounded,
             job_description=given.job_description,
             resume_object=given.resume_object,
             garden=_garden(repo, user_uid) if given.difficulty == "panel" else None,
@@ -329,6 +331,29 @@ def ask(session: Session, model: ModelDep, settings: SettingsDep, voice: bool = 
             voice=settings.donna_voice,
         )
     )
+
+
+class SayRequest(BaseModel):
+    session_id: str
+    # A key, never free text: this route must not become a way to have the TTS
+    # model read out anything a caller likes.
+    line: Literal["time_up", "stalled"]
+
+
+class Spoken(BaseModel):
+    b64: str
+
+
+@router.post("/say", response_model=Spoken)
+def say(body: SayRequest, model: ModelDep, settings: SettingsDep) -> Spoken:
+    """One of Donna's fixed interjections, spoken (ADR 0016).
+
+    The browser fetches each line once and reuses the clip for the whole
+    interview, so a five-question run synthesises two short clips at most."""
+    audio = model.speak(
+        text=INTERJECTIONS[body.line], session_id=body.session_id, voice=settings.donna_voice
+    )
+    return Spoken(b64=base64.b64encode(audio).decode("ascii"))
 
 
 class TranscribeRequest(BaseModel):

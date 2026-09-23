@@ -1,4 +1,5 @@
 // Voice mode (ADR 0013): Donna's speech out, the candidate's speech in.
+// Time-bounded interviews (ADR 0016) add a clock to the listening rules.
 //
 // Out: the /interview/ask stream carries a WAV clip per sentence. They must be
 // heard in order and without gaps, so each one is decoded and scheduled on the
@@ -23,17 +24,49 @@ export const SPEECH_MS = 250;
 /** How long a pause has to run before the turn is over. Long enough to think
  *  mid-answer, short enough that the conversation doesn't stall. */
 export const SILENCE_MS = 2500;
-/** Nothing at all for this long: the mic is probably muted or unplugged. */
-export const NO_SPEECH_MS = 15_000;
-/** A hard cap, well inside the 10 MB upload limit at 32 kbps. */
+/** Dead air that an interviewer would notice. In a timed interview Donna says
+ *  something; in an untimed one it is how we spot a dead microphone. */
+export const DEAD_AIR_MS = 10_000;
+export const UNTIMED_DEAD_AIR_MS = 30_000;
+/** A hard cap, well inside the 10 MB upload limit at 32 kbps. A timed question
+ *  replaces this with its own, shorter clock. */
 export const MAX_ANSWER_MS = 4 * 60_000;
 
-export type ListenEnd = "silence" | "too-long" | "no-speech";
+export type ListenEnd = "silence" | "limit" | "no-speech";
+
+/** What ends a turn, and when. A timed question passes its own `limitMs` and
+ *  leaves `endOnDeadAir` off, because dead air is Donna's cue to speak, not to
+ *  give up (ADR 0016). */
+export interface ListenLimits {
+  silenceMs: number;
+  deadAirMs: number;
+  limitMs: number;
+  endOnDeadAir: boolean;
+}
+
+export const UNTIMED: ListenLimits = {
+  silenceMs: SILENCE_MS,
+  deadAirMs: UNTIMED_DEAD_AIR_MS,
+  limitMs: MAX_ANSWER_MS,
+  endOnDeadAir: true,
+};
+
+export function timedLimits(seconds: number): ListenLimits {
+  return {
+    silenceMs: SILENCE_MS,
+    deadAirMs: DEAD_AIR_MS,
+    limitMs: Math.min(seconds * 1000, MAX_ANSWER_MS),
+    endOnDeadAir: false,
+  };
+}
 
 export interface ListenState {
   heardSpeech: boolean;
   loudSince: number | null;
   quietSince: number | null;
+  /** Dead air has gone on long enough to be awkward. Not an ending: it is what
+   *  makes Donna ask whether to move on. */
+  stalled: boolean;
   ended: ListenEnd | null;
 }
 
@@ -41,6 +74,7 @@ export const LISTENING: ListenState = {
   heardSpeech: false,
   loudSince: null,
   quietSince: null,
+  stalled: false,
   ended: null,
 };
 
@@ -51,7 +85,19 @@ export const LISTENING: ListenState = {
  *  0..1, `at` and `startedAt` are timestamps in milliseconds. */
 export function hearing(
   state: ListenState,
-  { level, at, startedAt, threshold }: { level: number; at: number; startedAt: number; threshold: number },
+  {
+    level,
+    at,
+    startedAt,
+    threshold,
+    limits,
+  }: {
+    level: number;
+    at: number;
+    startedAt: number;
+    threshold: number;
+    limits: ListenLimits;
+  },
 ): ListenState {
   if (state.ended) return state;
 
@@ -68,13 +114,18 @@ export function hearing(
     next = { ...state, loudSince: null, quietSince: state.quietSince ?? at };
   }
 
-  if (at - startedAt >= MAX_ANSWER_MS) return { ...next, ended: "too-long" };
+  // The clock beats everything: a timed question ends when it ends, mid-word.
+  if (at - startedAt >= limits.limitMs) return { ...next, ended: "limit" };
+
   if (next.heardSpeech) {
-    if (next.quietSince !== null && at - next.quietSince >= SILENCE_MS) {
+    if (next.quietSince !== null && at - next.quietSince >= limits.silenceMs) {
       return { ...next, ended: "silence" };
     }
-  } else if (at - startedAt >= NO_SPEECH_MS) {
-    return { ...next, ended: "no-speech" };
+  } else if (at - startedAt >= limits.deadAirMs) {
+    // Nothing said yet. Untimed, that means a dead microphone; timed, it is
+    // just a silence long enough for Donna to fill.
+    if (limits.endOnDeadAir) return { ...next, ended: "no-speech" };
+    next = { ...next, stalled: true };
   }
   return next;
 }
@@ -211,6 +262,9 @@ export interface Recording {
   blob: Blob;
   contentType: string;
   seconds: number;
+  /** False when the clock ran out on someone who never started talking. Saves
+   *  uploading and transcribing silence. */
+  heardSpeech: boolean;
 }
 
 export interface ListenHandle {
@@ -224,12 +278,23 @@ export interface ListenOptions {
   onLevel: (level: number) => void;
   onEnd: (recording: Recording, reason: ListenEnd | "manual") => void;
   onError: (message: string) => void;
+  /** Dead air went on long enough to be awkward. Fires at most once, and the
+   *  microphone stays open — this is Donna's cue to speak, not the end of the
+   *  turn (ADR 0016). */
+  onStall?: () => void;
+  limits?: ListenLimits;
 }
 
 /** Open the microphone and hand back the recording once the candidate stops
  *  talking. The level callback drives the meter; the same samples decide when
  *  the turn is over. */
-export async function listen({ onLevel, onEnd, onError }: ListenOptions): Promise<ListenHandle> {
+export async function listen({
+  onLevel,
+  onEnd,
+  onError,
+  onStall,
+  limits = UNTIMED,
+}: ListenOptions): Promise<ListenHandle> {
   const format = pickFormat();
   if (!format) {
     onError("This browser can't record audio. You can still type your answer.");
@@ -280,6 +345,7 @@ export async function listen({ onLevel, onEnd, onError }: ListenOptions): Promis
           blob: new Blob(chunks, { type: format!.base }),
           contentType: format!.base,
           seconds: (performance.now() - startedAt) / 1000,
+          heardSpeech: state.heardSpeech,
         },
         reason,
       );
@@ -305,7 +371,9 @@ export async function listen({ onLevel, onEnd, onError }: ListenOptions): Promis
       );
     }
 
-    state = hearing(state, { level, at, startedAt, threshold });
+    const was = state;
+    state = hearing(state, { level, at, startedAt, threshold, limits });
+    if (!was.stalled && state.stalled) onStall?.();
     if (state.ended) {
       finish(state.ended);
       return;

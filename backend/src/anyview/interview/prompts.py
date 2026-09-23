@@ -123,12 +123,21 @@ candidate and this role. Each question targets one competency such as ownership,
 ambiguity, conflict, failure, influence, or a soft requirement from the job description.
 Cover different competencies; do not repeat one.
 
+Question 1 is the opener, and it is almost always the one every interview starts with:
+an invitation to walk through their own background in their own words — "tell me about
+yourself", phrased the way this particular room would phrase it. Its competency is
+`background`. Depart from this only if the situation makes an opener plainly wrong.
+
 {scope}
 
 Phrase each question as an interviewer would say it aloud.
 
-For each question give: `text` (the question), `competency` (one or two words), and
-`rationale` (one sentence on why this question for this candidate)."""
+For each question give: `text` (the question), `competency` (one or two words),
+`rationale` (one sentence on why this question for this candidate), and `seconds` —
+how long a strong spoken answer to this question needs, between 45 and 300. Judge it
+per question: an opener or a quick warm-up needs less than a failure story that has to
+reach a result. This is the clock the candidate is held to, so be realistic rather than
+generous."""
 
 
 def ask_user(question: Question, *, index: int, previous_answer: str | None) -> str:
@@ -238,3 +247,16 @@ Rules:
 
 def job_parse_user(text: str) -> str:
     return f"<job_description>\n{text.strip()}\n</job_description>\n\nExtract the fields."
+
+
+# --- What Donna says when she has to step in (ADR 0016) ---------------------
+# Fixed lines, not generated: an interruption has to land in the moment, and a
+# model call would arrive after it stopped being an interruption. The browser
+# asks for each one once per session and reuses the clip. Keeping them here
+# keeps everything Donna says in one file.
+INTERJECTIONS: dict[str, str] = {
+    # The clock on this question ran out while they were still talking.
+    "time_up": "Sorry to cut in — in the interest of time, let's move on.",
+    # Ten seconds of nothing. Real interviewers do not sit through much more.
+    "stalled": "Take a moment if you need it. Or shall we move on to the next one?",
+}

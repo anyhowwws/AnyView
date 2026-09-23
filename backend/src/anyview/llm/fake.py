@@ -95,17 +95,26 @@ SPOKEN_CHARS_PER_SECOND = 14
 
 
 def default_plan(count: int) -> dict[str, Any]:
-    competencies = ["ownership", "ambiguity", "conflict", "failure", "influence"]
-    return {
-        "questions": [
-            {
-                "text": f"Tell me about a time you demonstrated {competencies[i % 5]}.",
-                "competency": competencies[i % 5],
-                "rationale": "Scripted by FakeModel.",
-            }
-            for i in range(count)
-        ]
-    }
+    # Mirrors the real plan's shape, opener included (ADR 0016): question one is
+    # "tell me about yourself" and gets a shorter clock than a failure story.
+    competencies = ["background", "ownership", "ambiguity", "conflict", "failure"]
+    questions = [
+        {
+            "text": f"Tell me about a time you demonstrated {competencies[i % 5]}.",
+            "competency": competencies[i % 5],
+            "rationale": "Scripted by FakeModel.",
+            "seconds": 150,
+        }
+        for i in range(count)
+    ]
+    if questions:
+        questions[0] = {
+            "text": "So, to get us started — tell me about yourself.",
+            "competency": "background",
+            "rationale": "Scripted by FakeModel.",
+            "seconds": 90,
+        }
+    return {"questions": questions}
 
 
 DEFAULTS: dict[str, Any] = {

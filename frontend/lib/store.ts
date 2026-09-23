@@ -44,14 +44,16 @@ export function clear(): void {
 }
 
 // Voice mode is a preference, not session state, so it outlives the interview
-// in localStorage (ADR 0013).
+// in localStorage (ADR 0013). Speaking is the default: an interview is a spoken
+// event, so only someone who has actively chosen typing gets typing (ADR 0016).
 const VOICE_KEY = "anyview.voice";
 
 export function loadVoicePreference(): boolean {
   try {
-    return localStorage.getItem(VOICE_KEY) === "on";
+    return localStorage.getItem(VOICE_KEY) !== "off";
   } catch {
-    return false;
+    // No storage is not a preference for silence.
+    return true;
   }
 }
 

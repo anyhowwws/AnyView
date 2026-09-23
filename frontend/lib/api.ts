@@ -177,6 +177,31 @@ export async function uploadAnswerAudio(blob: Blob, contentType: string): Promis
   return putTicket(ticket, blob, contentType);
 }
 
+/** Donna's fixed interjections, fetched once and reused for the whole run: the
+ *  same "let's move on" is needed up to five times in an interview and the
+ *  words never change. The line is a key, not text — the server owns the
+ *  words. Her voice failing here must not stop the interview, so a failure is
+ *  silence rather than an error. */
+const clips = new Map<string, string>();
+
+export async function interjection(
+  sessionId: string,
+  line: "time_up" | "stalled",
+): Promise<string | null> {
+  const cached = clips.get(line);
+  if (cached !== undefined) return cached;
+  try {
+    const { b64 } = await post<{ b64: string }>("/interview/say", {
+      session_id: sessionId,
+      line,
+    });
+    clips.set(line, b64);
+    return b64;
+  } catch {
+    return null;
+  }
+}
+
 /** Turns an uploaded recording into the words that were said. */
 export async function transcribeAnswer(sessionId: string, objectName: string): Promise<string> {
   const { text } = await post<{ text: string }>("/interview/transcribe", {

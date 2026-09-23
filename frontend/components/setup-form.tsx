@@ -21,6 +21,7 @@ import {
 } from "@/lib/job-template";
 import {
   DIFFICULTIES,
+  PACES,
   MAX_UPLOAD_BYTES,
   SENIORITIES,
   type Difficulty,
@@ -80,6 +81,8 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
 
   // 03 · the room
   const [difficulty, setDifficulty] = useState<Difficulty>("hiring_manager");
+  // A real interview has a schedule, so the clock starts on (ADR 0016).
+  const [timeBounded, setTimeBounded] = useState(true);
   const [brainSize, setBrainSize] = useState<number | null>(null);
 
   const resumeInput = useRef<HTMLInputElement>(null);
@@ -164,6 +167,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
           role: role.trim(),
           seniority,
           difficulty,
+          time_bounded: timeBounded,
           job_description: jobDescription(),
         });
       }}
@@ -471,6 +475,26 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
                     : "Your Digital Garden is empty — they will push on the job description instead"}
                 </em>
               )}
+            </button>
+          ))}
+        </div>
+
+        <p className="setup-note">
+          And the clock. Each question carries its own limit — Donna decides how long a
+          strong answer to that question needs when she plans the interview.
+        </p>
+        <div className="pace-grid" role="radiogroup" aria-label="Should the clock run?">
+          {PACES.map((pace) => (
+            <button
+              key={String(pace.value)}
+              type="button"
+              role="radio"
+              aria-checked={timeBounded === pace.value}
+              className="difficulty-option"
+              onClick={() => setTimeBounded(pace.value)}
+            >
+              <strong>{pace.label}</strong>
+              <span>{pace.blurb}</span>
             </button>
           ))}
         </div>

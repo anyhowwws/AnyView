@@ -21,7 +21,9 @@ from pydantic import ValidationError
 
 from anyview.interview.models import (
     IDEAL_SCHEMA,
+    MAX_ANSWER_SECONDS,
     MAX_PROBES,
+    MIN_ANSWER_SECONDS,
     PLAN_SCHEMA,
     QUESTION_COUNT,
     SCORE_SCHEMA,
@@ -108,7 +110,14 @@ def start(setup: Setup, *, session_id: str, model: Model) -> Session:
         ) from exc
 
     questions = [
-        Question(id=i + 1, text=item.text, competency=item.competency, rationale=item.rationale)
+        Question(
+            id=i + 1,
+            text=item.text,
+            competency=item.competency,
+            rationale=item.rationale,
+            # The model picks the clock; this keeps a stray one sane.
+            seconds=max(MIN_ANSWER_SECONDS, min(MAX_ANSWER_SECONDS, item.seconds)),
+        )
         for i, item in enumerate(plan.questions)
     ]
     session = session.model_copy(update={"questions": questions, "current": 0})
