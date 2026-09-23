@@ -95,6 +95,42 @@ def test_existing_labels_survive_the_link_check():
     assert patch.projects[0].role == "R3"
 
 
+def test_existing_of_the_wrong_kind_is_cleared_not_kept():
+    # The model recognises the NTU degree from the resume, but points at A3 —
+    # the label it was filed under earlier, as an achievement, not education.
+    scripted = {
+        **DEFAULTS["propose"],
+        "education": [
+            {
+                "key": "e1",
+                "existing": "A3",
+                "institution": "Acme University",
+                "qualification": "B.Sc.",
+                "field": None,
+                "start_date": None,
+                "end_date": None,
+                "evidence": "Acme Corp (2021–present) — Senior Cloud Architect",
+            },
+        ],
+    }
+    patch = propose(RESUME, brain_index="", model=FakeModel({"propose": scripted}), session_id="s")
+    assert patch.education[0].existing is None  # a new draft, not a doomed update to A3
+
+
+def test_existing_of_the_right_kind_is_kept():
+    scripted = {
+        **DEFAULTS["propose"],
+        "roles": [{**DEFAULTS["propose"]["roles"][0], "existing": "R3"}],
+    }
+    patch = propose(
+        RESUME,
+        brain_index="[R3] Acme — SRE",
+        model=FakeModel({"propose": scripted}),
+        session_id="s",
+    )
+    assert patch.roles[0].existing == "R3"
+
+
 def test_evidence_check_is_whitespace_and_case_tolerant():
     scripted = {**DEFAULTS["propose"]}
     scripted["skills"] = [

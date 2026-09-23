@@ -10,10 +10,11 @@ draft must quote the dump verbatim in `evidence`; the review queue shows the
 quote beside the card, and a draft whose quote is not in the dump is dropped
 before the user sees it.
 
-Two filters run over the model's patch before anyone sees it, both pure
-functions and neither costing a call: `_keep_only_evidenced` drops what the
-dump does not support, and `drop_unchanged` (ADR 0015) drops what the user has
-already confirmed.
+Three filters run over the model's patch before anyone sees it, all pure
+functions and none costing a call: `_keep_only_evidenced` drops what the dump
+does not support, `_clear_cross_kind_existing` stops a draft claiming to
+update an entity of a different kind, and `drop_unchanged` (ADR 0015) drops
+what the user has already confirmed.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ import logging
 
 from pydantic import ValidationError
 
-from anyview.brain.models import Brain, Patch
+from anyview.brain.models import LABEL_PREFIX, Brain, EntityKind, Patch
 from anyview.llm.adapter import Model
 
 log = logging.getLogger(__name__)
@@ -248,7 +249,7 @@ def propose(dump_text: str, *, brain_index: str, model: Model, session_id: str) 
     except ValidationError as exc:
         log.warning("extraction returned a malformed patch: %s", exc)
         raise ExtractionFailed("Donna's proposal came back malformed. Please try again.") from exc
-    return _keep_only_evidenced(patch, dump_text)
+    return _clear_cross_kind_existing(_keep_only_evidenced(patch, dump_text))
 
 
 def _keep_only_evidenced(patch: Patch, dump_text: str) -> Patch:
@@ -303,6 +304,40 @@ def _keep_only_evidenced(patch: Patch, dump_text: str) -> Patch:
     return kept
 
 
+def _kind_groups(patch: Patch) -> tuple[tuple[EntityKind, list], ...]:
+    """The patch's eight draft lists, each paired with its own kind."""
+    return (
+        ("role", patch.roles),
+        ("project", patch.projects),
+        ("story", patch.stories),
+        ("skill", patch.skills),
+        ("achievement", patch.achievements),
+        ("education", patch.education),
+        ("language", patch.languages),
+        ("feedback", patch.feedback),
+    )
+
+
+def _clear_cross_kind_existing(patch: Patch) -> Patch:
+    """A draft's `existing` must name an entity of its own kind: a project can
+    only update a project, never a role or a skill that happens to share the
+    letter. The extraction model sometimes gets this wrong when the same
+    real-world thing was filed under a different kind before — a degree first
+    captured as an achievement, read as education on a later dump — and reuses
+    that entity's label anyway. Left alone this reaches the review queue as a
+    misleading "Updates A3" card and then fails at confirm time, discarding
+    everything else the user reviewed alongside it. Clearing `existing` here
+    turns it into a new draft instead: confirming adds a second entry, and the
+    user retires the old one by hand if it is truly a duplicate."""
+    for kind, drafts in _kind_groups(patch):
+        prefix = LABEL_PREFIX[kind]
+        for d in drafts:
+            if d.existing and not d.existing.startswith(prefix):
+                log.info("clearing cross-kind existing=%r on %s draft %s", d.existing, kind, d.key)
+                d.existing = None
+    return patch
+
+
 # --- Delta detection (ADR 0015) ----------------------------------------------
 
 # Draft field -> the entity field it corresponds to, where the two names differ.
@@ -324,6 +359,12 @@ def drop_unchanged(patch: Patch, brain: Brain) -> Patch:
     already agreed to. The review queue is the garden's whole safety property,
     and a queue nobody reads is a queue approved unread, so the cost of this is
     attention, not tokens.
+
+    Assumes every draft's `existing` already names an entity of its own kind
+    (both callers pass a patch straight from `propose()`, which guarantees
+    that via `_clear_cross_kind_existing`); a flat label lookup across kinds
+    would otherwise let an "A3" on an education draft resolve to an
+    achievement and be compared field-for-field against it.
     """
     by_label = {
         e.label: e
