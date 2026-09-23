@@ -15,7 +15,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from anyview.api import auth, brain, interview, uploads
+from anyview.api import account, auth, brain, interview, uploads
 from anyview.config import Settings
 from anyview.interview.engine import EngineError
 from anyview.llm.adapter import Model, ModelError
@@ -123,6 +123,7 @@ app.dependency_overrides[auth.get_verifier] = lambda: (
 app.include_router(interview.router)
 app.include_router(uploads.router)
 app.include_router(brain.router)
+app.include_router(account.router)
 
 
 # --- Error translation: every failure is {"detail": <sentence>} -------------

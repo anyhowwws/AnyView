@@ -3,6 +3,9 @@
 - **Status:** Accepted
 - **Date:** 2026-09-18
 - **Builds on:** 0002 (Postgres + pgvector)
+- **Amendment (2026-09-24):** the append-only log now allows one delete: erasing a
+  whole account, in a transaction that names that user first. Updates are still
+  refused. See [0018](0018-erasing-an-account.md).
 
 ## Context
 

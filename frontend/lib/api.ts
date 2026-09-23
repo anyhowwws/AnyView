@@ -85,6 +85,11 @@ export interface EventOut {
   brain: Brain;
 }
 
+/** Erase everything stored about the signed-in user (ADR 0018). The server
+ *  checks the same phrase the user typed. */
+export const eraseAccount = () =>
+  post<{ files: number; rows: number }>("/account/erase", { confirm: "delete my data" });
+
 export const getBrain = () => request<Brain>("GET", "/brain");
 export const listProposals = () => request<Proposal[]>("GET", "/brain/proposals");
 export const getDump = (id: string) => request<RawDump>("GET", `/brain/dumps/${id}`);

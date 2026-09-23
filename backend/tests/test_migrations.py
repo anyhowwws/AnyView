@@ -57,6 +57,40 @@ def test_events_are_append_only(db):
         conn.execute(sqlalchemy.text("DELETE FROM events WHERE id = 1"))
 
 
+def _erasing(conn, uid):
+    conn.execute(sqlalchemy.text("SELECT set_config('anyview.erasing_user', :u, true)"), {"u": uid})
+
+
+def test_erasing_a_user_may_delete_only_their_events(db):
+    """ADR 0018: the one delete the log allows is a whole user's stream, in a
+    transaction that names that user first."""
+    with db.begin() as conn:
+        _seed(conn)
+    # Naming someone else does not open this user's events.
+    with db.begin() as conn, pytest.raises(IntegrityError, match="append-only"):
+        _erasing(conn, "someone-else")
+        conn.execute(sqlalchemy.text("DELETE FROM events WHERE id = 1"))
+    # Naming the right user still never allows rewriting history.
+    with db.begin() as conn, pytest.raises(IntegrityError, match="append-only"):
+        _erasing(conn, "u1")
+        conn.execute(sqlalchemy.text("UPDATE events SET payload = '{\"x\": 1}' WHERE id = 1"))
+    with db.begin() as conn:
+        _erasing(conn, "u1")
+        assert conn.execute(sqlalchemy.text("DELETE FROM events WHERE id = 1")).rowcount == 1
+
+
+def test_the_erasing_mark_ends_with_its_transaction(db):
+    """set_config(..., true) is transaction-local: a pooled connection's next
+    transaction must not inherit it."""
+    with db.begin() as conn:
+        _seed(conn)
+    with db.connect() as conn:
+        with conn.begin():
+            _erasing(conn, "u1")
+        with conn.begin(), pytest.raises(IntegrityError, match="append-only"):
+            conn.execute(sqlalchemy.text("DELETE FROM events WHERE id = 1"))
+
+
 def test_projection_rows_need_a_dump_and_an_event(db):
     with db.begin() as conn:
         dump, ev = _seed(conn)

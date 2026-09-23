@@ -66,6 +66,7 @@ Backend modules:
   It also owns `INTERJECTIONS` — the fixed lines Donna says when she has to cut in (ADR 0016) — and
   tells the model to open with "tell me about yourself" and to set each question's `seconds`.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
+  `account.py` serves `POST /account/erase` (ADR 0018): deletes the user's files, then every row, via `Repository.erase_user`.
   `interview.py` also serves `GET /interview/resume` (the resume on file), `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields) and `POST /interview/say` (one of Donna's fixed interjections, by key — never free text).
 - `anyview/uploads/{store,extract}.py` — the upload store (GCS or in-memory), resume → text
   extraction, and recorded answer → transcript (`audio_to_text`).
@@ -122,6 +123,9 @@ terraform plan                                                   # terraform.tfv
   bypasses the log: `confirm_proposal`, `edit_entity`, `retire_entity` append an event
   and apply it in one transaction via `_apply`; `rebuild(uid)` replays with the same
   function and a test asserts equality.
+  The one exception is `erase_user` (ADR 0018): it deletes a whole user's stream in a
+  transaction that first sets `anyview.erasing_user`, the only delete the trigger allows.
+  A new table with a `user_id` column must be added to `ERASE_ORDER`; a test enforces it.
 - Entity labels (R1, P2, S3, K1, A1) are computed per read from creation order, never
   stored. Prompts use them; the review queue resolves them back to ids at confirmation.
 - Every model call writes a usage row. No exceptions, including scoring and `speak` calls.

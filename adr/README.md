@@ -31,10 +31,11 @@ record of having been wrong is the useful part.
 | [0008](0008-custom-domain-dns-in-route53.md) | Custom domain on Firebase Hosting, DNS records managed in Route 53 | Accepted, amended by 0012 |
 | [0009](0009-google-sign-in-with-allow-list.md) | Google sign-in through Identity Platform, allow-listed by email | Accepted |
 | [0010](0010-resume-upload-via-signed-urls.md) | Resume upload: signed URLs into Cloud Storage, PDF read by the model | Accepted |
-| [0011](0011-cloud-sql-iam-auth-and-event-log.md) | Cloud SQL access: IAM authentication, one state-free password, enforced event log | Accepted |
+| [0011](0011-cloud-sql-iam-auth-and-event-log.md) | Cloud SQL access: IAM authentication, one state-free password, enforced event log | Accepted, amended by 0018 |
 | [0012](0012-split-dns-into-its-own-stack.md) | Split the Route 53 DNS record into its own Terraform stack | Accepted |
 | [0013](0013-voice-mode.md) | Voice mode: Gemini TTS for Donna, Gemini transcription for answers | Accepted, extended by 0016 |
 | [0014](0014-interview-setup-situation-not-sources.md) | Interview setup describes a situation, not a set of sources | Accepted |
 | [0015](0015-resume-re-ingestion-deltas.md) | Re-ingesting a resume: suppress what has not changed | Accepted |
 | [0016](0016-voice-first-and-the-clock.md) | Speaking by default; a per-question clock and an opener | Accepted |
 | [0017](0017-discover-whole-garden-before-retrieval.md) | Discover: ask Donna about the garden, whole garden before retrieval | Accepted |
+| [0018](0018-erasing-an-account.md) | Erasing an account: the one delete the event log allows | Accepted |
