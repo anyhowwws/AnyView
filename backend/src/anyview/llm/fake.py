@@ -5,7 +5,7 @@ drive the engine and the API deterministically; `ANYVIEW_FAKE_MODEL=1` runs the
 whole app on it for a browser walk-through that costs nothing.
 
 Replies are keyed by the `call` name (`plan`, `ask`, `score`, `ideal`,
-`parse_job`, `transcribe`) so a test can script one kind of call without caring
+`parse_job`, `transcribe`, `discover`) so a test can script one kind of call without caring
 about the others. `speak` returns silence of a plausible length instead of a
 reply.
 """
@@ -200,6 +200,13 @@ DEFAULTS: dict[str, Any] = {
         "estate was costing about forty thousand a month, and I owned the platform budget. "
         "I ran the migration over two quarters and cut monthly infra cost by thirty-eight "
         "percent."
+    ),
+    # Cites two real labels from the default patch, repeats one, and invents
+    # [P9], so the citation filter has something to drop.
+    "discover": (
+        "You led the billing service migration to Cloud Run [P1], and the on-call rota "
+        "redesign [S1] is your clearest ownership story. [P1, S1] both sit under your Acme "
+        "role. Nothing in your garden mentions Bedrock [P9]."
     ),
     "ask": "Thanks for that. Next: tell me about a time you led a project end to end.",
     "score": {

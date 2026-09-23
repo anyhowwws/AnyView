@@ -11,7 +11,9 @@ from pydantic import BaseModel, Field
 
 from anyview.api.auth import CurrentUser, current_user
 from anyview.api.interview import ModelDep
+from anyview.api.sse import stream_response
 from anyview.api.uploads import StoreDep, object_prefix
+from anyview.brain.discover import DiscoverRequest, answer
 from anyview.brain.extract import ExtractionFailed, drop_unchanged, propose
 from anyview.brain.models import Brain, Event, Patch, Proposal, RawDump
 from anyview.db.repository import Conflict, NotFound, Repository
@@ -192,6 +194,22 @@ def retire_entity(kind: Kind, entity_id: str, user: CurrentUser, repo: RepoDep) 
     except NotFound as exc:
         raise HTTPException(404, f"No such {kind}.") from exc
     return EventOut(event=event, brain=repo.brain(user.uid))
+
+
+@router.post("/discover")
+def discover(body: DiscoverRequest, user: CurrentUser, repo: RepoDep, model: ModelDep):
+    """Ask Donna about the confirmed garden (ADR 0017). Streams token frames,
+    then one `citations` frame naming the entries the answer relies on."""
+    repo.ensure_user(user.uid, user.email)
+    # Checked before the stream opens, so an empty garden is a plain 422 rather
+    # than an error frame inside a 200.
+    _, labels = repo.brain_index(user.uid)
+    if not labels:
+        raise HTTPException(
+            422, "Your Digital Garden is empty. Capture something first, then ask Donna about it."
+        )
+    garden = repo.brain_context(user.uid)
+    return stream_response(answer(body, garden=garden, labels=labels, model=model))
 
 
 @router.get("/events", response_model=list[Event])
