@@ -24,7 +24,7 @@ writes simple scripts). So:
 |---|---|---|
 | Cloud | GCP | 0001 |
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
-| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for streamed `ask` turns (0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first); Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. Claude returns as a second adapter once its quota is granted | 0004, 0007 |
+| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for streamed `ask` turns (0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first); Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
 | Voice | **Gemini TTS on Vertex** for Donna (prebuilt voice, `DONNA_VOICE`, default `Kore`); answers recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default**; her interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
@@ -193,10 +193,10 @@ retrieval test set.
 - Don't run `next build` while `next dev` is up — both use `frontend/.next/` and the
   dev server then throws `__webpack_modules__[moduleId] is not a function`. Stop
   dev, build, restart dev (or `rm -rf frontend/.next`).
-- Claude on Vertex needs the models enabled in Model Garden and a non-zero
-  `global_online_prediction_requests_per_base_model` quota; a fresh project returns
-  429 "Quota exceeded" until then (that is why Phase 0 runs Gemini — ADR 0007).
-  Gemini has a default quota. The app maps a 429 to a 503 either way.
+- The second adapter's model (ADR 0004) on Vertex needs the models enabled in Model
+  Garden and a non-zero `global_online_prediction_requests_per_base_model` quota; a
+  fresh project returns 429 "Quota exceeded" until then (that is why Phase 0 runs
+  Gemini — ADR 0007). Gemini has a default quota. The app maps a 429 to a 503 either way.
 - Gemini counts thinking tokens against `max_output_tokens`; the adapter adds a
   per-effort allowance. The usage log's `thinking_tokens` shows the real spend.
 - The resume is a **property of the user**, not a per-interview choice (ADR 0014):
