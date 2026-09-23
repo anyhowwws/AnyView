@@ -3,6 +3,8 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Download, Printer } from "lucide-react";
+import { downloadText, reportFilename, reportToMarkdown } from "@/lib/report-export";
 import { DIFFICULTIES, DIMENSION_LABELS, type DimensionScore, type Report } from "@/lib/types";
 
 interface Props {
@@ -12,15 +14,22 @@ interface Props {
 
 /** Per-dimension scores only — there is deliberately no overall number. */
 export function ReportView({ report, onRestart }: Props) {
+  const difficulty = DIFFICULTIES.find((d) => d.value === report.difficulty)?.label ?? report.difficulty;
+
+  function downloadMarkdown() {
+    const now = new Date();
+    const md = reportToMarkdown(report, { difficulty, dimensions: DIMENSION_LABELS }, now);
+    downloadText(reportFilename(report, now), md);
+  }
+
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+    <div className="report-view mx-auto flex w-full max-w-4xl flex-col gap-6">
       <header className="page-heading">
         <div className="space-y-1">
           <p className="eyebrow">A clearer picture of your strengths</p>
           <h1>Your next step<span className="text-primary">.</span></h1>
           <p className="text-sm text-muted-foreground">
-            {report.role} · {report.company} · {report.seniority} ·{" "}
-            {DIFFICULTIES.find((d) => d.value === report.difficulty)?.label}
+            {report.role} · {report.company} · {report.seniority} · {difficulty}
           </p>
           <p className="text-xs text-muted-foreground">
             Scores and ideal answers are AI-generated from your answers, your resume
@@ -28,9 +37,18 @@ export function ReportView({ report, onRestart }: Props) {
             reuse them.
           </p>
         </div>
-        <Button variant="outline" className="h-10" onClick={onRestart}>
-          Start another
-        </Button>
+        {/* print:hidden — the saved PDF is the report, not the controls around it. */}
+        <div className="flex flex-wrap gap-2 print:hidden">
+          <Button variant="outline" className="h-10" onClick={downloadMarkdown}>
+            <Download aria-hidden /> Download (.md)
+          </Button>
+          <Button variant="outline" className="h-10" onClick={() => window.print()}>
+            <Printer aria-hidden /> Save as PDF
+          </Button>
+          <Button variant="outline" className="h-10" onClick={onRestart}>
+            Start another
+          </Button>
+        </div>
       </header>
 
       {report.items.map((item, i) => (

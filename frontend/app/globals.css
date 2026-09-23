@@ -313,3 +313,31 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
   .on-file-card { flex-wrap: wrap; }
   .on-file-actions { margin-left: 0; }
 }
+
+/* Report → "Save as PDF" (the browser's print dialog). The app is dark-only,
+   and browsers drop backgrounds when printing, so light-on-dark would become
+   light-on-white paper. Swap to a light palette, drop the workspace chrome, and
+   keep each score row and answer box whole across page breaks. */
+@media print {
+  html:root, html.dark {
+    color-scheme: light;
+    --background: #ffffff;
+    --foreground: #1a2b2d;
+    --card: #ffffff;
+    --card-foreground: #1a2b2d;
+    --primary: #24685e;
+    --primary-foreground: #ffffff;
+    --secondary: #eef3f2;
+    --secondary-foreground: #1a2b2d;
+    --muted: #dde6e4;
+    --muted-foreground: #4a5f61;
+    --border: #c9d6d4;
+  }
+  body { background: #fff !important; }
+  .workspace-header, .skip-link { display: none; }
+  .workspace-main { padding: 0; }
+  .report-view { max-width: none; }
+  .report-view li, .report-view .rounded-lg { break-inside: avoid; }
+  /* Score bars are backgrounds; keep them, they carry the score visually. */
+  .report-view [aria-hidden] > span { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+}
