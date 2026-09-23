@@ -27,6 +27,10 @@ class UploadStore(Protocol):
         """The object's bytes, or None if it does not exist."""
         ...
 
+    def delete_prefix(self, prefix: str) -> int:
+        """Delete every object under `prefix`; returns how many (ADR 0018)."""
+        ...
+
 
 class GcsUploadStore:
     def __init__(self, *, bucket: str, signer_service_account: str) -> None:
@@ -70,6 +74,15 @@ class GcsUploadStore:
             return None
         return blob.download_as_bytes()
 
+    def delete_prefix(self, prefix: str) -> int:
+        # One request per object. A user has a handful of uploads and at most
+        # 30 days of answer recordings, so batching would buy nothing.
+        count = 0
+        for blob in self._client.list_blobs(self._bucket, prefix=prefix):
+            blob.delete()
+            count += 1
+        return count
+
 
 class MemoryUploadStore:
     """Holds bytes in a dict. `signed_put_url` returns a fake URL; tests and the
@@ -89,3 +102,9 @@ class MemoryUploadStore:
 
     def read(self, object_name: str) -> bytes | None:
         return self.objects.get(object_name)
+
+    def delete_prefix(self, prefix: str) -> int:
+        doomed = [name for name in self.objects if name.startswith(prefix)]
+        for name in doomed:
+            del self.objects[name]
+        return len(doomed)

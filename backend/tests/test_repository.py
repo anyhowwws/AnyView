@@ -17,7 +17,7 @@ from anyview.brain.models import (
     SkillDraft,
     StoryDraft,
 )
-from anyview.db.repository import Conflict, NotFound, Repository
+from anyview.db.repository import ERASE_ORDER, Conflict, NotFound, Repository
 
 UID = "uid-jordan"
 
@@ -443,3 +443,71 @@ def test_feedback_appears_in_the_index_and_the_context(repo):
     ctx = repo.brain_context(UID)
     assert "## Feedback" in ctx
     assert "[F1] Client — on Billing migration: Extremely responsive and clear throughout." in ctx
+
+
+# --- Erasing an account (ADR 0018) ----------------------------------------------
+
+
+def _count(db, table: str, uid: str) -> int:
+    column = "uid" if table == "users" else "user_id"
+    with db.begin() as c:
+        return c.execute(
+            sa.text(f"SELECT count(*) FROM {table} WHERE {column} = :u"), {"u": uid}
+        ).scalar_one()
+
+
+def _fill(repo: Repository, uid: str) -> None:
+    """A garden with every kind of row: confirmed entities, an edit, a retire,
+    a pending proposal, a resume on file, a usage row."""
+    dump = repo.create_dump(uid, kind="resume_pdf", text="resume text " * 5, object_name="r.pdf")
+    prop = repo.create_proposal(uid, dump_id=dump.id, patch=first_patch(), model="fake")
+    repo.confirm_proposal(uid, prop.id, first_patch())
+    repo.set_active_resume(uid, dump.id)
+    brain = repo.brain(uid)
+    repo.edit_entity(uid, "role", brain.roles[0].id, {"level": "principal"})
+    repo.retire_entity(uid, "skill", brain.skills[0].id)
+    pending = repo.create_dump(uid, kind="text", text="another dump " * 5, object_name=None)
+    repo.create_proposal(uid, dump_id=pending.id, patch=first_patch(), model="fake")
+    repo.write_usage(
+        {"session_id": f"s-{uid}", "call": "plan", "model": "m", "input_tokens": 1,
+         "output_tokens": 1, "thinking_tokens": 0, "cache_read": 0, "latency_ms": 1},
+        uid=uid,
+    )  # fmt: skip
+
+
+def test_erase_user_removes_every_row_and_only_theirs(repo, db):
+    _fill(repo, UID)
+    _fill(repo, "uid-other")
+    before = {t: _count(db, t, "uid-other") for t in ERASE_ORDER}
+
+    removed = repo.erase_user(UID)
+
+    assert all(_count(db, t, UID) == 0 for t in ERASE_ORDER)
+    assert removed["events"] == 3 and removed["users"] == 1 and removed["raw_dumps"] == 2
+    assert {t: _count(db, t, "uid-other") for t in ERASE_ORDER} == before
+    assert repo.rebuild("uid-other") > 0  # the other user's log is intact and replays
+
+
+def test_erase_is_safe_to_repeat_and_the_user_can_start_again(repo):
+    _fill(repo, UID)
+    repo.erase_user(UID)
+    assert sum(repo.erase_user(UID).values()) == 0
+    repo.ensure_user(UID, "jordan@example.com")
+    assert repo.brain(UID).roles == [] and repo.active_resume(UID) is None
+    _confirm(repo, first_patch())  # labels and seq start again from 1
+    assert repo.events(UID)[0].seq == 1
+
+
+def test_erase_order_covers_every_table_that_holds_a_user(db):
+    """A table added later with a user_id column must be erased too."""
+    with db.begin() as c:
+        tables = {
+            r[0]
+            for r in c.execute(
+                sa.text(
+                    "SELECT table_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND column_name = 'user_id'"
+                )
+            )
+        }
+    assert tables | {"users"} == set(ERASE_ORDER)

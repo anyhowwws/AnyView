@@ -57,6 +57,26 @@ TABLE: dict[EntityKind, str] = {
 }
 
 
+# Every table holding a user's rows, children before parents (ADR 0018).
+# skill_evidence goes with skills and projects (ON DELETE CASCADE). A new
+# table with a user_id belongs here too; a test fails if one is missed.
+ERASE_ORDER = (
+    "feedback",
+    "stories",
+    "skills",
+    "achievements",
+    "education",
+    "languages",
+    "projects",
+    "roles",
+    "events",
+    "proposals",
+    "raw_dumps",
+    "usage_events",
+    "users",
+)
+
+
 class NotFound(Exception):
     pass
 
@@ -95,6 +115,30 @@ class Repository:
                 ),
                 {"uid": uid, "email": email},
             )
+
+    def erase_user(self, uid: str) -> dict[str, int]:
+        """Delete everything stored about one user, in one transaction (ADR 0018).
+
+        The only code that deletes events. The trigger lets these deletes
+        through because this transaction first names the user it is erasing
+        (migration 005); any other delete, and every update, is still refused.
+
+        Order follows the foreign keys: the projection points at events and
+        dumps, events at proposals and dumps, everything at the user. Returns
+        rows removed per table, for the log line. Erasing a user who is not
+        there removes nothing and is not an error, so a retry is safe.
+        """
+        removed: dict[str, int] = {}
+        with self.engine.begin() as c:
+            c.execute(_q("SELECT set_config('anyview.erasing_user', :uid, true)"), {"uid": uid})
+            # The resume pointer references a dump; clear it before the dumps go.
+            c.execute(_q("UPDATE users SET resume_dump_id = NULL WHERE uid = :uid"), {"uid": uid})
+            for table in ERASE_ORDER:
+                column = "uid" if table == "users" else "user_id"
+                removed[table] = c.execute(
+                    _q(f"DELETE FROM {table} WHERE {column} = :uid"), {"uid": uid}
+                ).rowcount
+        return removed
 
     # --- raw dumps -----------------------------------------------------------
 
