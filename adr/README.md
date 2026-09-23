@@ -37,3 +37,4 @@ record of having been wrong is the useful part.
 | [0014](0014-interview-setup-situation-not-sources.md) | Interview setup describes a situation, not a set of sources | Accepted |
 | [0015](0015-resume-re-ingestion-deltas.md) | Re-ingesting a resume: suppress what has not changed | Accepted |
 | [0016](0016-voice-first-and-the-clock.md) | Speaking by default; a per-question clock and an opener | Accepted |
+| [0017](0017-discover-whole-garden-before-retrieval.md) | Discover: ask Donna about the garden, whole garden before retrieval | Accepted |

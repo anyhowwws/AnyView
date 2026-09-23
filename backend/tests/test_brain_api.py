@@ -230,3 +230,89 @@ def test_feedback_flows_through_the_review_queue(client):
 
     r = client.delete(f"/brain/entities/feedback/{feedback[0]['id']}")
     assert r.status_code == 200 and r.json()["brain"]["feedback"] == []
+
+
+def _confirmed(client):
+    p = _dump(client)
+    r = client.post(f"/brain/proposals/{p['id']}/confirm", json={"patch": p["patch"]})
+    assert r.status_code == 200, r.text
+    return r.json()["brain"]
+
+
+def _discover(client, question="What have I migrated?", history=()):
+    return client.post(
+        "/brain/discover",
+        json={"conversation_id": "conv-12345678", "question": question, "history": list(history)},
+    )
+
+
+def test_discover_on_an_empty_garden_is_a_422(client):
+    r = _discover(client)
+    assert r.status_code == 422 and "empty" in r.json()["detail"]
+
+
+def test_discover_streams_an_answer_with_resolved_citations(client):
+    from tests.test_api import _sse_events
+
+    b = _confirmed(client)
+    fake = FakeModel()
+    app.dependency_overrides[interview.get_model] = lambda: fake
+    r = _discover(
+        client, history=[{"role": "user", "text": "Hi"}, {"role": "donna", "text": "Hello"}]
+    )
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+    events = _sse_events(r)
+    assert [e for e, _ in events][-2:] == ["citations", "done"]
+    entities = events[-2][1]["entities"]
+    assert entities == [
+        {"label": "P1", "id": b["projects"][0]["id"], "kind": "project"},
+        {"label": "S1", "id": b["stories"][0]["id"], "kind": "story"},
+    ]
+    call = fake.calls[0]
+    assert "Billing service migration to Cloud Run" in call["system"]  # the confirmed garden
+    assert "Candidate: Hi\n\nDonna: Hello" in call["user"]
+
+
+def test_discover_reads_only_confirmed_entries(client):
+    _confirmed(client)
+    fake = FakeModel(
+        {
+            "propose": {
+                "roles": [],
+                "projects": [
+                    {
+                        "key": "p1", "existing": None, "role": None,
+                        "name": "Bedrock claims triage", "problem": None, "action": None,
+                        "result": None, "tech": ["Bedrock"], "metrics": [],
+                        "evidence": "Built a Bedrock claims triage pipeline.",
+                    }
+                ],
+                "stories": [], "skills": [], "achievements": [],
+            }
+        }
+    )  # fmt: skip
+    app.dependency_overrides[interview.get_model] = lambda: fake
+    r = client.post("/brain/dumps", json={"text": "Built a Bedrock claims triage pipeline."})
+    assert r.status_code == 200, r.text  # pending, not confirmed
+    _discover(client, question="What have I built with Bedrock?")
+    garden = fake.calls[-1]["system"].split("<digital_garden>")[-1]
+    assert "Billing service" in garden and "Bedrock" not in garden
+
+
+def test_discover_is_scoped_to_the_signed_in_user(client):
+    from tests.conftest import FAKE_TOKENS
+
+    _confirmed(client)
+    FAKE_TOKENS["stranger3"] = {
+        "sub": "uid-stranger3",
+        "email": "jordan@example.com",
+        "email_verified": True,
+    }
+    other = TestClient(app, headers={"Authorization": "Bearer stranger3"})
+    assert _discover(other).status_code == 422  # their garden is empty; ours is not read
+
+
+def test_discover_rejects_a_bad_conversation_id(client):
+    _confirmed(client)
+    r = client.post("/brain/discover", json={"conversation_id": "../x", "question": "Hi"})
+    assert r.status_code == 422

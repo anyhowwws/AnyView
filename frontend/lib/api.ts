@@ -270,3 +270,56 @@ export async function askQuestion(
   }
   throw new ApiError("The stream ended before the interviewer finished.", 502, true);
 }
+
+export interface DiscoverTurn {
+  role: "user" | "donna";
+  text: string;
+}
+
+/** An entry Donna's answer cites, resolved by the server (ADR 0017). */
+export interface Citation {
+  label: string;
+  id: string;
+  kind: EntityKind;
+}
+
+/** Asks Donna about the confirmed garden. Streams her words through onToken;
+ *  resolves with the entries the answer cites once the server sends `done`. */
+export async function askDonna(
+  conversationId: string,
+  question: string,
+  history: DiscoverTurn[],
+  onToken: (text: string) => void,
+  signal: AbortSignal,
+): Promise<Citation[]> {
+  const auth = await authHeaders();
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/brain/discover`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...auth },
+      body: JSON.stringify({ conversation_id: conversationId, question, history }),
+      signal,
+    });
+  } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
+    throw new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
+  }
+  if (!res.ok) throw await toApiError(res);
+  if (!res.body) throw new ApiError("Empty response from the API.", 502, true);
+
+  let citations: Citation[] = [];
+  for await (const { event, data } of readSse(res.body)) {
+    if (event === "token") {
+      onToken((data as { text: string }).text);
+    } else if (event === "citations") {
+      citations = (data as { entities: Citation[] }).entities;
+    } else if (event === "error") {
+      const { message, retryable } = data as { message: string; retryable: boolean };
+      throw new ApiError(message, 502, retryable);
+    } else if (event === "done") {
+      return citations;
+    }
+  }
+  throw new ApiError("The stream ended before Donna finished.", 502, true);
+}

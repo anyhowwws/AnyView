@@ -78,7 +78,11 @@ Backend modules:
   role or project it concerns. Adding a kind touches `EntityKind`/`KINDS`/`LABEL_PREFIX`/`EDITABLE` in
   `brain/models.py`, `TABLE` + every `_entities()` caller in `db/repository.py`, the extraction schema and
   prompt in `brain/extract.py`, and on the frontend `types.ts`, `capture-templates.ts` (the dropdown),
-  `lib/brain-graph.ts` (nodes/edges) and `components/brain/{entities,review-queue,brain-graph}.tsx`.
+  `lib/brain-graph.ts` (nodes/edges) and `components/brain/{entities,review-queue,brain-graph,discover}.tsx`.
+- `anyview/brain/discover.py` — Discover (ADR 0017): Donna answers questions about the confirmed
+  garden over `POST /brain/discover` (SSE: tokens, then one `citations` frame). Whole garden in the
+  system prompt, no retrieval yet; `discover_context()` is the seam Phase 2 retrieval replaces.
+  Read-only, stateless, fast model. Cited labels are checked against the user's label map.
 - `backend/migrations/NNN_*.sql` — the schema. Additive only; the DB enforces provenance, append-only events, the competency taxonomy, one live skill per name.
 
 ## Commands
@@ -138,7 +142,7 @@ terraform plan                                                   # terraform.tfv
 
 **Phase 1** — auth (0009), resume upload (0010), Cloud SQL + the second brain
 (0011): capture, review queue, event-sourced projection, coverage heatmap,
-`/brain` screen, and the brain as an interview source. Setup now describes a
+`/brain` screen, Discover (0017), and the brain as an interview source. Setup now describes a
 situation rather than a set of sources (0014), and a replaced resume queues
 only what changed (0015). Phase 2 next: embeddings
 (`gemini-embedding-2`), hybrid retrieval, Cloud Tasks for ingestion, golden
