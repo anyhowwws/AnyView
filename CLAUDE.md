@@ -47,7 +47,7 @@ docs, Firestore, scraping Glassdoor/Blind, GKE/HA/multi-region, API keys.
 backend/src/anyview/   FastAPI app. main.py is the entry point.
 backend/tests/         pytest; pythonpath=src set in pyproject.
 frontend/app/          Next.js App Router. output: "export" → frontend/out.
-frontend/firebase.json Hosting config: static files + SPA fallback only. No API rewrite (ADR 0006).
+frontend/firebase.json Hosting config: static files + SPA fallback + cache headers only. No API rewrite (ADR 0006).
 infra/bootstrap/       State bucket only. Local state. Run once.
 infra/                 Main GCP stack. GCS backend, bucket via -backend-config. No AWS credentials needed (ADR 0012).
 infra/dns/              The one AWS resource (Route 53 CNAME). Own state, own `aws login`. Applied rarely (ADR 0012).
@@ -221,6 +221,9 @@ retrieval test set.
   no `next/headers`, no route handlers. Client calls the API directly.
 - Repository and brain tests need `TEST_DATABASE_URL`; without it they skip (visible as
   `-rs` output), they do not fail. CI always has the pgvector service container.
+- Hosting cache headers (`firebase.json`): everything outside `/_next/` is `no-cache` (revalidated each load),
+  `/_next/static/**` is `immutable` for a year (hashed names). Firebase's default is `max-age=3600` on
+  everything, which kept the old page in browsers for up to an hour after a deploy.
 - Don't run `next build` while `next dev` is up — both use `frontend/.next/` and the
   dev server then throws `__webpack_modules__[moduleId] is not a function`. Stop
   dev, build, restart dev (or `rm -rf frontend/.next`).
