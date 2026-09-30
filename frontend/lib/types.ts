@@ -199,6 +199,8 @@ export interface Role {
   start_date: string | null;
   end_date: string | null;
   level: string | null;
+  /** Ongoing work in the role; bounded work is a project (ADR 0019). */
+  responsibilities: string[];
   source: Provenance;
 }
 
@@ -235,6 +237,10 @@ export interface Skill {
   name: string;
   depth: number;
   project_ids: string[];
+  /** Roles whose ongoing work shows this skill (ADR 0019). */
+  role_ids: string[];
+  /** Credentials that attest to this skill (ADR 0020). */
+  achievement_ids: string[];
   source: Provenance;
 }
 
@@ -309,6 +315,8 @@ interface Draft {
   key: string;
   existing: string | null;
   evidence: string;
+  /** The quote could not be found in the dump; the user decides (ADR 0019). */
+  unverified?: boolean;
 }
 export interface RoleDraft extends Draft {
   company: string;
@@ -316,6 +324,7 @@ export interface RoleDraft extends Draft {
   start_date: string | null;
   end_date: string | null;
   level: string | null;
+  responsibilities: string[];
 }
 export interface ProjectDraft extends Draft {
   role: string | null;
@@ -340,6 +349,13 @@ export interface SkillDraft extends Draft {
   name: string;
   depth: number;
   projects: string[];
+  roles: string[];
+  /** Credentials that attest to it: keys or labels (ADR 0020). */
+  achievements: string[];
+  /** Link target (draft key or label) → the quote that justified it. */
+  link_evidence: Record<string, string>;
+  /** Other names folded into this skill as near-duplicates (ADR 0021). */
+  merged_from?: string[];
 }
 export interface AchievementDraft extends Draft {
   kind: "achievement" | "credential";

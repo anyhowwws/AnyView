@@ -199,8 +199,15 @@ def _file_resume(
     repo.set_active_resume(user.uid, dump.id)
 
     index, _ = repo.brain_index(user.uid)
-    patch = propose(setup.resume, brain_index=index, model=model, session_id=session_id)
-    patch = drop_unchanged(patch, repo.brain(user.uid))
+    brain = repo.brain(user.uid)
+    patch = propose(
+        setup.resume,
+        brain_index=index,
+        model=model,
+        session_id=session_id,
+        garden_skills={k.label: k.name for k in brain.skills},
+    )
+    patch = drop_unchanged(patch, brain)
     if not patch.is_empty():
         repo.create_proposal(
             user.uid, dump_id=dump.id, patch=patch, model=getattr(model, "model", "fake")

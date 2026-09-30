@@ -73,8 +73,12 @@ def docx_to_text(data: bytes) -> str:
 PDF_SYSTEM = (
     "You transcribe resumes. Return the document's text as plain text in reading "
     "order: headings, roles with employer and dates, bullet points as lines starting "
-    "with '- ', contact details as given. Keep every fact and number; add nothing; "
-    "do not summarise, comment, or format as Markdown tables."
+    "with '- ', contact details as given. Keep each section's content together under "
+    "its heading: when the page has columns, finish one column's section before "
+    "starting the next, and never interleave lines from two columns. Write headings "
+    "as ordinary words, even when the page letter-spaces them. Keep list separators "
+    "(commas, '·') as written. Keep every fact and number; add nothing; do not "
+    "summarise, comment, or format as Markdown tables."
 )
 
 

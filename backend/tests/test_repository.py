@@ -17,7 +17,7 @@ from anyview.brain.models import (
     SkillDraft,
     StoryDraft,
 )
-from anyview.db.repository import ERASE_ORDER, Conflict, NotFound, Repository
+from anyview.db.repository import ERASE_ORDER, Conflict, NotFound, Repository, _apply_patch
 
 UID = "uid-jordan"
 
@@ -107,6 +107,24 @@ def _snapshot(db, uid=UID) -> dict:
                 .all()
             )
             out[t] = [dict(r) for r in rows]
+        out["skill_roles"] = sorted(
+            tuple(map(str, r))
+            for r in c.execute(
+                sa.text(
+                    "SELECT l.skill_id, l.role_id FROM skill_roles l JOIN skills s ON s.id = l.skill_id WHERE s.user_id = :u"
+                ),
+                {"u": uid},
+            ).all()
+        )
+        out["skill_achievements"] = sorted(
+            tuple(map(str, r))
+            for r in c.execute(
+                sa.text(
+                    "SELECT l.skill_id, l.achievement_id FROM skill_achievements l JOIN skills s ON s.id = l.skill_id WHERE s.user_id = :u"
+                ),
+                {"u": uid},
+            ).all()
+        )
         out["skill_evidence"] = sorted(
             tuple(map(str, r))
             for r in c.execute(
@@ -511,3 +529,83 @@ def test_erase_order_covers_every_table_that_holds_a_user(db):
             )
         }
     assert tables | {"users"} == set(ERASE_ORDER)
+
+
+# --- Responsibilities and skill → role links (ADR 0019) ---------------------------
+
+
+def _with_responsibilities() -> Patch:
+    patch = first_patch()
+    patch.roles[0].responsibilities = ["EKS day-2 operations", "RFQ and pre-sales support"]
+    patch.skills[0].roles = ["r1"]
+    patch.skills[0].link_evidence = {"r1": "a quote shown in the queue, never stored"}
+    return patch
+
+
+def test_roles_carry_responsibilities_and_skills_link_to_roles(repo):
+    _confirm(repo, _with_responsibilities())
+    brain = repo.brain(UID)
+    assert brain.roles[0].responsibilities == ["EKS day-2 operations", "RFQ and pre-sales support"]
+    assert brain.skills[0].role_ids == [brain.roles[0].id]
+    assert brain.skills[0].project_ids == [brain.projects[0].id]
+    context = repo.brain_context(UID)
+    assert "Responsibilities:\n  - EKS day-2 operations" in context
+    assert "[K1] Terraform — self-rated 4/5 — used in P1, R1" in context
+
+
+def test_role_links_and_responsibilities_are_editable_and_replay(repo, db):
+    _confirm(repo, _with_responsibilities())
+    brain = repo.brain(UID)
+    repo.edit_entity(UID, "role", brain.roles[0].id, {"responsibilities": ["Landing zones"]})
+    repo.edit_entity(UID, "skill", brain.skills[0].id, {"role_ids": []})
+    brain = repo.brain(UID)
+    assert brain.roles[0].responsibilities == ["Landing zones"]
+    assert brain.skills[0].role_ids == [] and brain.skills[0].project_ids != []
+    before = _snapshot(db)
+    repo.rebuild(UID)
+    assert _snapshot(db) == before
+
+
+def test_events_from_before_migration_006_still_replay(repo, db):
+    """A patch_confirmed payload written before ADR 0019 has no
+    `responsibilities` on roles and no `role_ids` on skills."""
+    _confirm(repo, first_patch())
+    with db.begin() as c:
+        (payload,) = c.execute(
+            sa.text("SELECT payload FROM events WHERE user_id = :u"), {"u": UID}
+        ).one()
+    del payload["roles"][0]["responsibilities"]
+    del payload["skills"][0]["role_ids"]
+    # Re-apply the old-shaped payload over the projection, as a replay would.
+    with db.begin() as c:
+        c.execute(sa.text("DELETE FROM skills WHERE user_id = :u"), {"u": UID})
+        event_id = c.execute(
+            sa.text("SELECT id FROM events WHERE user_id = :u"), {"u": UID}
+        ).scalar()
+        _apply_patch(c, UID, event_id, payload)
+    brain = repo.brain(UID)
+    assert brain.roles[0].responsibilities == [] and brain.skills[0].role_ids == []
+
+
+def test_a_name_clash_is_a_conflict_and_writes_nothing(repo):
+    _confirm(repo, first_patch())
+    clash = Patch(skills=[SkillDraft(key="k1", name="TERRAFORM", depth=2, evidence="e")])
+    dump = repo.create_dump(UID, kind="text", text="t", object_name=None)
+    prop = repo.create_proposal(UID, dump_id=dump.id, patch=clash, model="fake")
+    with pytest.raises(Conflict, match="already has an entry"):
+        repo.confirm_proposal(UID, prop.id, clash)
+    assert len(repo.events(UID)) == 1 and repo.proposal(UID, prop.id).status == "pending"
+
+
+def test_a_certification_evidences_a_skill_and_replays(repo, db):
+    patch = first_patch()
+    patch.skills[0].achievements = ["a1"]
+    _confirm(repo, patch)
+    brain = repo.brain(UID)
+    assert brain.skills[0].achievement_ids == [brain.achievements[0].id]
+    assert "— certified by A1" in repo.brain_context(UID)
+    repo.edit_entity(UID, "skill", brain.skills[0].id, {"achievement_ids": []})
+    assert repo.brain(UID).skills[0].achievement_ids == []
+    before = _snapshot(db)
+    repo.rebuild(UID)
+    assert _snapshot(db) == before

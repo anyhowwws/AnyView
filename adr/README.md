@@ -39,3 +39,6 @@ record of having been wrong is the useful part.
 | [0016](0016-voice-first-and-the-clock.md) | Speaking by default; a per-question clock and an opener | Accepted |
 | [0017](0017-discover-whole-garden-before-retrieval.md) | Discover: ask Donna about the garden, whole garden before retrieval | Accepted |
 | [0018](0018-erasing-an-account.md) | Erasing an account: the one delete the event log allows | Accepted |
+| [0019](0019-sectioned-extraction-and-evidenced-links.md) | Sectioned extraction, evidenced skill links, and roles that carry responsibilities | Accepted |
+| [0020](0020-certifications-evidence-skills.md) | Certifications evidence skills | Accepted |
+| [0021](0021-near-duplicate-skills.md) | Near-duplicate skills are folded by a checked model call | Accepted |

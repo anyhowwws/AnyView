@@ -72,8 +72,25 @@ Backend modules:
   extraction, and recorded answer → transcript (`audio_to_text`).
 - `anyview/db/{connection,migrate,repository}.py` — engine (connector + IAM auth, or DATABASE_URL), numbered SQL migrations run at startup, and **the only file that runs SQL**: app-meaningful methods over an event log + projection (ADR 0011).
   `active_resume` / `set_active_resume` are the resume on file; `dump_with_text` is the re-upload no-op check.
-- `anyview/brain/{models,extract}.py` — Patch drafts with verbatim evidence, the brain as read, coverage; the dump → Patch extraction call with the evidence check
-  and `drop_unchanged`, which keeps drafts restating already-confirmed entities out of the review queue (ADR 0015).
+- `anyview/brain/{models,extract}.py` — Patch drafts with verbatim evidence, the brain as read, coverage; the dump → Patch pipeline
+  (ADR 0019): segment → extract per section in parallel → `merge` → flag drafts whose quote is missing as `unverified`
+  (never dropped silently) → link skills. `drop_unchanged` keeps drafts restating already-confirmed entities out of the
+  review queue (ADR 0015), and a confirmed skill keeps links a re-upload did not show again.
+- `anyview/brain/sections.py` — the fast model returns a long dump's sections as **line ranges only** (never rewritten
+  text); `from_ranges` makes them overlap-free and loses no line. Under 2,000 characters, or fewer than two real
+  sections, the dump is read in one call.
+- `anyview/brain/dedupe.py` — one call proposes groups of near-duplicate skills ("GCP"/"Google Cloud"); `checked()`
+  refuses unknown or reused keys and any group joining two garden entries; `extract.fold_duplicates` applies them,
+  recording absorbed names in `merged_from` (ADR 0021). Runs before linking.
+- `anyview/brain/link.py` — one call links skills to roles and projects; each link's quote must sit inside the
+  target's own stretch of the dump (`brain/evidence.py:spans`), so a skills-list line justifies nothing.
+- `anyview/brain/evidence.py` — `fold()`/`normalise()`: the one definition of "the same quote" (NFKC, dashes,
+  bullets, curly quotes, case, whitespace). Every evidence check goes through it.
+- Roles carry `responsibilities` (ongoing work); bounded work with an outcome is a project; a story is a moment of
+  behaviour (ADR 0019). Skills link to projects (`skill_evidence`), to roles (`skill_roles`) and to the
+  credentials that attest to them (`skill_achievements`, ADR 0020). A credential link's quote must also share a
+  distinctive word with its title (`link.names_credential`), because one list line is evidence for every
+  credential on it.
   Entity kinds: role, project, story, skill, achievement, education, language, **feedback** (label prefix `F`) —
   a quote or close paraphrase of what someone else said about the candidate's work, optionally linked to the
   role or project it concerns. Adding a kind touches `EntityKind`/`KINDS`/`LABEL_PREFIX`/`EDITABLE` in
@@ -129,6 +146,9 @@ terraform plan                                                   # terraform.tfv
 - Entity labels (R1, P2, S3, K1, A1) are computed per read from creation order, never
   stored. Prompts use them; the review queue resolves them back to ids at confirmation.
 - Every model call writes a usage row. No exceptions, including scoring and `speak` calls.
+- A resume upload is 4 + *n* calls: transcribe, `segment` (fast model, `generate(fast=True)`), one `propose`
+  per section, one `dedupe`, one `link`. `scripts/extraction_recall.py <file> --expect achievements=14` runs the real
+  pipeline on a document you know the answer for; keep real resumes out of the repo.
 - Each question carries its own `seconds` (ADR 0016), chosen by the model when it plans and
   clamped by `engine.start` into 45–300. The clock only runs when `setup.time_bounded`.
 - `finish()` scores the five answers concurrently (thread pool; the SDK client is

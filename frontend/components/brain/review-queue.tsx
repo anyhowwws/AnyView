@@ -27,7 +27,8 @@ export function ReviewQueue({ proposals, competencies, onConfirmed, onDiscarded 
       </h2>
       <p className="text-sm text-muted-foreground">
         Donna proposed these from what you gave her. Edit anything, untick what you don&apos;t
-        want, then confirm. Every entry keeps its exact evidence quote.
+        want, then confirm. Every entry keeps its exact evidence quote, and every skill link
+        shows the words that justify it.
       </p>
       <AnimatePresence initial={false}>
         {proposals.map((p) => (
@@ -69,20 +70,49 @@ function ProposalCard({
     languages: proposal.patch.languages ?? [],
     feedback: proposal.patch.feedback ?? [],
   }));
-  const [dropped, setDropped] = useState<Set<string>>(new Set());
+  // Drafts whose quote could not be found start unticked (ADR 0019): the user
+  // sees them, but nothing unverified is confirmed by default.
+  const [dropped, setDropped] = useState<Set<string>>(
+    () => new Set(GROUPS.flatMap((g) => (proposal.patch[g.key] ?? []).filter((d) => d.unverified).map((d) => d.key))),
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const kept = (): Patch => ({
-    roles: patch.roles.filter((d) => !dropped.has(d.key)),
-    projects: patch.projects.filter((d) => !dropped.has(d.key)),
-    stories: patch.stories.filter((d) => !dropped.has(d.key)),
-    skills: patch.skills.filter((d) => !dropped.has(d.key)),
-    achievements: patch.achievements.filter((d) => !dropped.has(d.key)),
-    education: patch.education.filter((d) => !dropped.has(d.key)),
-    languages: patch.languages.filter((d) => !dropped.has(d.key)),
-    feedback: patch.feedback.filter((d) => !dropped.has(d.key)),
-  });
+  // What gets confirmed: the ticked drafts, with any link to an unticked one
+  // cut. Sending "p1" after p1 was unticked would be a reference to nothing,
+  // and the server would refuse the whole patch.
+  const kept = (): Patch => {
+    const live = <T extends { key: string }>(drafts: T[]) => drafts.filter((d) => !dropped.has(d.key));
+    const one = (ref: string | null) => (ref && dropped.has(ref) ? null : ref);
+    const many = (refs: string[] = []) => refs.filter((r) => !dropped.has(r));
+    return {
+      roles: live(patch.roles),
+      projects: live(patch.projects).map((d) => ({ ...d, role: one(d.role) })),
+      stories: live(patch.stories).map((d) => ({ ...d, role: one(d.role), project: one(d.project) })),
+      skills: live(patch.skills).map((d) => ({
+        ...d,
+        projects: many(d.projects),
+        roles: many(d.roles),
+        achievements: many(d.achievements),
+      })),
+      achievements: live(patch.achievements),
+      education: live(patch.education),
+      languages: live(patch.languages),
+      feedback: live(patch.feedback).map((d) => ({ ...d, role: one(d.role), project: one(d.project) })),
+    };
+  };
+  // A readable name for a link target: a draft in this patch, or a label for
+  // something already in the garden.
+  const nameOf = (ref: string): string => {
+    const role = patch.roles.find((d) => d.key === ref);
+    if (role) return `${role.title} · ${role.company}`;
+    const project = patch.projects.find((d) => d.key === ref);
+    if (project) return project.name;
+    const credential = patch.achievements.find((d) => d.key === ref);
+    if (credential) return credential.title;
+    return ref;
+  };
+  const unverified = GROUPS.flatMap(({ key }) => patch[key].filter((d) => d.unverified).map((d) => ({ group: key, draft: d })));
   const keptCount = GROUPS.reduce((n, g) => n + patch[g.key].filter((d) => !dropped.has(d.key)).length, 0);
 
   function update<G extends Group>(group: G, key: string, fields: Partial<Patch[G][number]>) {
@@ -103,6 +133,28 @@ function ProposalCard({
     }
   }
 
+  function card<G extends Group>(group: G, draft: Patch[G][number]) {
+    return (
+      <DraftCard
+        key={draft.key}
+        group={group}
+        draft={draft}
+        competencies={competencies}
+        kept={!dropped.has(draft.key)}
+        nameOf={nameOf}
+        onKeep={(keep) =>
+          setDropped((prev) => {
+            const next = new Set(prev);
+            if (keep) next.delete(draft.key);
+            else next.add(draft.key);
+            return next;
+          })
+        }
+        onChange={(fields) => update(group, draft.key, fields)}
+      />
+    );
+  }
+
   const source =
     proposal.dump_kind === "text" ? "from a capture" : proposal.dump_kind === "resume_pdf" ? "from a PDF resume" : "from a Word resume";
 
@@ -114,30 +166,24 @@ function ProposalCard({
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
-        {GROUPS.map(({ key, label }) =>
-          patch[key].length ? (
+        {GROUPS.map(({ key, label }) => {
+          const verified = patch[key].filter((d) => !d.unverified);
+          return verified.length ? (
             <div key={key} className="space-y-2">
               <h3 className="review-section-label">{label}</h3>
-              {patch[key].map((draft) => (
-                <DraftCard
-                  key={draft.key}
-                  group={key}
-                  draft={draft}
-                  competencies={competencies}
-                  kept={!dropped.has(draft.key)}
-                  onKeep={(keep) =>
-                    setDropped((prev) => {
-                      const next = new Set(prev);
-                      if (keep) next.delete(draft.key);
-                      else next.add(draft.key);
-                      return next;
-                    })
-                  }
-                  onChange={(fields) => update(key, draft.key, fields)}
-                />
-              ))}
+              {verified.map((draft) => card(key, draft))}
             </div>
-          ) : null,
+          ) : null;
+        })}
+        {unverified.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="review-section-label">Couldn&apos;t verify</h3>
+            <p className="text-xs text-muted-foreground">
+              Donna&apos;s quote for these wasn&apos;t found in your text, so they start unticked. Tick
+              any that are right.
+            </p>
+            {unverified.map(({ group, draft }) => card(group, draft))}
+          </div>
         )}
         {error && (
           <p role="alert" className="text-sm text-destructive">
@@ -171,6 +217,7 @@ function DraftCard<G extends Group>({
   draft,
   competencies,
   kept,
+  nameOf,
   onKeep,
   onChange,
 }: {
@@ -178,6 +225,7 @@ function DraftCard<G extends Group>({
   draft: Patch[G][number];
   competencies: Competency[];
   kept: boolean;
+  nameOf: (ref: string) => string;
   onKeep: (keep: boolean) => void;
   onChange: (fields: Partial<Patch[G][number]>) => void;
 }) {
@@ -210,6 +258,7 @@ function DraftCard<G extends Group>({
             {draft.existing ? `Updates ${draft.existing}` : "New"}
           </span>
         </label>
+        {draft.unverified && <Badge variant="outline">Quote not found</Badge>}
       </div>
       <div className="grid gap-2 sm:grid-cols-2">
         {group === "roles" && (
@@ -221,6 +270,21 @@ function DraftCard<G extends Group>({
               {text("start_date", "Start (YYYY-MM-DD)")}
               {text("end_date", "End (blank = now)")}
             </div>
+            <label className="flex flex-col gap-0.5 sm:col-span-2">
+              <span className="text-xs font-semibold uppercase tracking-[0.11em] text-foreground/75">
+                Responsibilities, one per line
+              </span>
+              <Textarea
+                rows={3}
+                placeholder="—"
+                disabled={!kept}
+                value={((d.responsibilities as string[]) ?? []).join("\n")}
+                onChange={(e) => onChange(patchOf({ responsibilities: e.target.value.split("\n") }))}
+                onBlur={(e) =>
+                  onChange(patchOf({ responsibilities: e.target.value.split("\n").map((l) => l.trim()).filter(Boolean) }))
+                }
+              />
+            </label>
           </>
         )}
         {group === "projects" && (
@@ -276,6 +340,30 @@ function DraftCard<G extends Group>({
               />
               <span className="tabular-nums">{(d.depth as number) ?? 3}/5</span>
             </label>
+            {((d.merged_from as string[]) ?? []).length > 0 && (
+              // Names folded into this one (ADR 0021). To split one back out,
+              // capture it on its own; confirming this card does not add it.
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                Also found as {((d.merged_from as string[]) ?? []).join(", ")}, merged into this one.
+              </p>
+            )}
+            <SkillLinks
+              projects={(d.projects as string[]) ?? []}
+              roles={(d.roles as string[]) ?? []}
+              certifications={(d.achievements as string[]) ?? []}
+              quotes={(d.link_evidence as Record<string, string>) ?? {}}
+              nameOf={nameOf}
+              disabled={!kept}
+              onRemove={(ref) =>
+                onChange(
+                  patchOf({
+                    projects: ((d.projects as string[]) ?? []).filter((r) => r !== ref),
+                    roles: ((d.roles as string[]) ?? []).filter((r) => r !== ref),
+                    achievements: ((d.achievements as string[]) ?? []).filter((r) => r !== ref),
+                  }),
+                )
+              }
+            />
           </>
         )}
         {group === "achievements" && (
@@ -303,6 +391,83 @@ function DraftCard<G extends Group>({
         )}
       </div>
       <blockquote className="mt-2 border-l-2 pl-2 text-xs text-muted-foreground">“{draft.evidence}”</blockquote>
+    </div>
+  );
+}
+
+/** Where a skill was used, and which certifications attest to it, each link
+ *  with the quote that justifies it (ADR 0019, 0020). A link to something
+ *  already in the garden ("P2") has no quote from this text; it came from the
+ *  extraction itself. */
+function SkillLinks({
+  projects,
+  roles,
+  certifications,
+  quotes,
+  nameOf,
+  disabled,
+  onRemove,
+}: {
+  projects: string[];
+  roles: string[];
+  certifications: string[];
+  quotes: Record<string, string>;
+  nameOf: (ref: string) => string;
+  disabled: boolean;
+  onRemove: (ref: string) => void;
+}) {
+  const shared = { quotes, nameOf, disabled, onRemove };
+  return (
+    <div className="space-y-2 sm:col-span-2">
+      <LinkList heading="Used in" refs={[...projects, ...roles]} empty="No role or project in this text shows it." {...shared} />
+      {certifications.length > 0 && <LinkList heading="Certified by" refs={certifications} {...shared} />}
+    </div>
+  );
+}
+
+function LinkList({
+  heading,
+  refs,
+  empty,
+  quotes,
+  nameOf,
+  disabled,
+  onRemove,
+}: {
+  heading: string;
+  refs: string[];
+  empty?: string;
+  quotes: Record<string, string>;
+  nameOf: (ref: string) => string;
+  disabled: boolean;
+  onRemove: (ref: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <span className="text-xs font-semibold uppercase tracking-[0.11em] text-foreground/75">{heading}</span>
+      {refs.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{empty}</p>
+      ) : (
+        <ul className="space-y-1">
+          {refs.map((ref) => (
+            <li key={ref} className="flex items-start justify-between gap-2 rounded-md bg-muted/50 px-2 py-1 text-xs">
+              <span className="min-w-0">
+                <span className="font-medium">{nameOf(ref)}</span>
+                {quotes[ref] && <span className="block text-muted-foreground">“{quotes[ref]}”</span>}
+              </span>
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onRemove(ref)}
+                aria-label={`Remove the link to ${nameOf(ref)}`}
+                className="shrink-0 rounded px-1.5 text-muted-foreground hover:text-foreground disabled:opacity-50"
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
