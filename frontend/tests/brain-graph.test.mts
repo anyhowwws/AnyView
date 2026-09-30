@@ -10,7 +10,7 @@ function fixture(): Brain {
     roles: [{ id: "r", label: "R1", company: "Test employer", title: "Architect", start_date: null, end_date: null, level: null, responsibilities: [], source }],
     projects: [{ id: "p", label: "P1", role_id: "r", name: "Migration", problem: null, action: null, result: "Reduced costs", tech: [], metrics: [], source }],
     stories: [{ id: "s", label: "S1", role_id: "r", project_id: "p", title: "Cutover", situation: null, task: null, action: null, result: null, competencies: [], source }],
-    skills: [{ id: "k", label: "K1", name: "Terraform", depth: 4, project_ids: ["p"], role_ids: [], source }],
+    skills: [{ id: "k", label: "K1", name: "Terraform", depth: 4, project_ids: ["p"], role_ids: [], achievement_ids: [], source }],
     achievements: [{ id: "a", label: "A1", title: "Certification", kind: "credential", issuer: null, achieved_on: null, source }],
     education: [], languages: [], feedback: [],
     coverage: { competencies: [], roles: [], cells: {} }, pending_proposals: 2,
@@ -23,6 +23,13 @@ test("maps confirmed relationships and preserves isolated achievements", () => {
   assert.deepEqual(graph.edges.map((e) => [e.from, e.to]), [["r", "p"], ["r", "s"], ["p", "s"], ["p", "k"]]);
   assert.equal(graph.nodes.find((n) => n.id === "a")?.title, "Certification");
   assert.ok(graph.edges.every((e) => e.from !== "a" && e.to !== "a"));
+});
+
+test("a certification that attests to a skill links to it (ADR 0020)", () => {
+  const brain = fixture();
+  brain.skills[0].achievement_ids = ["a"];
+  const graph = buildBrainGraph(brain);
+  assert.ok(graph.edges.some((e) => e.from === "a" && e.to === "k" && e.relation === "Certification for skill"));
 });
 
 test("a skill used in a role's ongoing work links to the role (ADR 0019)", () => {
@@ -88,7 +95,7 @@ function twoRoles(): Brain {
   brain.projects.push({ id: "p2", label: "P2", role_id: "r2", name: "Platform", problem: null, action: null, result: null, tech: [], metrics: [], source });
   // Terraform: a project in the first role, ongoing work in the second.
   brain.skills[0].role_ids = ["r2"];
-  brain.skills.push({ id: "k2", label: "K2", name: "Go", depth: 2, project_ids: ["p2"], role_ids: [], source });
+  brain.skills.push({ id: "k2", label: "K2", name: "Go", depth: 2, project_ids: ["p2"], role_ids: [], achievement_ids: [], source });
   return brain;
 }
 

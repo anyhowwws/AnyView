@@ -40,6 +40,7 @@ export function buildBrainGraph(brain: Brain): { nodes: BrainNode[]; edges: Brai
   brain.skills.forEach((s) => {
     s.project_ids.forEach((p) => link(p, s.id, "Evidence for skill"));
     (s.role_ids ?? []).forEach((r) => link(r, s.id, "Skill used in role"));
+    (s.achievement_ids ?? []).forEach((a) => link(a, s.id, "Certification for skill"));
   });
   (brain.feedback ?? []).forEach((f) => {
     link(f.role_id, f.id, "Feedback on role");

@@ -239,6 +239,8 @@ export interface Skill {
   project_ids: string[];
   /** Roles whose ongoing work shows this skill (ADR 0019). */
   role_ids: string[];
+  /** Credentials that attest to this skill (ADR 0020). */
+  achievement_ids: string[];
   source: Provenance;
 }
 
@@ -348,6 +350,8 @@ export interface SkillDraft extends Draft {
   depth: number;
   projects: string[];
   roles: string[];
+  /** Credentials that attest to it: keys or labels (ADR 0020). */
+  achievements: string[];
   /** Link target (draft key or label) → the quote that justified it. */
   link_evidence: Record<string, string>;
 }

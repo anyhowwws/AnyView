@@ -168,10 +168,12 @@ function FeedbackCard({ feedback, labelOf, onChanged }: { feedback: Feedback; la
   );
 }
 
-/** " · used in P1, R2": the projects and roles that evidence a skill (ADR 0019). */
+/** " · used in P1, R2 · certified by A3": what evidences a skill (ADR 0019, 0020). */
 function usedIn(skill: Skill, labelOf: Map<string, string>): string {
-  const labels = [...skill.project_ids, ...(skill.role_ids ?? [])].map((id) => labelOf.get(id)).filter(Boolean);
-  return labels.length ? ` · used in ${labels.join(", ")}` : "";
+  const labels = (ids: string[]) => ids.map((id) => labelOf.get(id)).filter(Boolean);
+  const used = labels([...skill.project_ids, ...(skill.role_ids ?? [])]);
+  const certified = labels(skill.achievement_ids ?? []);
+  return (used.length ? ` · used in ${used.join(", ")}` : "") + (certified.length ? ` · certified by ${certified.join(", ")}` : "");
 }
 
 type Entity = Role | Project | Story | Skill | Achievement | Education | Language | Feedback;

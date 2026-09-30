@@ -89,7 +89,12 @@ function ProposalCard({
       roles: live(patch.roles),
       projects: live(patch.projects).map((d) => ({ ...d, role: one(d.role) })),
       stories: live(patch.stories).map((d) => ({ ...d, role: one(d.role), project: one(d.project) })),
-      skills: live(patch.skills).map((d) => ({ ...d, projects: many(d.projects), roles: many(d.roles) })),
+      skills: live(patch.skills).map((d) => ({
+        ...d,
+        projects: many(d.projects),
+        roles: many(d.roles),
+        achievements: many(d.achievements),
+      })),
       achievements: live(patch.achievements),
       education: live(patch.education),
       languages: live(patch.languages),
@@ -103,6 +108,8 @@ function ProposalCard({
     if (role) return `${role.title} · ${role.company}`;
     const project = patch.projects.find((d) => d.key === ref);
     if (project) return project.name;
+    const credential = patch.achievements.find((d) => d.key === ref);
+    if (credential) return credential.title;
     return ref;
   };
   const unverified = GROUPS.flatMap(({ key }) => patch[key].filter((d) => d.unverified).map((d) => ({ group: key, draft: d })));
@@ -336,6 +343,7 @@ function DraftCard<G extends Group>({
             <SkillLinks
               projects={(d.projects as string[]) ?? []}
               roles={(d.roles as string[]) ?? []}
+              certifications={(d.achievements as string[]) ?? []}
               quotes={(d.link_evidence as Record<string, string>) ?? {}}
               nameOf={nameOf}
               disabled={!kept}
@@ -344,6 +352,7 @@ function DraftCard<G extends Group>({
                   patchOf({
                     projects: ((d.projects as string[]) ?? []).filter((r) => r !== ref),
                     roles: ((d.roles as string[]) ?? []).filter((r) => r !== ref),
+                    achievements: ((d.achievements as string[]) ?? []).filter((r) => r !== ref),
                   }),
                 )
               }
@@ -379,12 +388,14 @@ function DraftCard<G extends Group>({
   );
 }
 
-/** Where a skill was used, each link with the quote that justifies it
- *  (ADR 0019). A link to something already in the garden ("P2") has no quote
- *  from this text; it came from the extraction itself. */
+/** Where a skill was used, and which certifications attest to it, each link
+ *  with the quote that justifies it (ADR 0019, 0020). A link to something
+ *  already in the garden ("P2") has no quote from this text; it came from the
+ *  extraction itself. */
 function SkillLinks({
   projects,
   roles,
+  certifications,
   quotes,
   nameOf,
   disabled,
@@ -392,20 +403,46 @@ function SkillLinks({
 }: {
   projects: string[];
   roles: string[];
+  certifications: string[];
   quotes: Record<string, string>;
   nameOf: (ref: string) => string;
   disabled: boolean;
   onRemove: (ref: string) => void;
 }) {
-  const links = [...projects, ...roles];
+  const shared = { quotes, nameOf, disabled, onRemove };
   return (
-    <div className="space-y-1 sm:col-span-2">
-      <span className="text-xs font-semibold uppercase tracking-[0.11em] text-foreground/75">Used in</span>
-      {links.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No role or project in this text shows it.</p>
+    <div className="space-y-2 sm:col-span-2">
+      <LinkList heading="Used in" refs={[...projects, ...roles]} empty="No role or project in this text shows it." {...shared} />
+      {certifications.length > 0 && <LinkList heading="Certified by" refs={certifications} {...shared} />}
+    </div>
+  );
+}
+
+function LinkList({
+  heading,
+  refs,
+  empty,
+  quotes,
+  nameOf,
+  disabled,
+  onRemove,
+}: {
+  heading: string;
+  refs: string[];
+  empty?: string;
+  quotes: Record<string, string>;
+  nameOf: (ref: string) => string;
+  disabled: boolean;
+  onRemove: (ref: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <span className="text-xs font-semibold uppercase tracking-[0.11em] text-foreground/75">{heading}</span>
+      {refs.length === 0 ? (
+        <p className="text-xs text-muted-foreground">{empty}</p>
       ) : (
         <ul className="space-y-1">
-          {links.map((ref) => (
+          {refs.map((ref) => (
             <li key={ref} className="flex items-start justify-between gap-2 rounded-md bg-muted/50 px-2 py-1 text-xs">
               <span className="min-w-0">
                 <span className="font-medium">{nameOf(ref)}</span>
