@@ -110,6 +110,7 @@ class Model(Protocol):
         effort: Effort = "high",
         max_tokens: int = 4096,
         attachment: tuple[bytes, str] | None = None,
+        fast: bool = False,
     ) -> Reply: ...
 
     def stream(
@@ -313,8 +314,12 @@ class VertexGemini:
         effort: Effort = "high",
         max_tokens: int = 4096,
         attachment: tuple[bytes, str] | None = None,
+        fast: bool = False,
     ) -> Reply:
         # `attachment` is (bytes, mime type) — a PDF the model reads natively.
+        # `fast` sends a mechanical call (finding a dump's sections, ADR 0019)
+        # to the fast model instead of the judgement model.
+        model = self.fast_model if fast else self.model
         # Sent inline; uploads are capped at 10 MB, well inside the request limit.
         contents: Any = user
         if attachment is not None:
@@ -323,7 +328,7 @@ class VertexGemini:
         started = time.monotonic()
         try:
             response = self._client.models.generate_content(
-                model=self.model,
+                model=model,
                 contents=contents,
                 config=self._config(
                     system=system, effort=effort, max_tokens=max_tokens, output_schema=output_schema
@@ -335,7 +340,7 @@ class VertexGemini:
 
         usage = _usage_from(response.usage_metadata)
         _log_usage(
-            session_id=session_id, call=call, model=self.model, usage=usage, latency_ms=latency_ms
+            session_id=session_id, call=call, model=model, usage=usage, latency_ms=latency_ms
         )
 
         # A blocked *prompt* yields no candidates at all; treat it as a refusal.

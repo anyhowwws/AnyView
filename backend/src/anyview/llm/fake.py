@@ -5,9 +5,9 @@ drive the engine and the API deterministically; `ANYVIEW_FAKE_MODEL=1` runs the
 whole app on it for a browser walk-through that costs nothing.
 
 Replies are keyed by the `call` name (`plan`, `ask`, `score`, `ideal`,
-`parse_job`, `transcribe`, `discover`) so a test can script one kind of call without caring
-about the others. `speak` returns silence of a plausible length instead of a
-reply.
+`parse_job`, `transcribe`, `discover`, `segment`, `link`) so a test can script
+one kind of call without caring about the others. `speak` returns silence of a
+plausible length instead of a reply.
 """
 
 from __future__ import annotations
@@ -51,8 +51,11 @@ class FakeModel:
         effort: Effort = "high",
         max_tokens: int = 4096,
         attachment: tuple[bytes, str] | None = None,
+        fast: bool = False,
     ) -> Reply:
         self._record(call, session_id, system, user)
+        if fast:
+            self.calls[-1]["fast"] = True
         if attachment is not None:
             self.calls[-1]["attachment"] = (len(attachment[0]), attachment[1])
         reply = self.replies.get(call, DEFAULTS[call])
@@ -179,6 +182,19 @@ DEFAULTS: dict[str, Any] = {
             },  # fmt: skip
         ],
         "achievements": [],
+    },
+    # No sections: a dump this long in a test takes the one-call path unless a
+    # test scripts ranges of its own (ADR 0019).
+    "segment": {"sections": []},
+    # One checked link: the Terraform bullet sits inside the Acme role's text.
+    "link": {
+        "links": [
+            {
+                "skill": "k1",
+                "target": "r1",
+                "evidence": "Designed the Terraform module library now used by 6 product teams.",
+            }
+        ]
     },
     "extract": (
         "Jordan Lee — Cloud Solutions Architect\n\nAcme Corp (2021–present) — Senior Cloud "

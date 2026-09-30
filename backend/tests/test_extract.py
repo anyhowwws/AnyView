@@ -10,6 +10,7 @@ from anyview.brain.extract import (
     ExtractionFailed,
     drop_unchanged,
     extraction_system,
+    merge,
     propose,
 )
 from anyview.brain.models import (
@@ -69,11 +70,14 @@ def test_propose_returns_the_fake_patch_with_evidence_kept():
     assert [r.company for r in patch.roles] == ["Acme Corp"]
     assert patch.projects[0].role == "r1"
     assert patch.stories[0].competencies == ["ownership", "failure"]
-    call = fake.calls[-1]
-    assert call["call"] == "propose" and "<dump>" in call["user"]
+    # Short dump: no segmentation call, one extraction, then the linking pass.
+    assert [c["call"] for c in fake.calls] == ["propose", "link"]
+    assert "<dump>" in fake.calls[0]["user"]
 
 
-def test_drafts_whose_evidence_is_not_in_the_dump_are_dropped_and_links_severed():
+def test_drafts_whose_evidence_is_not_in_the_dump_are_flagged_not_dropped():
+    """ADR 0019: the user sees a draft whose quote could not be found, flagged,
+    instead of never learning it existed."""
     scripted = {
         **DEFAULTS["propose"],
         "roles": [
@@ -81,9 +85,9 @@ def test_drafts_whose_evidence_is_not_in_the_dump_are_dropped_and_links_severed(
         ],
     }
     patch = propose(RESUME, brain_index="", model=FakeModel({"propose": scripted}), session_id="s")
-    assert patch.roles == []
-    assert patch.projects[0].role is None  # pointed at the dropped r1
-    assert patch.stories[0].role is None
+    assert [r.unverified for r in patch.roles] == [True]
+    assert patch.projects[0].role == "r1"  # links to it survive; the user decides
+    assert patch.projects[0].unverified is False
 
 
 def test_existing_labels_survive_the_link_check():
@@ -302,7 +306,7 @@ def test_propose_can_return_a_feedback_draft():
     assert patch.feedback[0].content == FEEDBACK_QUOTE
 
 
-def test_feedback_with_evidence_not_in_the_dump_is_dropped():
+def test_feedback_with_evidence_not_in_the_dump_is_flagged():
     scripted = {**DEFAULTS["propose"], "roles": [], "feedback": []}
     scripted["feedback"] = [
         {
@@ -317,7 +321,7 @@ def test_feedback_with_evidence_not_in_the_dump_is_dropped():
         }
     ]
     patch = propose(RESUME, brain_index="", model=FakeModel({"propose": scripted}), session_id="s")
-    assert patch.feedback == []
+    assert [f.unverified for f in patch.feedback] == [True]
 
 
 def _feedback_draft(**over) -> FeedbackDraft:
@@ -371,3 +375,160 @@ def test_a_feedback_draft_linking_to_a_dropped_role_is_re_pointed():
     )
     kept = drop_unchanged(Patch(roles=[_role_draft()], feedback=[feedback]), _brain(roles=[ROLE]))
     assert kept.roles == [] and kept.feedback[0].role == "R1"
+
+
+# --- Sections, lists, merging, links (ADR 0019) ------------------------------
+
+
+def test_the_prompt_defines_the_kinds_and_expands_lists():
+    text = extraction_system("")
+    assert "Prefer fewer" not in text
+    assert "Every item in a list is its own entry" in text
+    assert "Never make up a project to hold ongoing work" in text
+    assert "`responsibilities`" in text
+
+
+def test_the_schema_carries_responsibilities_and_role_links():
+    items = PATCH_SCHEMA["properties"]
+    assert "responsibilities" in items["roles"]["items"]["properties"]
+    assert {"projects", "roles"} <= set(items["skills"]["items"]["properties"])
+
+
+def _skill(key: str, name: str, evidence: str, **over) -> dict:
+    return {
+        "key": key,
+        "existing": None,
+        "name": name,
+        "depth": 3,
+        "projects": [],
+        "roles": [],
+        "evidence": evidence,
+        **over,
+    }
+
+
+def test_merge_renumbers_keys_and_keeps_one_of_each_thing():
+    experience = Patch.model_validate(
+        {
+            "roles": [DEFAULTS["propose"]["roles"][0]],
+            "projects": [DEFAULTS["propose"]["projects"][0]],
+            "skills": [_skill("k1", "Terraform", "Designed the Terraform module library")],
+        }
+    )
+    skills = Patch.model_validate(
+        {
+            "skills": [
+                _skill("k1", "terraform", "Terraform, Kubernetes", existing="K4"),
+                _skill("k2", "Kubernetes", "Terraform, Kubernetes"),
+            ],
+            # References a key this section never defined: dropped, not kept dangling.
+            "projects": [
+                {**DEFAULTS["propose"]["projects"][0], "key": "p1", "role": "r7", "name": "Other"}
+            ],
+        }
+    )
+    merged = merge([experience, skills])
+    assert [k.key for k in merged.skills] == ["k1", "k2"]
+    assert [k.name for k in merged.skills] == ["Terraform", "Kubernetes"]
+    # The experience draft wins, and takes the gap-filling `existing` label.
+    assert merged.skills[0].evidence == "Designed the Terraform module library"
+    assert merged.skills[0].existing == "K4"
+    assert [p.key for p in merged.projects] == ["p1", "p2"]
+    assert merged.projects[0].role == "r1" and merged.projects[1].role is None
+
+
+def test_merge_unions_lists_like_responsibilities():
+    a = Patch(roles=[_role_draft(existing=None, responsibilities=["EKS day-2 operations"])])
+    b = Patch(
+        roles=[
+            _role_draft(existing=None, key="r1", responsibilities=["eks day-2 operations", "RFQs"])
+        ]
+    )
+    assert merge([a, b]).roles[0].responsibilities == ["EKS day-2 operations", "RFQs"]
+
+
+LONG_RESUME = RESUME + "\n" + "\n".join(f"- filler line {n} about nothing much" for n in range(80))
+
+
+def test_a_long_dump_is_extracted_section_by_section_and_merged():
+    lines = LONG_RESUME.splitlines()
+    fake = FakeModel(
+        {
+            "segment": {
+                "sections": [
+                    {"kind": "experience", "start_line": 1, "end_line": 5},
+                    {"kind": "skills", "start_line": 6, "end_line": len(lines)},
+                ]
+            }
+        }
+    )
+    patch = propose(LONG_RESUME, brain_index="", model=fake, session_id="s")
+    calls = [c["call"] for c in fake.calls]
+    assert calls[0] == "segment" and calls.count("propose") == 2 and calls[-1] == "link"
+    sections = [c["user"] for c in fake.calls if c["call"] == "propose"]
+    assert any('<dump section="experience">' in u for u in sections)
+    assert any('<dump section="skills">' in u for u in sections)
+    # Both sections returned the same scripted patch; the merge keeps one of each.
+    assert [r.company for r in patch.roles] == ["Acme Corp"]
+    assert len(patch.skills) == 1
+    # And the linking pass ran over the merged drafts.
+    assert patch.skills[0].roles == ["r1"]
+    assert "r1" in patch.skills[0].link_evidence
+
+
+def test_a_failed_section_fails_the_upload_rather_than_losing_entries():
+    import pytest
+
+    fake = FakeModel(
+        {
+            "segment": {
+                "sections": [
+                    {"kind": "experience", "start_line": 1, "end_line": 5},
+                    {"kind": "skills", "start_line": 6, "end_line": 90},
+                ]
+            },
+            "propose": {"roles": "not a list"},
+        }
+    )
+    with pytest.raises(ExtractionFailed):
+        propose(LONG_RESUME, brain_index="", model=fake, session_id="s")
+
+
+SKILL = Skill(
+    id="33333333-3333-3333-3333-333333333333",
+    label="K1",
+    name="Terraform",
+    depth=4,
+    project_ids=[],
+    role_ids=[ROLE.id],
+    source=SOURCE,
+)
+
+
+def test_a_confirmed_skill_keeps_its_links_on_re_upload():
+    """Absence is not evidence (ADR 0015): a link this dump did not show again
+    stays, so an otherwise unchanged skill is dropped, not re-proposed."""
+    draft = SkillDraft(key="k1", existing="K1", name="Terraform", depth=4, evidence="Terraform")
+    assert drop_unchanged(Patch(skills=[draft]), _brain(roles=[ROLE], skills=[SKILL])).is_empty()
+
+
+def test_a_new_link_on_a_confirmed_skill_is_a_change_and_keeps_the_old_one():
+    draft = SkillDraft(
+        key="k1",
+        existing="K1",
+        name="Terraform",
+        depth=4,
+        evidence="Terraform",
+        projects=["p1"],
+        link_evidence={"p1": "q"},
+    )
+    project = ProjectDraft(key="p1", name="Billing", evidence="Billing")
+    kept = drop_unchanged(
+        Patch(projects=[project], skills=[draft]), _brain(roles=[ROLE], skills=[SKILL])
+    )
+    assert kept.skills[0].projects == ["p1"] and kept.skills[0].roles == ["R1"]
+
+
+def test_unverified_and_link_quotes_are_not_changes():
+    draft = _role_draft(unverified=True)
+    assert drop_unchanged(Patch(roles=[draft]), _brain(roles=[ROLE])).is_empty()

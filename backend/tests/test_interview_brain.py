@@ -103,7 +103,7 @@ def test_a_resume_upload_queues_a_proposal(client, store):
         json={"session_id": "sess-0001", "setup": _setup(resume_object=_upload(client, store))},
     )
     assert r.status_code == 200 and r.json()["state"] == "ask"
-    assert sorted(c["call"] for c in client.fake.calls) == ["plan", "propose"]
+    assert sorted(c["call"] for c in client.fake.calls) == ["link", "plan", "propose"]
     assert client.get("/brain").json()["pending_proposals"] == 1
     assert client.get("/brain/proposals").json()[0]["dump_kind"] == "resume_docx"
 
