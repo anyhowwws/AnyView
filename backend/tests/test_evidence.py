@@ -61,3 +61,27 @@ def test_a_project_ends_where_the_next_entry_starts_and_a_role_covers_its_projec
 
 def test_a_draft_without_a_found_quote_has_no_stretch():
     assert "p9" not in spans(_patch(), TEXT)
+
+
+def test_a_credentials_stretch_is_its_own_quote_and_only_credentials_get_one():
+    from anyview.brain.models import AchievementDraft
+
+    text = "Certified: Terraform Associate · CKA\nWon the 2023 hackathon"
+    patch = Patch(
+        achievements=[
+            AchievementDraft(
+                key="a1",
+                kind="credential",
+                title="HashiCorp Terraform Associate",
+                evidence="Terraform Associate",
+            ),
+            AchievementDraft(
+                key="a2", kind="achievement", title="Hackathon", evidence="Won the 2023 hackathon"
+            ),
+        ]
+    )
+    folded = normalise(text)
+    stretch = spans(patch, text)
+    assert within(folded, "Terraform Associate", *stretch["a1"])
+    assert not within(folded, "CKA", *stretch["a1"])
+    assert "a2" not in stretch

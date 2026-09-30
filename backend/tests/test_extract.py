@@ -391,7 +391,7 @@ def test_the_prompt_defines_the_kinds_and_expands_lists():
 def test_the_schema_carries_responsibilities_and_role_links():
     items = PATCH_SCHEMA["properties"]
     assert "responsibilities" in items["roles"]["items"]["properties"]
-    assert {"projects", "roles"} <= set(items["skills"]["items"]["properties"])
+    assert {"projects", "roles", "achievements"} <= set(items["skills"]["items"]["properties"])
 
 
 def _skill(key: str, name: str, evidence: str, **over) -> dict:
@@ -501,6 +501,7 @@ SKILL = Skill(
     depth=4,
     project_ids=[],
     role_ids=[ROLE.id],
+    achievement_ids=[],
     source=SOURCE,
 )
 

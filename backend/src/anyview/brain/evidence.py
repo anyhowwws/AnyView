@@ -89,8 +89,10 @@ def spans(patch: Patch, text: str) -> dict[str, tuple[int, int]]:
     blank line) or where the next role or project starts, whichever is first:
     the bullet after it may be a responsibility, not part of the project. A
     role's ends where the next role starts, so it covers its projects and its
-    ongoing work alike. A draft whose quote cannot be found has no stretch,
-    and nothing links to it.
+    ongoing work alike. A credential's stretch is its own evidence quote and
+    nothing more (ADR 0020): certifications sit in lists, where the next
+    words belong to the next credential. A draft whose quote cannot be found
+    has no stretch, and nothing links to it.
     """
     folded, where = fold(text)
     starts: list[tuple[int, str, str]] = []  # (position, kind, key)
@@ -112,4 +114,9 @@ def spans(patch: Patch, text: str) -> dict[str, tuple[int, int]]:
                 # Back from the original's coordinates to the folded text's.
                 end = min(end, bisect.bisect_left(where, bullet_end.start()))
         out[key] = (at, end)
+    for d in patch.achievements:
+        needle = normalise(d.evidence)
+        at = folded.find(needle) if d.kind == "credential" and not d.unverified else -1
+        if at != -1:
+            out[d.key] = (at, at + len(needle))
     return out

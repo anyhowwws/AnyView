@@ -116,6 +116,15 @@ def _snapshot(db, uid=UID) -> dict:
                 {"u": uid},
             ).all()
         )
+        out["skill_achievements"] = sorted(
+            tuple(map(str, r))
+            for r in c.execute(
+                sa.text(
+                    "SELECT l.skill_id, l.achievement_id FROM skill_achievements l JOIN skills s ON s.id = l.skill_id WHERE s.user_id = :u"
+                ),
+                {"u": uid},
+            ).all()
+        )
         out["skill_evidence"] = sorted(
             tuple(map(str, r))
             for r in c.execute(
@@ -586,3 +595,17 @@ def test_a_name_clash_is_a_conflict_and_writes_nothing(repo):
     with pytest.raises(Conflict, match="already has an entry"):
         repo.confirm_proposal(UID, prop.id, clash)
     assert len(repo.events(UID)) == 1 and repo.proposal(UID, prop.id).status == "pending"
+
+
+def test_a_certification_evidences_a_skill_and_replays(repo, db):
+    patch = first_patch()
+    patch.skills[0].achievements = ["a1"]
+    _confirm(repo, patch)
+    brain = repo.brain(UID)
+    assert brain.skills[0].achievement_ids == [brain.achievements[0].id]
+    assert "— certified by A1" in repo.brain_context(UID)
+    repo.edit_entity(UID, "skill", brain.skills[0].id, {"achievement_ids": []})
+    assert repo.brain(UID).skills[0].achievement_ids == []
+    before = _snapshot(db)
+    repo.rebuild(UID)
+    assert _snapshot(db) == before

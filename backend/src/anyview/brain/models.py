@@ -97,6 +97,7 @@ class SkillDraft(Draft):
     depth: int = Field(ge=1, le=5)
     projects: list[str] = []  # evidence: project keys or labels
     roles: list[str] = []  # evidence: role keys or labels (ADR 0019)
+    achievements: list[str] = []  # credentials that evidence it: keys or labels (ADR 0020)
     # Link target (key or label) -> the verbatim quote that justified the link.
     # Shown in the review queue; not stored on confirmation.
     link_evidence: dict[str, str] = {}
@@ -207,6 +208,7 @@ class Skill(BaseModel):
     depth: int
     project_ids: list[str]
     role_ids: list[str] = []
+    achievement_ids: list[str] = []
     source: Provenance
 
 
@@ -317,7 +319,7 @@ EDITABLE: dict[EntityKind, frozenset[str]] = {
     "story": frozenset(
         {"title", "situation", "task", "action", "result", "competencies", "role_id", "project_id"}
     ),
-    "skill": frozenset({"name", "depth", "project_ids", "role_ids"}),
+    "skill": frozenset({"name", "depth", "project_ids", "role_ids", "achievement_ids"}),
     "achievement": frozenset({"kind", "title", "issuer", "achieved_on"}),
     "education": frozenset({"institution", "qualification", "field", "start_date", "end_date"}),
     "language": frozenset({"name", "proficiency"}),

@@ -40,3 +40,4 @@ record of having been wrong is the useful part.
 | [0017](0017-discover-whole-garden-before-retrieval.md) | Discover: ask Donna about the garden, whole garden before retrieval | Accepted |
 | [0018](0018-erasing-an-account.md) | Erasing an account: the one delete the event log allows | Accepted |
 | [0019](0019-sectioned-extraction-and-evidenced-links.md) | Sectioned extraction, evidenced skill links, and roles that carry responsibilities | Accepted |
+| [0020](0020-certifications-evidence-skills.md) | Certifications evidence skills | Accepted |

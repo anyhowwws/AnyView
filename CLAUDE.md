@@ -84,7 +84,10 @@ Backend modules:
 - `anyview/brain/evidence.py` — `fold()`/`normalise()`: the one definition of "the same quote" (NFKC, dashes,
   bullets, curly quotes, case, whitespace). Every evidence check goes through it.
 - Roles carry `responsibilities` (ongoing work); bounded work with an outcome is a project; a story is a moment of
-  behaviour (ADR 0019). Skills link to projects (`skill_evidence`) and to roles (`skill_roles`).
+  behaviour (ADR 0019). Skills link to projects (`skill_evidence`), to roles (`skill_roles`) and to the
+  credentials that attest to them (`skill_achievements`, ADR 0020). A credential link's quote must also share a
+  distinctive word with its title (`link.names_credential`), because one list line is evidence for every
+  credential on it.
   Entity kinds: role, project, story, skill, achievement, education, language, **feedback** (label prefix `F`) —
   a quote or close paraphrase of what someone else said about the candidate's work, optionally linked to the
   role or project it concerns. Adding a kind touches `EntityKind`/`KINDS`/`LABEL_PREFIX`/`EDITABLE` in

@@ -591,11 +591,13 @@ class Repository:
                 out.append(f"[{f.label}] {f.given_by}{when}{about}: {f.content}")
         if skills:
             out.append("## Skills")
-            label_of = {e.id: e.label for e in (*roles, *projects)}
+            label_of = {e.id: e.label for e in (*roles, *projects, *achievements)}
             for k in skills:
                 where = [label_of[i] for i in (*k.project_ids, *k.role_ids) if i in label_of]
+                shown = [label_of[i] for i in k.achievement_ids if i in label_of]
                 used = f" — used in {', '.join(where)}" if where else ""
-                out.append(f"[{k.label}] {k.name} — self-rated {k.depth}/5{used}")
+                certified = f" — certified by {', '.join(shown)}" if shown else ""
+                out.append(f"[{k.label}] {k.name} — self-rated {k.depth}/5{used}{certified}")
         if achievements:
             out.append("## Achievements and certifications")
             out.extend(
@@ -776,6 +778,15 @@ class Repository:
             {"uid": uid},
         ).all():
             used_in.setdefault(str(skill_id), []).append(str(role_id))
+        shown_by: dict[str, list[str]] = {}
+        for skill_id, achievement_id in c.execute(
+            _q(
+                "SELECT l.skill_id, l.achievement_id FROM skill_achievements l "
+                "JOIN skills s ON s.id = l.skill_id WHERE s.user_id = :uid"
+            ),
+            {"uid": uid},
+        ).all():
+            shown_by.setdefault(str(skill_id), []).append(str(achievement_id))
         skills = [
             Skill(
                 id=str(r[0]),
@@ -784,6 +795,7 @@ class Repository:
                 depth=r[2],
                 project_ids=evidence.get(str(r[0]), []),
                 role_ids=used_in.get(str(r[0]), []),
+                achievement_ids=shown_by.get(str(r[0]), []),
                 source=Provenance(raw_dump_id=str(r[3]), event_id=r[4]),
             )  # fmt: skip
             for i, r in enumerate(
@@ -954,6 +966,7 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
                 "depth": d.depth,
                 "project_ids": [ref(p, "project") for p in d.projects],
                 "role_ids": [ref(r, "role") for r in d.roles],
+                "achievement_ids": [ref(a, "achievement") for a in d.achievements],
             }  # fmt: skip
             for d in patch.skills
         ],
@@ -1080,6 +1093,10 @@ def _apply_patch(c: Connection, uid: str, event_id: int, p: dict) -> None:
             ),
             {**base, **r},
         )
+    # After the achievements themselves: a skill may point at a credential
+    # this same patch creates (ADR 0020). Absent from events before 007.
+    for r in p["skills"]:
+        _set_skill_achievements(c, r["id"], r.get("achievement_ids", []))
     for r in p.get("education", []):
         c.execute(
             _q(
@@ -1114,6 +1131,7 @@ def _apply_edit(c: Connection, uid: str, event_id: int, p: dict) -> None:
     kind, entity_id, fields = p["kind"], p["id"], dict(p["fields"])
     project_ids = fields.pop("project_ids", None)
     role_ids = fields.pop("role_ids", None)
+    achievement_ids = fields.pop("achievement_ids", None)
     if fields:
         # Column names come from EDITABLE (validated in edit_entity), never from the request.
         assignments = ", ".join(f"{k} = :{k}" for k in fields)
@@ -1132,6 +1150,8 @@ def _apply_edit(c: Connection, uid: str, event_id: int, p: dict) -> None:
         _set_evidence(c, entity_id, project_ids)
     if kind == "skill" and role_ids is not None:
         _set_skill_roles(c, entity_id, role_ids)
+    if kind == "skill" and achievement_ids is not None:
+        _set_skill_achievements(c, entity_id, achievement_ids)
 
 
 def _set_evidence(c: Connection, skill_id: str, project_ids: list[str]) -> None:
@@ -1154,6 +1174,19 @@ def _set_skill_roles(c: Connection, skill_id: str, role_ids: list[str]) -> None:
                 "INSERT INTO skill_roles (skill_id, role_id) VALUES (:s, :r) ON CONFLICT DO NOTHING"
             ),
             {"s": skill_id, "r": rid},
+        )
+
+
+def _set_skill_achievements(c: Connection, skill_id: str, achievement_ids: list[str]) -> None:
+    """Credentials that evidence a skill (ADR 0020): replace, not merge."""
+    c.execute(_q("DELETE FROM skill_achievements WHERE skill_id = :s"), {"s": skill_id})
+    for aid in achievement_ids:
+        c.execute(
+            _q(
+                "INSERT INTO skill_achievements (skill_id, achievement_id) VALUES (:s, :a) "
+                "ON CONFLICT DO NOTHING"
+            ),
+            {"s": skill_id, "a": aid},
         )
 
 

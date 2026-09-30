@@ -93,9 +93,9 @@ Rules:
 - Give every draft a short `key` ("r1", "p1", "s1", "k1", "a1", "e1", "l1", "f1", numbered within
   this patch) and use keys or existing labels to link: a project's `role`, a story's
   `role`/`project`, a feedback entry's `role`/`project`.
-- A skill's `projects` and `roles` may name only labels already in the brain index, and only
-  when the dump itself ties the skill to that entry. Leave them empty otherwise: links to
-  this patch's own drafts are made by a separate step.
+- A skill's `projects`, `roles` and `achievements` may name only labels already in the brain
+  index, and only when the dump itself ties the skill to that entry. Leave them empty
+  otherwise: links to this patch's own drafts are made by a separate step.
 - `evidence` must be a verbatim quote from the dump (a sentence or fragment, under 300
   characters) that justifies the draft. Copy it exactly; do not paraphrase. A list line is
   valid evidence for each item in it.
@@ -217,8 +217,9 @@ PATCH_SCHEMA = {
                     "depth": {"type": "integer", "enum": [1, 2, 3, 4, 5]},
                     "projects": _LIST,
                     "roles": _LIST,
+                    "achievements": _LIST,
                 },
-                ["name", "depth", "projects", "roles"],
+                ["name", "depth", "projects", "roles", "achievements"],
             ),
         },
         "achievements": {
@@ -367,7 +368,7 @@ IDENTITY = {
 REF_FIELDS = {
     "project": (["role"], []),
     "story": (["role", "project"], []),
-    "skill": ([], ["projects", "roles"]),
+    "skill": ([], ["projects", "roles", "achievements"]),
     "feedback": (["role", "project"], []),
 }
 
@@ -505,6 +506,7 @@ FIELD_ALIAS = {
     "project": "project_id",
     "projects": "project_ids",
     "roles": "role_ids",
+    "achievements": "achievement_ids",
 }
 
 # Bookkeeping, not content. A fresh quote for a fact already confirmed is not a
@@ -592,6 +594,7 @@ def drop_unchanged(patch: Patch, brain: Brain) -> Patch:
     for skill in kept.skills:
         skill.projects = [r for r in (relink(p) for p in skill.projects) if r]
         skill.roles = [r for r in (relink(p) for p in skill.roles) if r]
+        skill.achievements = [r for r in (relink(p) for p in skill.achievements) if r]
         skill.link_evidence = {relink(k) or k: v for k, v in skill.link_evidence.items()}
     for entry in kept.feedback:
         entry.role, entry.project = relink(entry.role), relink(entry.project)
@@ -620,7 +623,11 @@ def _carry_links(draft, live, label_of: dict[str, str]) -> None:
     a link again is not evidence against it — ADR 0015's rule for roles that
     vanish from a trimmed CV, applied to links (ADR 0019). Confirming replaces
     a skill's links wholesale, so without this a re-upload would erase them."""
-    for field, ids in (("projects", live.project_ids), ("roles", live.role_ids)):
+    for field, ids in (
+        ("projects", live.project_ids),
+        ("roles", live.role_ids),
+        ("achievements", live.achievement_ids),
+    ):
         current = getattr(draft, field)
         carried = [label_of[i] for i in ids if i in label_of and label_of[i] not in current]
         setattr(draft, field, current + carried)
