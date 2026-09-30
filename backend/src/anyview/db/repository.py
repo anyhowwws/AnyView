@@ -552,6 +552,9 @@ class Repository:
             out.append(
                 f"## [{r.label}] {r.title} at {r.company} ({_span(r.start_date, r.end_date)})"
             )
+            if r.responsibilities:
+                out.append("Responsibilities:")
+                out.extend(f"  - {line}" for line in r.responsibilities)
             for p in (p for p in projects if p.role_id == r.id):
                 out.append(_project_block(p))
         loose = [p for p in projects if p.role_id not in role_by_id]
@@ -578,7 +581,11 @@ class Repository:
                 out.append(f"[{f.label}] {f.given_by}{when}{about}: {f.content}")
         if skills:
             out.append("## Skills")
-            out.extend(f"[{k.label}] {k.name} — self-rated {k.depth}/5" for k in skills)
+            label_of = {e.id: e.label for e in (*roles, *projects)}
+            for k in skills:
+                where = [label_of[i] for i in (*k.project_ids, *k.role_ids) if i in label_of]
+                used = f" — used in {', '.join(where)}" if where else ""
+                out.append(f"[{k.label}] {k.name} — self-rated {k.depth}/5{used}")
         if achievements:
             out.append("## Achievements and certifications")
             out.extend(
@@ -687,12 +694,13 @@ class Repository:
                 start_date=r[3],
                 end_date=r[4],
                 level=r[5],
+                responsibilities=list(r[8]),
                 source=Provenance(raw_dump_id=str(r[6]), event_id=r[7]),
             )  # fmt: skip
             for i, r in enumerate(
                 rows(
-                    "SELECT id, company, title, start_date, end_date, level, raw_dump_id, event_id "
-                    "FROM roles WHERE user_id = :uid"
+                    "SELECT id, company, title, start_date, end_date, level, raw_dump_id, event_id, "
+                    "responsibilities FROM roles WHERE user_id = :uid"
                 ),
                 1,
             )
@@ -749,6 +757,15 @@ class Repository:
             {"uid": uid},
         ).all():
             evidence.setdefault(str(skill_id), []).append(str(project_id))
+        used_in: dict[str, list[str]] = {}
+        for skill_id, role_id in c.execute(
+            _q(
+                "SELECT l.skill_id, l.role_id FROM skill_roles l "
+                "JOIN skills s ON s.id = l.skill_id WHERE s.user_id = :uid"
+            ),
+            {"uid": uid},
+        ).all():
+            used_in.setdefault(str(skill_id), []).append(str(role_id))
         skills = [
             Skill(
                 id=str(r[0]),
@@ -756,6 +773,7 @@ class Repository:
                 name=r[1],
                 depth=r[2],
                 project_ids=evidence.get(str(r[0]), []),
+                role_ids=used_in.get(str(r[0]), []),
                 source=Provenance(raw_dump_id=str(r[3]), event_id=r[4]),
             )  # fmt: skip
             for i, r in enumerate(
@@ -888,6 +906,7 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
                 "start_date": d.start_date,
                 "end_date": d.end_date,
                 "level": d.level,
+                "responsibilities": d.responsibilities,
             }  # fmt: skip
             for d in patch.roles
         ],
@@ -924,6 +943,7 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
                 "name": d.name,
                 "depth": d.depth,
                 "project_ids": [ref(p, "project") for p in d.projects],
+                "role_ids": [ref(r, "role") for r in d.roles],
             }  # fmt: skip
             for d in patch.skills
         ],
@@ -993,13 +1013,15 @@ def _apply_patch(c: Connection, uid: str, event_id: int, p: dict) -> None:
     for r in p["roles"]:
         c.execute(
             _q(
-                "INSERT INTO roles (id, user_id, company, title, start_date, end_date, level, raw_dump_id, event_id) "
-                "VALUES (:id, :uid, :company, :title, :start_date, :end_date, :level, :d, :e) "
+                "INSERT INTO roles (id, user_id, company, title, start_date, end_date, level, responsibilities, raw_dump_id, event_id) "
+                "VALUES (:id, :uid, :company, :title, :start_date, :end_date, :level, :responsibilities, :d, :e) "
                 "ON CONFLICT (id) DO UPDATE SET company = EXCLUDED.company, title = EXCLUDED.title, "
                 "start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date, level = EXCLUDED.level, "
+                "responsibilities = EXCLUDED.responsibilities, "
                 "raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
             ),
-            {**base, **r},
+            # Events from before migration 006 carry no responsibilities (ADR 0019).
+            {**base, "responsibilities": [], **r},
         )
     for r in p["projects"]:
         c.execute(
@@ -1036,6 +1058,7 @@ def _apply_patch(c: Connection, uid: str, event_id: int, p: dict) -> None:
             {**base, "id": r["id"], "name": r["name"], "depth": r["depth"]},
         )
         _set_evidence(c, r["id"], r["project_ids"])
+        _set_skill_roles(c, r["id"], r.get("role_ids", []))  # absent before migration 006
     for r in p["achievements"]:
         c.execute(
             _q(
@@ -1080,6 +1103,7 @@ def _apply_patch(c: Connection, uid: str, event_id: int, p: dict) -> None:
 def _apply_edit(c: Connection, uid: str, event_id: int, p: dict) -> None:
     kind, entity_id, fields = p["kind"], p["id"], dict(p["fields"])
     project_ids = fields.pop("project_ids", None)
+    role_ids = fields.pop("role_ids", None)
     if fields:
         # Column names come from EDITABLE (validated in edit_entity), never from the request.
         assignments = ", ".join(f"{k} = :{k}" for k in fields)
@@ -1096,6 +1120,8 @@ def _apply_edit(c: Connection, uid: str, event_id: int, p: dict) -> None:
         )
     if kind == "skill" and project_ids is not None:
         _set_evidence(c, entity_id, project_ids)
+    if kind == "skill" and role_ids is not None:
+        _set_skill_roles(c, entity_id, role_ids)
 
 
 def _set_evidence(c: Connection, skill_id: str, project_ids: list[str]) -> None:
@@ -1106,6 +1132,18 @@ def _set_evidence(c: Connection, skill_id: str, project_ids: list[str]) -> None:
                 "INSERT INTO skill_evidence (skill_id, project_id) VALUES (:s, :p) ON CONFLICT DO NOTHING"
             ),
             {"s": skill_id, "p": pid},
+        )
+
+
+def _set_skill_roles(c: Connection, skill_id: str, role_ids: list[str]) -> None:
+    """The role-side twin of `_set_evidence` (ADR 0019): replace, not merge."""
+    c.execute(_q("DELETE FROM skill_roles WHERE skill_id = :s"), {"s": skill_id})
+    for rid in role_ids:
+        c.execute(
+            _q(
+                "INSERT INTO skill_roles (skill_id, role_id) VALUES (:s, :r) ON CONFLICT DO NOTHING"
+            ),
+            {"s": skill_id, "r": rid},
         )
 
 

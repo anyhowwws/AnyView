@@ -56,6 +56,9 @@ class Draft(BaseModel):
     key: str = Field(min_length=1, max_length=8)  # temp handle within the patch
     existing: str | None = None  # label of the entity this updates, e.g. "R2"
     evidence: str = Field(min_length=1, max_length=1000)
+    # True when `evidence` could not be found in the dump (ADR 0019). The draft
+    # is kept for the user to judge instead of being dropped unseen.
+    unverified: bool = False
 
 
 class RoleDraft(Draft):
@@ -64,6 +67,8 @@ class RoleDraft(Draft):
     start_date: dt.date | None = None
     end_date: dt.date | None = None
     level: str | None = Field(default=None, max_length=80)
+    # Ongoing work in the role; bounded work is a project (ADR 0019).
+    responsibilities: list[str] = []
 
 
 class ProjectDraft(Draft):
@@ -91,6 +96,10 @@ class SkillDraft(Draft):
     name: str = Field(min_length=1, max_length=100)
     depth: int = Field(ge=1, le=5)
     projects: list[str] = []  # evidence: project keys or labels
+    roles: list[str] = []  # evidence: role keys or labels (ADR 0019)
+    # Link target (key or label) -> the verbatim quote that justified the link.
+    # Shown in the review queue; not stored on confirmation.
+    link_evidence: dict[str, str] = {}
 
 
 class AchievementDraft(Draft):
@@ -160,6 +169,7 @@ class Role(BaseModel):
     start_date: dt.date | None
     end_date: dt.date | None
     level: str | None
+    responsibilities: list[str] = []
     source: Provenance
 
 
@@ -196,6 +206,7 @@ class Skill(BaseModel):
     name: str
     depth: int
     project_ids: list[str]
+    role_ids: list[str] = []
     source: Provenance
 
 
@@ -301,12 +312,12 @@ class Event(BaseModel):
 
 # Fields a user may edit in place, per kind. Anything else is refused.
 EDITABLE: dict[EntityKind, frozenset[str]] = {
-    "role": frozenset({"company", "title", "start_date", "end_date", "level"}),
+    "role": frozenset({"company", "title", "start_date", "end_date", "level", "responsibilities"}),
     "project": frozenset({"name", "problem", "action", "result", "tech", "metrics", "role_id"}),
     "story": frozenset(
         {"title", "situation", "task", "action", "result", "competencies", "role_id", "project_id"}
     ),
-    "skill": frozenset({"name", "depth", "project_ids"}),
+    "skill": frozenset({"name", "depth", "project_ids", "role_ids"}),
     "achievement": frozenset({"kind", "title", "issuer", "achieved_on"}),
     "education": frozenset({"institution", "qualification", "field", "start_date", "end_date"}),
     "language": frozenset({"name", "proficiency"}),
