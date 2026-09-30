@@ -77,3 +77,44 @@ test("suppresses overlapping constellation labels deterministically", () => {
   assert.equal(first.size, 1);
   assert.ok(first.has("r"));
 });
+
+// --- Lenses -------------------------------------------------------------------
+
+import { homeRoles, layout } from "../lib/constellation.ts";
+
+function twoRoles(): Brain {
+  const brain = fixture();
+  brain.roles.push({ id: "r2", label: "R2", company: "Second employer", title: "Lead", start_date: null, end_date: null, level: null, responsibilities: [], source });
+  brain.projects.push({ id: "p2", label: "P2", role_id: "r2", name: "Platform", problem: null, action: null, result: null, tech: [], metrics: [], source });
+  // Terraform: a project in the first role, ongoing work in the second.
+  brain.skills[0].role_ids = ["r2"];
+  brain.skills.push({ id: "k2", label: "K2", name: "Go", depth: 2, project_ids: ["p2"], role_ids: [], source });
+  return brain;
+}
+
+test("home roles follow confirmed links only", () => {
+  const { nodes, edges } = buildBrainGraph(twoRoles());
+  const homes = homeRoles(nodes, edges);
+  assert.deepEqual(homes.get("k")?.sort(), ["r", "r2"]); // via p, and directly
+  assert.deepEqual(homes.get("k2"), ["r2"]);
+  assert.deepEqual(homes.get("s"), ["r"]);
+  assert.equal(homes.get("a"), undefined); // the certification links to nothing
+});
+
+test("by role: a skill shared by two roles settles between them", () => {
+  const { nodes, edges } = buildBrainGraph(twoRoles());
+  const { positions, territories } = layout(nodes, edges, "role");
+  const [r1, r2, shared, own] = ["r", "r2", "k", "k2"].map((id) => positions.get(id)!);
+  const between = (v: number, a: number, b: number) => v > Math.min(a, b) && v < Math.max(a, b);
+  assert.ok(between(shared.x, r1.x, r2.x), "the shared skill sits between the roles");
+  assert.ok(Math.abs(own.x - r2.x) < Math.abs(own.x - r1.x), "a one-role skill stays near its role");
+  assert.deepEqual(territories.map((t) => t.id).sort(), ["r", "r2"]);
+});
+
+test("by kind: one territory per kind, and layouts are deterministic", () => {
+  const { nodes, edges } = buildBrainGraph(twoRoles());
+  const first = layout(nodes, edges, "kind");
+  assert.deepEqual(new Set(first.territories.map((t) => t.kind)), new Set(nodes.map((n) => n.kind)));
+  const again = layout(nodes, edges, "kind");
+  assert.deepEqual([...again.positions.values()], [...first.positions.values()]);
+});

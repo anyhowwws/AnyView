@@ -1,11 +1,23 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { Network, Search, Minus, Plus, RotateCcw, ArrowUpRight } from "lucide-react";
 import { buildBrainGraph, GRAPH_KINDS, KIND_NAMES } from "@/lib/brain-graph";
 import type { Brain, EntityKind } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { constellation, visibleConstellationLabels } from "@/lib/constellation";
+import { layout, visibleConstellationLabels, type Lens, type Territory } from "@/lib/constellation";
+
+const LENSES: { value: Lens; label: string; blurb: string }[] = [
+  { value: "constellation", label: "Constellation", blurb: "Connections alone decide where entries sit. Tightly linked work pulls together." },
+  { value: "role", label: "By role", blurb: "Each role anchors its own territory. A skill used in two roles settles between them, so the overlap is what you carry from job to job." },
+  { value: "kind", label: "By kind", blurb: "One cluster per entry type. The lines between clusters show which skills have projects behind them, and which stand alone." },
+];
+
+function territoryName(t: Territory): string {
+  const name = t.label || KIND_NAMES[t.kind];
+  return name.length > 28 ? name.slice(0, 27) + "…" : name;
+}
 
 const COLORS: Record<EntityKind, string> = { role: "#ffbe72", project: "#75e4cf", story: "#a5a3ff", skill: "#76c8ff", achievement: "#f1d78a", education: "#ed9dbf", language: "#b7da87", feedback: "#f2977a" };
 
@@ -17,8 +29,11 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [labels, setLabels] = useState(true);
+  const [lens, setLens] = useState<Lens>("constellation");
+  const reduceMotion = useReducedMotion();
+  const move = { duration: reduceMotion ? 0 : 0.7, ease: [0.22, 1, 0.36, 1] as const };
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
-  const positions = useMemo(() => constellation(nodes, edges), [nodes, edges]);
+  const { positions, territories } = useMemo(() => layout(nodes, edges, lens), [nodes, edges, lens]);
   const visibleLabels = useMemo(() => visibleConstellationLabels(nodes, positions), [nodes, positions]);
   const selected = nodes.find((n) => n.id === selectedId);
   const matches = nodes.filter((n) => (kind === "all" || n.kind === kind) && `${n.title} ${n.label} ${n.detail}`.toLowerCase().includes(query.toLowerCase()));
@@ -49,6 +64,11 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
           <option value="all">All entry types</option>
           {GRAPH_KINDS.map((k) => <option key={k} value={k}>{KIND_NAMES[k]}</option>)}
         </select>
+        <div className="graph-lenses" role="group" aria-label="Arrange the map">
+          {LENSES.map((l) => (
+            <button key={l.value} type="button" aria-pressed={lens === l.value} onClick={() => setLens(l.value)}>{l.label}</button>
+          ))}
+        </div>
         <span className="text-xs text-muted-foreground" role="status">{matches.length ? `${matches.length} of ${nodes.length} entries` : "No matches. Try another search."}</span>
       </div>
       <div className="graph-layout">
@@ -59,18 +79,26 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
             onPointerUp={() => { drag.current = null; }} onPointerCancel={() => { drag.current = null; }}>
             <g className="constellation-rings" aria-hidden="true">{[100, 195, 285].map((r) => <circle key={r} cx="450" cy="320" r={r} />)}<path d="M 450 20 V 620 M 50 320 H 850" /></g>
             <g transform={`translate(${450 + pan.x} ${320 + pan.y}) scale(${zoom}) translate(-450 -320)`}>
+              <g className="constellation-territories" aria-hidden="true">
+                {territories.map((t) => (
+                  <motion.g key={`${lens}-${t.id}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={move}>
+                    <circle cx={t.x} cy={t.y} r={t.r} fill={COLORS[t.kind]} stroke={COLORS[t.kind]} />
+                    <text x={t.x} y={t.y - t.r + 16} textAnchor="middle">{territoryName(t)}</text>
+                  </motion.g>
+                ))}
+              </g>
               {edges.map((e) => {
                 const a = positions.get(e.from)!, b = positions.get(e.to)!;
                 const active = e.from === selectedId || e.to === selectedId;
-                return <line key={`${e.from}-${e.to}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className={`constellation-edge ${active ? "lit" : ""}`} opacity={selected && !active ? .12 : 1} />;
+                return <motion.line key={`${e.from}-${e.to}`} initial={false} animate={{ x1: a.x, y1: a.y, x2: b.x, y2: b.y }} transition={move} className={`constellation-edge ${active ? "lit" : ""}`} opacity={selected && !active ? .12 : 1} />;
               })}
               {nodes.map((n) => {
                 const p = positions.get(n.id)!;
                 const active = n.id === selectedId;
                 const muted = !matchIds.has(n.id) || Boolean(selected && !active && !neighbors.has(n.id));
                 const radius = 5 + Math.min(p.degree, 9) * 1.4;
-                return <g key={n.id} role="button" tabIndex={0} aria-pressed={active} aria-label={`${n.label}: ${n.title}, ${n.kind}`}
-                  className={`constellation-node ${active ? "selected" : ""}`} opacity={muted ? .4 : 1} transform={`translate(${p.x} ${p.y})`}
+                return <motion.g key={n.id} role="button" tabIndex={0} aria-pressed={active} aria-label={`${n.label}: ${n.title}, ${n.kind}`}
+                  className={`constellation-node ${active ? "selected" : ""}`} opacity={muted ? .4 : 1} initial={false} animate={{ x: p.x, y: p.y }} transition={move}
                   onClick={() => setSelectedId(active ? null : n.id)}
                   onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(active ? null : n.id); } }}>
                   <title>{n.title}</title>
@@ -79,7 +107,7 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
                   <circle r={radius} fill={COLORS[n.kind]} />
                   <circle r="2" fill="#fff" />
                   {(active || (labels && visibleLabels.has(n.id))) && <text y={radius + 25} textAnchor="middle">{n.title.length > 25 ? n.title.slice(0, 24) + "…" : n.title}</text>}
-                </g>;
+                </motion.g>;
               })}
             </g>
           </svg>
@@ -109,6 +137,7 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
             <Network size={25} className="text-primary" aria-hidden />
             <h3>Follow the connections.</h3>
             <p className="text-sm leading-relaxed text-muted-foreground">See how your roles connect to projects, the stories behind them, and the skills they demonstrate.</p>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground"><span className="font-medium text-foreground">{LENSES.find((l) => l.value === lens)!.label}.</span> {LENSES.find((l) => l.value === lens)!.blurb}</p>
             <p className="mt-4 text-xs leading-relaxed text-muted-foreground">Every line is a relationship in your confirmed Digital Garden. Certifications, education, and languages without a recorded link stand on their own.</p>
           </>}
           <details className="mt-6 border-t pt-4">
