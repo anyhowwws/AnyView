@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 import uuid
 from collections import Counter
 from pathlib import Path
@@ -65,6 +66,7 @@ def main() -> int:
     adapter.usage_sink = calls.append  # every call's usage row, collected instead of stored
 
     session = f"recall-{uuid.uuid4().hex[:8]}"
+    started = time.monotonic()
     data = args.document.read_bytes()
     suffix = args.document.suffix.lower()
     if suffix == ".pdf":
@@ -76,7 +78,7 @@ def main() -> int:
 
     patch = propose(text, brain_index="", model=model, session_id=session)
 
-    print(f"\n{len(text):,} characters of text\n")
+    print(f"\n{len(text):,} characters of text, {time.monotonic() - started:.0f} s end to end\n")
     for kind in KINDS:
         drafts = getattr(patch, kind)
         flagged = sum(d.unverified for d in drafts)

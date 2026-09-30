@@ -96,3 +96,46 @@ def test_a_failed_segmentation_falls_back_to_one_call():
 
 def test_section_is_plain_data():
     assert Section(kind="skills", text="Terraform") == Section(kind="skills", text="Terraform")
+
+
+JOBS = [
+    "EXPERIENCE",  # 1
+    "Multi-Cloud Solutions Architect",  # 2
+    "Lenovo PCCW | Apr 2026 - Present",  # 3
+    "- Architected the assessment",  # 4
+    "SKILLS",  # 5
+    "Terraform",  # 6
+    "Cloud Architect",  # 7
+    "Accenture | Jul 2021 - Mar 2026",  # 8
+    "- Integrated SSO",  # 9
+]
+
+
+def test_each_job_is_its_own_section_named_by_its_first_line():
+    sections = from_ranges(
+        JOBS,
+        [
+            {"kind": "experience", "start_line": 1, "end_line": 1, "job": 0},
+            {"kind": "experience", "start_line": 2, "end_line": 4, "job": 1},
+            {"kind": "skills", "start_line": 5, "end_line": 6, "job": 0},
+            {"kind": "experience", "start_line": 7, "end_line": 9, "job": 2},
+        ],
+    )
+    assert [(s.kind, s.label) for s in sections] == [
+        ("experience", "Multi-Cloud Solutions Architect"),
+        ("experience", "Cloud Architect"),
+        ("skills", ""),
+    ]
+    assert sections[0].text.startswith("EXPERIENCE\nMulti-Cloud")  # the heading joins job one
+    assert sections[0].one_job and not sections[2].one_job
+
+
+def test_a_single_job_stays_one_experience_section():
+    sections = from_ranges(
+        JOBS,
+        [
+            {"kind": "experience", "start_line": 1, "end_line": 4, "job": 1},
+            {"kind": "skills", "start_line": 5, "end_line": 9, "job": 0},
+        ],
+    )
+    assert [(s.kind, s.label) for s in sections] == [("experience", ""), ("skills", "")]

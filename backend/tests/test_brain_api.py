@@ -316,3 +316,46 @@ def test_discover_rejects_a_bad_conversation_id(client):
     _confirmed(client)
     r = client.post("/brain/discover", json={"conversation_id": "../x", "question": "Hi"})
     assert r.status_code == 422
+
+
+# --- Streamed ingestion (ADR 0019) --------------------------------------------
+
+from tests.test_api import _sse_events  # noqa: E402
+
+
+def test_a_streamed_upload_reports_each_step_then_the_proposal(client, store):
+    name = "uploads/uid-jordan/x.docx"
+    store.put(name, _docx_bytes(RESUME.splitlines()))
+    with client.stream(
+        "POST", "/brain/dumps/from-upload/stream", json={"resume_object": name}
+    ) as r:
+        assert r.status_code == 200
+        events = _sse_events(r)
+    stages = [data["stage"] for event, data in events if event == "progress"]
+    assert stages == ["reading", "read", "sections", "section_done", "tidying", "linking"]
+    sections = next(d for e, d in events if e == "progress" and d["stage"] == "sections")
+    assert sections["sections"] == [{"id": 0, "kind": "document", "label": ""}]
+    kinds = [event for event, _ in events]
+    assert kinds[-2:] == ["proposal", "done"]
+    assert events[-2][1]["dump_kind"] == "resume_docx"
+    assert client.get("/brain").json()["pending_proposals"] == 1
+
+
+def test_a_streamed_failure_is_an_error_frame_with_the_same_message(client, store):
+    with client.stream(
+        "POST",
+        "/brain/dumps/from-upload/stream",
+        json={"resume_object": "uploads/uid-other/x.docx"},
+    ) as r:
+        events = _sse_events(r)
+    assert events[-2:] == [
+        ("error", {"message": "That upload isn't yours.", "status": 403, "retryable": False}),
+        ("done", {}),
+    ]
+
+
+def test_a_streamed_text_dump_ends_in_the_same_proposal_shape(client):
+    with client.stream("POST", "/brain/dumps/stream", json={"text": DUMP}) as r:
+        events = _sse_events(r)
+    proposal = next(d for e, d in events if e == "proposal")
+    assert proposal["patch"]["roles"][0]["company"] == "Acme Corp"

@@ -83,6 +83,9 @@ PDF_SYSTEM = (
 
 
 def pdf_to_text(data: bytes, *, model: Model, session_id: str) -> str:
+    # The fast model: transcribing is copying, not judging, and on the judgement
+    # model it was 20 s of every upload (ADR 0019). The recall script checks
+    # that nothing is lost.
     reply = model.generate(
         system=PDF_SYSTEM,
         user="Transcribe the attached resume.",
@@ -91,6 +94,7 @@ def pdf_to_text(data: bytes, *, model: Model, session_id: str) -> str:
         effort="low",
         max_tokens=8192,
         attachment=(data, PDF),
+        fast=True,
     )
     if reply.refused or not reply.text.strip():
         raise ExtractionError(

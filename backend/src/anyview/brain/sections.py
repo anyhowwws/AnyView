@@ -49,6 +49,18 @@ MIN_OTHER_CHARS = 200
 class Section:
     kind: str
     text: str
+    # For one job of the experience section, its first line ("Multi-Cloud
+    # Solutions Architect"), so progress can name what is being read.
+    label: str = ""
+
+    @property
+    def one_job(self) -> bool:
+        return self.kind == "experience" and bool(self.label)
+
+
+# More jobs than this are read as one experience section: past a dozen
+# parallel calls the quota, not the model, sets the pace.
+MAX_JOBS = 12
 
 
 SEGMENT_SYSTEM = f"""You split a document about a job-seeker (usually a resume) into sections.
@@ -56,8 +68,9 @@ SEGMENT_SYSTEM = f"""You split a document about a job-seeker (usually a resume) 
 The document comes with numbered lines. Return the sections as line ranges, each tagged with
 one kind from exactly this list: {", ".join(SECTION_KINDS)}.
 
-- experience: jobs held, with their titles, dates and bullets. Keep each job's bullets in the
-  same range as the job.
+- experience: jobs held, with their titles, dates and bullets. Give each job its own range and
+  number the jobs in `job` (1, 2, 3 in document order); a job's title, dates and bullets all
+  share its number. Every other kind uses job 0.
 - projects: work listed on its own, outside any job.
 - skills: skill lists, tool lists, "core competencies".
 - certifications: certifications, licences, credentials.
@@ -79,8 +92,9 @@ SEGMENT_SCHEMA = {
                     "kind": {"type": "string", "enum": list(SECTION_KINDS)},
                     "start_line": {"type": "integer"},
                     "end_line": {"type": "integer"},
+                    "job": {"type": "integer"},
                 },
-                "required": ["kind", "start_line", "end_line"],
+                "required": ["kind", "start_line", "end_line", "job"],
                 "additionalProperties": False,
             },
         }
@@ -121,31 +135,56 @@ def segment(text: str, *, model: Model, session_id: str) -> list[Section]:
 def from_ranges(lines: list[str], ranges: list[dict]) -> list[Section]:
     """Turn the model's ranges into sections that cover every line exactly once.
 
-    Pure, so it is tested without a model. A range's kind claims its lines;
-    a line already claimed keeps its first owner, which is what makes the
-    result overlap-free. Ranges of the same kind are joined, in document
-    order, into one section: a job's bullets split across two ranges are
-    still read together.
+    Pure, so it is tested without a model. A range claims its lines; a line
+    already claimed keeps its first owner, which is what makes the result
+    overlap-free. Ranges with the same kind (and, for experience, the same
+    job number) are joined in document order: a job's bullets split across
+    two ranges by a two-column layout are still read together.
+
+    Each job becomes its own section (ADR 0019): a whole experience section
+    was the one slow call, and one job per call reads each more closely.
     """
-    owner: list[str | None] = [None] * len(lines)
+    owner: list[tuple[str, int] | None] = [None] * len(lines)
     for r in sorted(ranges, key=lambda r: r.get("start_line", 0)):
         kind = r.get("kind") if r.get("kind") in SECTION_KINDS else "other"
+        job = int(r.get("job") or 0) if kind == "experience" else 0
         start = max(int(r.get("start_line", 1)), 1)
         end = min(int(r.get("end_line", 0)), len(lines))
         for n in range(start, end + 1):
             if owner[n - 1] is None:
-                owner[n - 1] = kind
+                owner[n - 1] = (kind, job)
 
-    grouped: dict[str, list[str]] = {}
-    for line, kind in zip(lines, owner, strict=True):
-        grouped.setdefault(kind or "other", []).append(line)
+    grouped: dict[tuple[str, int], list[str]] = {}
+    for line, key in zip(lines, owner, strict=True):
+        grouped.setdefault(key or ("other", 0), []).append(line)
+    jobs = sorted(job for kind, job in grouped if kind == "experience")
+    # Each job is named by its own first line, before any heading joins it.
+    names = {
+        job: next((line.strip(" -•") for line in grouped[("experience", job)] if line.strip()), "")
+        for job in jobs
+    }
+    if 0 in jobs and len(jobs) > 1:
+        # Experience lines outside any numbered job (usually the heading) go
+        # with the first job rather than costing a call of their own.
+        first = jobs[1]
+        grouped[("experience", first)] = (
+            grouped.pop(("experience", 0)) + grouped[("experience", first)]
+        )
+        jobs.remove(0)
+    if len(jobs) > MAX_JOBS or len(jobs) < 2:
+        # Too many to fan out, or nothing to split: one experience section.
+        for job in jobs:
+            grouped.setdefault(("experience", -1), []).extend(grouped.pop(("experience", job)))
+        jobs = [-1] if jobs else []
 
     sections = []
     for kind in SECTION_KINDS:  # experience first: its drafts win merges
-        text = "\n".join(grouped.get(kind, [])).strip()
-        if not text or (kind == "other" and len(text) < MIN_OTHER_CHARS):
-            continue
-        sections.append(Section(kind=kind, text=text))
+        for job in jobs if kind == "experience" else [0]:
+            text = "\n".join(grouped.get((kind, job), [])).strip()
+            if not text or (kind == "other" and len(text) < MIN_OTHER_CHARS):
+                continue
+            label = names.get(job, "")[:80] if kind == "experience" and job != -1 else ""
+            sections.append(Section(kind=kind, text=text, label=label))
     # One real section is the whole document again: nothing gained by splitting.
     if sum(1 for s in sections if s.kind != "other") < 2:
         return []
