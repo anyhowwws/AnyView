@@ -27,13 +27,14 @@ is at hand: it drops what the user has already confirmed.
 from __future__ import annotations
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import ValidationError
 
 from anyview.brain.evidence import contains, normalise
 from anyview.brain.link import link_skills
-from anyview.brain.models import LABEL_PREFIX, Brain, EntityKind, Patch
+from anyview.brain.models import LABEL_PREFIX, Brain, EntityKind, Patch, SkillDraft
 from anyview.brain.sections import segment
 from anyview.llm.adapter import Model
 
@@ -100,6 +101,12 @@ Rules:
   valid evidence for each item in it.
 - Stories are STAR-shaped narratives; tag each with competencies from exactly this list:
   {", ".join(COMPETENCY_KEYS)}. Use only the ones the story clearly shows.
+- A skill is one specific thing the candidate could be asked about: a technology, platform,
+  tool, method or practice ("Terraform", "Amazon EKS", "Well-Architected reviews",
+  "stakeholder management"). Not a broad field ("Security", "Governance", "Cloud").
+- Name each skill once, by its usual full name: "Amazon Bedrock", not "Bedrock"; "Google
+  Cloud", not "GCP". A compound is one skill: "GitLab CI/CD" is one entry, not "GitLab",
+  "CI/CD" and "GitLab CI/CD". If the index already has the skill, reference its label.
 - Skills: `depth` is 1–5 as the dump implies (mention = 2, regular use = 3, led with it = 4,
   expert/taught = 5).
 - Dates are ISO (YYYY-MM-DD); use the first of the month when only a month is known.
@@ -379,16 +386,16 @@ def merge(patches: list[Patch]) -> Patch:
         plan: list[tuple[list, object, object | None]] = []  # (group, draft, same-as)
         for kind, drafts in _kind_groups(patch):
             group = dict(_kind_groups(merged))[kind]
-            seen = {_identity(kind, d): d for d in group}
+            seen = {alias: d for d in group for alias in _aliases(kind, d)}
             count = len(group)
             for d in drafts:
-                ident = _identity(kind, d)
-                same = seen.get(ident)
+                aliases = _aliases(kind, d)
+                same = next((seen[a] for a in aliases if a in seen), None)
                 copy = d.model_copy(deep=True)
                 if same is None:
                     count += 1
                     copy.key = f"{LABEL_PREFIX[kind].lower()}{count}"
-                    seen[ident] = copy
+                    seen.update({alias: copy for alias in aliases})
                 rename[d.key] = same.key if same is not None else copy.key
                 plan.append((group, (kind, copy), same))
         for group, (kind, copy), same in plan:
@@ -402,6 +409,22 @@ def merge(patches: list[Patch]) -> Patch:
 
 def _identity(kind: EntityKind, draft) -> tuple[str, ...]:
     return tuple(normalise(part) for part in IDENTITY[kind](draft))
+
+
+# "Retrieval-Augmented Generation (RAG)" -> the name, and what is in brackets.
+_BRACKETED = re.compile(r"^(.+?)\s*\(([^()]+)\)$")
+
+
+def _aliases(kind: EntityKind, draft) -> set[tuple[str, ...]]:
+    """Every identity a draft answers to. A skill named "Retrieval-Augmented
+    Generation (RAG)" in the skills list and "RAG" in an experience bullet is
+    one skill; the sections were read separately, so each named it its own
+    way. Only skills get aliases: two roles or two degrees that share a word
+    in brackets are not the same thing."""
+    names = {_identity(kind, draft)}
+    if kind == "skill" and (m := _BRACKETED.match(draft.name.strip())):
+        names |= {(normalise(m.group(1)),), (normalise(m.group(2)),)}
+    return names
 
 
 def _repoint(kind: EntityKind, draft, rename: dict[str, str]) -> None:
@@ -423,6 +446,10 @@ def _repoint(kind: EntityKind, draft, rename: dict[str, str]) -> None:
 def _absorb(kept, other) -> None:
     """Fill `kept`'s gaps from `other`: a missing value, an `existing` label,
     and the union of any list (tech, responsibilities, links)."""
+    # Two names for one skill: keep the fuller one, "Retrieval-Augmented
+    # Generation (RAG)" over "RAG".
+    if isinstance(kept, SkillDraft) and len(other.name) > len(kept.name):
+        kept.name = other.name
     for name in type(kept).model_fields:
         if name in ("key", "evidence", "unverified", "link_evidence"):
             continue

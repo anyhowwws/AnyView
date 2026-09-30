@@ -532,3 +532,40 @@ def test_a_new_link_on_a_confirmed_skill_is_a_change_and_keeps_the_old_one():
 def test_unverified_and_link_quotes_are_not_changes():
     draft = _role_draft(unverified=True)
     assert drop_unchanged(Patch(roles=[draft]), _brain(roles=[ROLE])).is_empty()
+
+
+def test_a_bracketed_abbreviation_is_the_same_skill_and_the_fuller_name_wins():
+    experience = Patch(
+        skills=[SkillDraft(key="k1", name="RAG", depth=3, evidence="custom RAG pipeline")]
+    )
+    skills = Patch(
+        skills=[
+            SkillDraft(
+                key="k1", name="Retrieval-Augmented Generation (RAG)", depth=2, evidence="RAG"
+            ),
+            SkillDraft(key="k2", name="Amazon Bedrock", depth=2, evidence="Bedrock"),
+        ]
+    )
+    merged = merge([experience, skills])
+    assert [k.name for k in merged.skills] == [
+        "Retrieval-Augmented Generation (RAG)",
+        "Amazon Bedrock",
+    ]
+    assert merged.skills[0].evidence == "custom RAG pipeline"  # the experience quote is kept
+
+
+def test_only_skills_get_bracket_aliases():
+    a = Patch(
+        education=[EducationDraft(key="e1", institution="NTU", qualification="B.Sc.", evidence="x")]
+    )
+    b = Patch(
+        education=[
+            EducationDraft(
+                key="e1",
+                institution="Nanyang Technological University (NTU)",
+                qualification="B.Sc.",
+                evidence="y",
+            )
+        ]
+    )
+    assert len(merge([a, b]).education) == 2

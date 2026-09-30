@@ -36,6 +36,14 @@ KINDS = (
 )  # fmt: skip
 
 
+def _name(draft) -> str:
+    """The one field that says what a draft is, whatever its kind."""
+    for field in ("title", "name", "company", "institution", "given_by"):
+        if getattr(draft, field, None):
+            return getattr(draft, field)
+    return draft.key
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("document", type=Path, help="a .pdf, .docx or .txt file")
@@ -73,6 +81,13 @@ def main() -> int:
         drafts = getattr(patch, kind)
         flagged = sum(d.unverified for d in drafts)
         print(f"{kind:13} {len(drafts):3}" + (f"   ({flagged} unverified)" if flagged else ""))
+    for kind in KINDS:
+        names = [_name(d) + (" (unverified)" if d.unverified else "") for d in getattr(patch, kind)]
+        if names:
+            print(f"\n{kind}: " + "; ".join(names))
+    for role in patch.roles:
+        for line in role.responsibilities:
+            print(f"  {role.company} responsibility: {line}")
     print("\nSkill links:")
     for skill in patch.skills:
         for target in (*skill.projects, *skill.roles):
