@@ -135,19 +135,42 @@ export function layout(nodes: BrainNode[], edges: BrainEdge[], lens: Lens) {
   return { positions: byId, territories };
 }
 
+/** Node radius in screen pixels: it stays the same size however far you zoom. */
+export function nodeRadius(degree: number): number {
+  return 5 + Math.min(degree, 9) * 1.4;
+}
+
+type Bounds = { left: number; top: number; right: number; bottom: number };
+
 /** Labels are useful until they overlap. Keep a stable, high-connection-first
- * subset and let selection always reveal the remaining title in the graph UI. */
-export function visibleConstellationLabels(nodes: BrainNode[], positions: Map<string, ConstellationPoint>) {
+ * subset and let selection or hover always reveal the rest.
+ *
+ * Level of detail: nodes and their labels keep their size on screen while the
+ * map spreads out under them, so a label's box shrinks by `zoom` in layout
+ * units. Zooming in therefore frees room and more names appear. Only nodes in
+ * `bounds` (what is on screen) compete for that room. */
+export function visibleConstellationLabels(
+  nodes: BrainNode[],
+  positions: Map<string, ConstellationPoint>,
+  { zoom = 1, bounds }: { zoom?: number; bounds?: Bounds } = {},
+) {
   const occupied: Array<{ left: number; right: number; top: number; bottom: number }> = [];
   const visible = new Set<string>();
+  const inView = (p: ConstellationPoint) => !bounds || (p.x >= bounds.left && p.x <= bounds.right && p.y >= bounds.top && p.y <= bounds.bottom);
   [...nodes].sort((a, b) => {
     const degree = (positions.get(b.id)?.degree ?? 0) - (positions.get(a.id)?.degree ?? 0);
     return degree || a.title.localeCompare(b.title);
   }).forEach((node) => {
     const point = positions.get(node.id)!;
-    const radius = 5 + Math.min(point.degree, 9) * 1.4;
+    if (!inView(point)) return;
+    const radius = nodeRadius(point.degree);
     const width = Math.min(170, Math.max(64, node.title.length * 6.6));
-    const box = { left: point.x - width / 2 - 8, right: point.x + width / 2 + 8, top: point.y + radius + 10, bottom: point.y + radius + 34 };
+    const box = {
+      left: point.x - (width / 2 + 8) / zoom,
+      right: point.x + (width / 2 + 8) / zoom,
+      top: point.y + (radius + 10) / zoom,
+      bottom: point.y + (radius + 34) / zoom,
+    };
     if (occupied.some((other) => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)) return;
     occupied.push(box);
     visible.add(node.id);
