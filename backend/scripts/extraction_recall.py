@@ -88,6 +88,10 @@ def main() -> int:
     for role in patch.roles:
         for line in role.responsibilities:
             print(f"  {role.company} responsibility: {line}")
+    print("\nMerged near-duplicates:")
+    for skill in patch.skills:
+        if skill.merged_from:
+            print(f"  {skill.name} ← {', '.join(skill.merged_from)}")
     print("\nSkill links:")
     for skill in patch.skills:
         for target in (*skill.projects, *skill.roles, *skill.achievements):

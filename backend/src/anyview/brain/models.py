@@ -101,6 +101,9 @@ class SkillDraft(Draft):
     # Link target (key or label) -> the verbatim quote that justified the link.
     # Shown in the review queue; not stored on confirmation.
     link_evidence: dict[str, str] = {}
+    # Other names this skill was found under and folded into it (ADR 0021):
+    # "GCP" into "Google Cloud". Shown in the review queue; not stored.
+    merged_from: list[str] = []
 
 
 class AchievementDraft(Draft):

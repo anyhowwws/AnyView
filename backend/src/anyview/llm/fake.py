@@ -5,7 +5,7 @@ drive the engine and the API deterministically; `ANYVIEW_FAKE_MODEL=1` runs the
 whole app on it for a browser walk-through that costs nothing.
 
 Replies are keyed by the `call` name (`plan`, `ask`, `score`, `ideal`,
-`parse_job`, `transcribe`, `discover`, `segment`, `link`) so a test can script
+`parse_job`, `transcribe`, `discover`, `segment`, `dedupe`, `link`) so a test can script
 one kind of call without caring about the others. `speak` returns silence of a
 plausible length instead of a reply.
 """
@@ -187,6 +187,8 @@ DEFAULTS: dict[str, Any] = {
     # No sections: a dump this long in a test takes the one-call path unless a
     # test scripts ranges of its own (ADR 0019).
     "segment": {"sections": []},
+    # No near-duplicates among the scripted skills (ADR 0021).
+    "dedupe": {"groups": []},
     # One checked link: the Terraform bullet sits inside the Acme role's text.
     "link": {
         "links": [

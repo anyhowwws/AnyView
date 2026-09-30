@@ -79,6 +79,9 @@ Backend modules:
 - `anyview/brain/sections.py` — the fast model returns a long dump's sections as **line ranges only** (never rewritten
   text); `from_ranges` makes them overlap-free and loses no line. Under 2,000 characters, or fewer than two real
   sections, the dump is read in one call.
+- `anyview/brain/dedupe.py` — one call proposes groups of near-duplicate skills ("GCP"/"Google Cloud"); `checked()`
+  refuses unknown or reused keys and any group joining two garden entries; `extract.fold_duplicates` applies them,
+  recording absorbed names in `merged_from` (ADR 0021). Runs before linking.
 - `anyview/brain/link.py` — one call links skills to roles and projects; each link's quote must sit inside the
   target's own stretch of the dump (`brain/evidence.py:spans`), so a skills-list line justifies nothing.
 - `anyview/brain/evidence.py` — `fold()`/`normalise()`: the one definition of "the same quote" (NFKC, dashes,
@@ -143,8 +146,8 @@ terraform plan                                                   # terraform.tfv
 - Entity labels (R1, P2, S3, K1, A1) are computed per read from creation order, never
   stored. Prompts use them; the review queue resolves them back to ids at confirmation.
 - Every model call writes a usage row. No exceptions, including scoring and `speak` calls.
-- A resume upload is 3 + *n* calls: transcribe, `segment` (fast model, `generate(fast=True)`), one `propose`
-  per section, one `link`. `scripts/extraction_recall.py <file> --expect achievements=14` runs the real
+- A resume upload is 4 + *n* calls: transcribe, `segment` (fast model, `generate(fast=True)`), one `propose`
+  per section, one `dedupe`, one `link`. `scripts/extraction_recall.py <file> --expect achievements=14` runs the real
   pipeline on a document you know the answer for; keep real resumes out of the repo.
 - Each question carries its own `seconds` (ADR 0016), chosen by the model when it plans and
   clamped by `engine.start` into 45–300. The clock only runs when `setup.time_bounded`.

@@ -17,7 +17,9 @@ The pipeline (ADR 0019):
                  whose quote cannot be found is flagged `unverified`, not
                  dropped: the user decides. `_clear_cross_kind_existing` stops
                  a draft claiming to update an entity of a different kind.
-  5. link      — skills are linked to the roles and projects that show them,
+  5. dedupe    — skills that are one skill under two names are folded
+                 together (`brain/dedupe.py`, ADR 0021).
+  6. link      — skills are linked to the roles and projects that show them,
                  each link with its own checked quote (`brain/link.py`).
 
 `drop_unchanged` (ADR 0015) runs last, in the API, where the confirmed brain
@@ -32,6 +34,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from pydantic import ValidationError
 
+from anyview.brain.dedupe import Group, near_duplicates
 from anyview.brain.evidence import contains, normalise
 from anyview.brain.link import link_skills
 from anyview.brain.models import LABEL_PREFIX, Brain, EntityKind, Patch, SkillDraft
@@ -282,7 +285,17 @@ PATCH_SCHEMA = {
 }
 
 
-def propose(dump_text: str, *, brain_index: str, model: Model, session_id: str) -> Patch:
+def propose(
+    dump_text: str,
+    *,
+    brain_index: str,
+    model: Model,
+    session_id: str,
+    garden_skills: dict[str, str] | None = None,
+) -> Patch:
+    """`garden_skills` is label -> name for the user's confirmed skills, so a
+    draft that is one of them under another name ("GCP" for a confirmed
+    "Google Cloud") updates it instead of arriving as a new card (ADR 0021)."""
     sections = segment(dump_text, model=model, session_id=session_id)
     if sections:
         # One call per section, all at once. `pool.map` returns results in
@@ -306,6 +319,9 @@ def propose(dump_text: str, *, brain_index: str, model: Model, session_id: str) 
     else:
         patch = _extract(dump_text, brain_index=brain_index, model=model, session_id=session_id)
     patch = _clear_cross_kind_existing(_flag_unevidenced(patch, dump_text))
+    garden_skills = garden_skills or {}
+    groups = near_duplicates(patch, garden_skills=garden_skills, model=model, session_id=session_id)
+    patch = fold_duplicates(patch, groups, garden_skills)
     return link_skills(patch, dump_text, model=model, session_id=session_id)
 
 
@@ -444,12 +460,41 @@ def _repoint(kind: EntityKind, draft, rename: dict[str, str]) -> None:
         setattr(draft, name, [r for r in (follow(x) for x in getattr(draft, name)) if r])
 
 
-def _absorb(kept, other) -> None:
+def fold_duplicates(patch: Patch, groups: list[Group], garden_skills: dict[str, str]) -> Patch:
+    """Apply checked near-duplicate groups (ADR 0021). The survivor keeps its
+    own name and quote, takes the deepest self-rating, and lists the names it
+    absorbed in `merged_from`. When a group keeps a garden label, its first
+    draft becomes the update to that skill, under the garden's name."""
+    by_key = {k.key: k for k in patch.skills}
+    gone: set[str] = set()
+    for group in groups:
+        if group.keep in by_key:
+            survivor, others = by_key[group.keep], [by_key[k] for k in group.merge]
+        else:
+            survivor, *others = [by_key[k] for k in group.merge]
+            survivor.existing = group.keep
+            if normalise(survivor.name) != normalise(garden_skills[group.keep]):
+                survivor.merged_from.append(survivor.name)
+            survivor.name = garden_skills[group.keep]
+        for other in others:
+            if normalise(other.name) != normalise(survivor.name):
+                survivor.merged_from.append(other.name)
+            if survivor.unverified and not other.unverified:
+                survivor.evidence, survivor.unverified = other.evidence, False
+            survivor.depth = max(survivor.depth, other.depth)
+            _absorb(survivor, other, rename=False)
+            gone.add(other.key)
+        log.info("folded %s into %s (%s)", sorted(gone), survivor.key, survivor.name)
+    patch.skills = [k for k in patch.skills if k.key not in gone]
+    return patch
+
+
+def _absorb(kept, other, *, rename: bool = True) -> None:
     """Fill `kept`'s gaps from `other`: a missing value, an `existing` label,
     and the union of any list (tech, responsibilities, links)."""
     # Two names for one skill: keep the fuller one, "Retrieval-Augmented
-    # Generation (RAG)" over "RAG".
-    if isinstance(kept, SkillDraft) and len(other.name) > len(kept.name):
+    # Generation (RAG)" over "RAG". Not when the dedupe call chose the name.
+    if rename and isinstance(kept, SkillDraft) and len(other.name) > len(kept.name):
         kept.name = other.name
     for name in type(kept).model_fields:
         if name in ("key", "evidence", "unverified", "link_evidence"):
@@ -512,7 +557,9 @@ FIELD_ALIAS = {
 # Bookkeeping, not content. A fresh quote for a fact already confirmed is not a
 # change to that fact, and a draft's key is meaningful only inside its patch.
 # Link quotes and the unverified flag describe this dump, not the entity.
-NOT_CONTENT = frozenset({"key", "existing", "evidence", "unverified", "link_evidence"})
+NOT_CONTENT = frozenset(
+    {"key", "existing", "evidence", "unverified", "link_evidence", "merged_from"}
+)
 
 
 def drop_unchanged(patch: Patch, brain: Brain) -> Patch:

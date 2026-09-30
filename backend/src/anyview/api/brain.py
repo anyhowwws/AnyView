@@ -62,8 +62,15 @@ def _propose(
     repo.ensure_user(user.uid, user.email)
     dump = repo.create_dump(user.uid, kind=kind, text=text, object_name=object_name)
     index, _ = repo.brain_index(user.uid)
+    brain = repo.brain(user.uid)
     try:
-        patch = propose(text, brain_index=index, model=model, session_id=f"dump-{dump.id[:8]}")
+        patch = propose(
+            text,
+            brain_index=index,
+            model=model,
+            session_id=f"dump-{dump.id[:8]}",
+            garden_skills={k.label: k.name for k in brain.skills},
+        )
     except ExtractionFailed as exc:
         raise HTTPException(502, exc.user_message) from exc
     if patch.is_empty():
@@ -75,7 +82,7 @@ def _propose(
     # Drafts that only restate something already confirmed never reach the
     # queue: a queue of cards the user has already agreed to is a queue that
     # gets approved unread (ADR 0015).
-    patch = drop_unchanged(patch, repo.brain(user.uid))
+    patch = drop_unchanged(patch, brain)
     if patch.is_empty():
         raise HTTPException(
             422, "Nothing new in there — your Digital Garden already has all of it."

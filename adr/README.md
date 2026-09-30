@@ -41,3 +41,4 @@ record of having been wrong is the useful part.
 | [0018](0018-erasing-an-account.md) | Erasing an account: the one delete the event log allows | Accepted |
 | [0019](0019-sectioned-extraction-and-evidenced-links.md) | Sectioned extraction, evidenced skill links, and roles that carry responsibilities | Accepted |
 | [0020](0020-certifications-evidence-skills.md) | Certifications evidence skills | Accepted |
+| [0021](0021-near-duplicate-skills.md) | Near-duplicate skills are folded by a checked model call | Accepted |
