@@ -66,19 +66,59 @@ def normalise(text: str) -> str:
     return fold(text)[0]
 
 
+# Where a model joins two lines of a document into one quote, it puts its own
+# separator in the seam: "Architect | Lenovo PCCW" for a title on one line and
+# the employer on the next.
+_SEAM = re.compile(r"\s*(?:\||·|•|\n|\s[-–—]\s)\s*")
+# What may sit between two pieces in the document: separators and spaces only,
+# a few characters at most. Words in between mean the pieces are not adjacent.
+_GAP = re.compile(r"[\s|·•/,;:\-]{0,5}")
+
+
+def locate(folded: str, quote: str, lo: int = 0) -> tuple[int, int] | None:
+    """Where the quote sits in the folded text, from `lo` on, as (start, end).
+
+    First as written. Failing that, as verbatim pieces split at the seams a
+    model adds when it joins adjacent lines, each piece found right after the
+    one before with only separators between. Every word is still the
+    document's own, in the document's order.
+    """
+    needle = normalise(quote)
+    if not needle:
+        return None
+    at = folded.find(needle, lo)
+    if at != -1:
+        return at, at + len(needle)
+    pieces = [normalise(p) for p in _SEAM.split(quote)]
+    pieces = [p for p in pieces if p]
+    if len(pieces) < 2:
+        return None
+    start = folded.find(pieces[0], lo)
+    while start != -1:
+        end = start + len(pieces[0])
+        for piece in pieces[1:]:
+            gap = _GAP.match(folded, end)
+            nxt = gap.end() if gap else end
+            # the gap match is greedy; the piece may begin with a separator
+            candidates = [i for i in range(end, nxt + 1) if folded.startswith(piece, i)]
+            if not candidates:
+                break
+            end = candidates[0] + len(piece)
+        else:
+            return start, end
+        start = folded.find(pieces[0], start + 1)
+    return None
+
+
 def contains(haystack: str, quote: str) -> bool:
     """Is `quote` in `haystack`, once both are folded? An empty quote is not."""
-    needle = normalise(quote)
-    return bool(needle) and needle in normalise(haystack)
+    return locate(normalise(haystack), quote) is not None
 
 
 def within(folded: str, quote: str, lo: int, hi: int) -> bool:
     """Does the folded `quote` occur entirely inside folded[lo:hi]?"""
-    needle = normalise(quote)
-    if not needle:
-        return False
-    at = folded.find(needle, lo)
-    return at != -1 and at + len(needle) <= hi
+    found = locate(folded, quote, lo)
+    return found is not None and found[1] <= hi
 
 
 def spans(patch: Patch, text: str) -> dict[str, tuple[int, int]]:
@@ -100,9 +140,9 @@ def spans(patch: Patch, text: str) -> dict[str, tuple[int, int]]:
         for d in drafts:
             if d.unverified:
                 continue
-            at = folded.find(normalise(d.evidence))
-            if at != -1:
-                starts.append((at, kind, d.key))
+            found = locate(folded, d.evidence)
+            if found:
+                starts.append((found[0], kind, d.key))
     starts.sort()
     out: dict[str, tuple[int, int]] = {}
     for i, (at, kind, key) in enumerate(starts):
@@ -115,8 +155,7 @@ def spans(patch: Patch, text: str) -> dict[str, tuple[int, int]]:
                 end = min(end, bisect.bisect_left(where, bullet_end.start()))
         out[key] = (at, end)
     for d in patch.achievements:
-        needle = normalise(d.evidence)
-        at = folded.find(needle) if d.kind == "credential" and not d.unverified else -1
-        if at != -1:
-            out[d.key] = (at, at + len(needle))
+        found = locate(folded, d.evidence) if d.kind == "credential" and not d.unverified else None
+        if found:
+            out[d.key] = found
     return out

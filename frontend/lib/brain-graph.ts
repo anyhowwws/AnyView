@@ -11,6 +11,10 @@ export interface BrainNode {
 export interface BrainEdge { from: string; to: string; relation: string }
 
 export const GRAPH_KINDS: EntityKind[] = ["role", "project", "story", "skill", "achievement", "education", "language", "feedback"];
+/** One colour per kind, shared by the graph and the upload progress view. */
+export const KIND_COLORS: Record<EntityKind, string> = {
+  role: "#ffbe72", project: "#75e4cf", story: "#a5a3ff", skill: "#76c8ff", achievement: "#f1d78a", education: "#ed9dbf", language: "#b7da87", feedback: "#f2977a",
+};
 export const KIND_NAMES: Record<EntityKind, string> = {
   role: "Roles", project: "Projects", story: "Stories", skill: "Skills", achievement: "Certifications", education: "Education", language: "Languages", feedback: "Feedback",
 };

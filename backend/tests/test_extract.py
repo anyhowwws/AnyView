@@ -580,3 +580,30 @@ def test_a_new_skill_named_like_a_live_one_becomes_an_update_to_it():
     changed = SkillDraft(key="k1", name="Terraform", depth=5, evidence="Terraform")
     kept = drop_unchanged(Patch(skills=[changed]), _brain(roles=[ROLE], skills=[SKILL]))
     assert kept.skills[0].existing == "K1"
+
+
+def test_list_sections_think_less_and_each_job_is_told_it_is_one_job():
+    lines = LONG_RESUME.splitlines()
+    fake = FakeModel(
+        {
+            "segment": {
+                "sections": [
+                    {"kind": "experience", "start_line": 1, "end_line": 5, "job": 1},
+                    {"kind": "experience", "start_line": 6, "end_line": 9, "job": 2},
+                    {"kind": "skills", "start_line": 10, "end_line": len(lines), "job": 0},
+                ]
+            }
+        }
+    )
+    seen: list[tuple[str, dict]] = []
+    propose(
+        LONG_RESUME,
+        brain_index="",
+        model=fake,
+        session_id="s",
+        on_progress=lambda s, d: seen.append((s, d)),
+    )
+    reads = [c for c in fake.calls if c["call"] == "propose"]
+    assert sum("one job from the experience section" in c["user"] for c in reads) == 2
+    assert [s for s, _ in seen].count("section_done") == 3
+    assert seen[0][0] == "sections" and len(seen[0][1]["sections"]) == 3

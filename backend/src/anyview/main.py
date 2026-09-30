@@ -7,6 +7,7 @@ CORS, error translation, the model singleton, and the routers.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from functools import lru_cache
 
@@ -71,7 +72,9 @@ def build_model() -> Model:
     if settings.use_fake_model:
         from anyview.llm.fake import FakeModel
 
-        return FakeModel()
+        # A local walk-through of the upload progress needs calls that take
+        # time; ANYVIEW_FAKE_DELAY_S gives each fake call that long (dev only).
+        return FakeModel(delay=float(os.environ.get("ANYVIEW_FAKE_DELAY_S", "0")))
     from anyview.llm.adapter import VertexGemini
 
     return VertexGemini(

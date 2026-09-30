@@ -3,7 +3,10 @@ allow-listed user; every repository call is scoped by that user's uid."""
 
 from __future__ import annotations
 
+import queue
+import threading
 import uuid
+from collections.abc import Callable, Iterator
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,10 +14,10 @@ from pydantic import BaseModel, Field
 
 from anyview.api.auth import CurrentUser, current_user
 from anyview.api.interview import ModelDep
-from anyview.api.sse import stream_response
+from anyview.api.sse import Frame, stream_response
 from anyview.api.uploads import StoreDep, object_prefix
 from anyview.brain.discover import DiscoverRequest, answer
-from anyview.brain.extract import ExtractionFailed, drop_unchanged, propose
+from anyview.brain.extract import ExtractionFailed, Progress, drop_unchanged, propose
 from anyview.brain.models import Brain, Event, Patch, Proposal, RawDump
 from anyview.db.repository import Conflict, NotFound, Repository
 from anyview.uploads.extract import (
@@ -57,7 +60,14 @@ class EventOut(BaseModel):
 
 
 def _propose(
-    repo: Repository, model, user: CurrentUser, *, kind: str, text: str, object_name: str | None
+    repo: Repository,
+    model,
+    user: CurrentUser,
+    *,
+    kind: str,
+    text: str,
+    object_name: str | None,
+    on_progress: Progress | None = None,
 ) -> Proposal:
     repo.ensure_user(user.uid, user.email)
     dump = repo.create_dump(user.uid, kind=kind, text=text, object_name=object_name)
@@ -70,6 +80,7 @@ def _propose(
             model=model,
             session_id=f"dump-{dump.id[:8]}",
             garden_skills={k.label: k.name for k in brain.skills},
+            on_progress=on_progress,
         )
     except ExtractionFailed as exc:
         raise HTTPException(502, exc.user_message) from exc
@@ -92,20 +103,16 @@ def _propose(
     )
 
 
-@router.post("/dumps", response_model=Proposal)
-def create_dump(body: DumpRequest, user: CurrentUser, repo: RepoDep, model: ModelDep) -> Proposal:
-    return _propose(repo, model, user, kind="text", text=body.text, object_name=None)
-
-
-@router.post("/dumps/from-upload", response_model=Proposal)
-def create_dump_from_upload(
-    body: UploadDumpRequest, user: CurrentUser, repo: RepoDep, model: ModelDep, store: StoreDep
-) -> Proposal:
+def _read_upload(
+    body: UploadDumpRequest, user: CurrentUser, model, store, tell: Progress
+) -> tuple[str, str]:
+    """The uploaded file as (dump kind, text)."""
     if not body.resume_object.startswith(object_prefix(user.uid)):
         raise HTTPException(403, "That upload isn't yours.")
     data = store.read(body.resume_object)
     if data is None:
         raise HTTPException(404, "The uploaded file wasn't found. Please upload it again.")
+    tell("reading", {"file": body.resume_object.rsplit(".", 1)[-1]})
     try:
         if body.resume_object.endswith(".pdf"):
             kind, text = (
@@ -131,7 +138,87 @@ def create_dump_from_upload(
         raise HTTPException(422, exc.user_message) from exc
     if len(text.strip()) < 20:
         raise HTTPException(422, "The file has almost no text in it.")
+    tell("read", {"characters": len(text)})
+    return kind, text
+
+
+def _silent(stage: str, data: dict) -> None:
+    """The non-streaming routes take no progress."""
+
+
+@router.post("/dumps", response_model=Proposal)
+def create_dump(body: DumpRequest, user: CurrentUser, repo: RepoDep, model: ModelDep) -> Proposal:
+    return _propose(repo, model, user, kind="text", text=body.text, object_name=None)
+
+
+@router.post("/dumps/from-upload", response_model=Proposal)
+def create_dump_from_upload(
+    body: UploadDumpRequest, user: CurrentUser, repo: RepoDep, model: ModelDep, store: StoreDep
+) -> Proposal:
+    kind, text = _read_upload(body, user, model, store, _silent)
     return _propose(repo, model, user, kind=kind, text=text, object_name=body.resume_object)
+
+
+@router.post("/dumps/stream")
+def stream_dump(body: DumpRequest, user: CurrentUser, repo: RepoDep, model: ModelDep):
+    """`POST /dumps`, streamed: `progress` frames as each step starts and each
+    section finishes, then one `proposal` frame (ADR 0005 wire format)."""
+    return stream_response(
+        _with_progress(
+            lambda tell: _propose(
+                repo, model, user, kind="text", text=body.text, object_name=None, on_progress=tell
+            )
+        )
+    )
+
+
+@router.post("/dumps/from-upload/stream")
+def stream_dump_from_upload(
+    body: UploadDumpRequest, user: CurrentUser, repo: RepoDep, model: ModelDep, store: StoreDep
+):
+    """`POST /dumps/from-upload`, streamed. An upload takes about a minute;
+    this is what lets the screen show where it is instead of a spinner."""
+
+    def work(tell: Progress) -> Proposal:
+        kind, text = _read_upload(body, user, model, store, tell)
+        return _propose(
+            repo, model, user, kind=kind, text=text, object_name=body.resume_object,
+            on_progress=tell,
+        )  # fmt: skip
+
+    return stream_response(_with_progress(work))
+
+
+def _with_progress(work: Callable[[Progress], Proposal]) -> Iterator[Frame]:
+    """Run `work` in its own thread and yield its progress as it happens.
+
+    The pipeline reports from several threads at once (one per section), so
+    reports go through a queue; this generator is the one reader. It ends
+    with the proposal, or an `error` frame carrying the same message the
+    non-streaming route would have returned.
+    """
+    reports: queue.Queue[tuple[str, dict] | None] = queue.Queue()
+    outcome: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            outcome["proposal"] = work(lambda stage, data: reports.put((stage, data)))
+        except Exception as exc:  # re-raised or reported below, on this side
+            outcome["error"] = exc
+        finally:
+            reports.put(None)
+
+    threading.Thread(target=run, daemon=True).start()
+    while (report := reports.get()) is not None:
+        stage, data = report
+        yield ("progress", {"stage": stage, **data})
+    if "error" in outcome:
+        exc = outcome["error"]
+        if isinstance(exc, HTTPException):
+            yield ("error", {"message": exc.detail, "status": exc.status_code, "retryable": False})
+            return
+        raise exc  # ModelError and the unexpected: sse._events reports them
+    yield ("proposal", outcome["proposal"].model_dump(mode="json"))
 
 
 @router.get("/dumps/{dump_id}", response_model=RawDump)

@@ -11,6 +11,15 @@
       "port": 8080
     },
     {
+      "name": "api-fake-slow",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "cd backend && ANYVIEW_FAKE_MODEL=1 ANYVIEW_FAKE_DELAY_S=2 GOOGLE_CLOUD_PROJECT=anyapps-anyview ALLOWED_EMAILS=dev@example.com DATABASE_URL=postgresql+psycopg://localhost/anyview_dev .venv/bin/uvicorn anyview.main:app --port 8080"
+      ],
+      "port": 8080
+    },
+    {
       "name": "api-vertex",
       "runtimeExecutable": "sh",
       "runtimeArgs": [

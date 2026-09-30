@@ -85,3 +85,40 @@ def test_a_credentials_stretch_is_its_own_quote_and_only_credentials_get_one():
     assert within(folded, "Terraform Associate", *stretch["a1"])
     assert not within(folded, "CKA", *stretch["a1"])
     assert "a2" not in stretch
+
+
+def test_a_quote_stitched_across_two_lines_with_an_invented_separator_is_found():
+    """The model joined the title line and the employer line with " | "; every
+    word is the document's own and in order (the case that flagged real roles)."""
+    text = "Multi-Cloud Solutions Architect\nLenovo PCCW Solutions, Singapore | Apr 2026 – Present\n- Architected"
+    assert contains(
+        text,
+        "Multi-Cloud Solutions Architect | Lenovo PCCW Solutions, Singapore | Apr 2026 – Present",
+    )
+    assert contains(text, "Multi-Cloud Solutions Architect — Lenovo PCCW Solutions")
+
+
+def test_stitched_pieces_must_be_adjacent_and_in_order():
+    text = "Multi-Cloud Solutions Architect\nsome other words\nLenovo PCCW Solutions"
+    assert not contains(
+        text, "Multi-Cloud Solutions Architect | Lenovo PCCW Solutions"
+    )  # words between
+    assert not contains("Lenovo PCCW\nArchitect", "Architect | Lenovo PCCW")  # wrong order
+    assert not contains("Architect\nLenovo", "Architect | Accenture")  # a piece that is not there
+
+
+def test_a_stitched_role_quote_still_anchors_its_stretch():
+    text = (
+        "Cloud Architect\nAccenture, Singapore | Jul 2021 – Mar 2026\n- Integrated SSO with Okta."
+    )
+    patch = Patch(
+        roles=[
+            RoleDraft(
+                key="r1",
+                company="Accenture",
+                title="Cloud Architect",
+                evidence="Cloud Architect | Accenture, Singapore | Jul 2021 – Mar 2026",
+            )
+        ]
+    )
+    assert within(normalise(text), "Integrated SSO with Okta", *spans(patch, text)["r1"])

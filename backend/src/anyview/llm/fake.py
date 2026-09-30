@@ -13,6 +13,7 @@ plausible length instead of a reply.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Iterator
 from typing import Any
 
@@ -22,17 +23,22 @@ _FAKE_USAGE = Usage(input_tokens=100, output_tokens=50, thinking_tokens=20, cach
 
 
 class FakeModel:
-    def __init__(self, replies: dict[str, Any] | None = None, *, fail: str | None = None) -> None:
+    def __init__(
+        self, replies: dict[str, Any] | None = None, *, fail: str | None = None, delay: float = 0
+    ) -> None:
         # `replies[call]` is a dict (returned as parsed JSON) or a str (returned as text).
         # `fail` names a call that should raise ModelError, to exercise error paths.
         self.replies = replies or {}
         self.fail = fail
         self.calls: list[dict[str, Any]] = []  # every invocation, for assertions
+        self.delay = delay  # seconds per call, so a local run shows progress (ANYVIEW_FAKE_DELAY_S)
 
     model = "fake"
 
     def _record(self, call: str, session_id: str, system: str, user: str) -> None:
         self.calls.append({"call": call, "session_id": session_id, "system": system, "user": user})
+        if self.delay:
+            time.sleep(self.delay)
         if self.fail == call:
             raise ModelError("fake failure", retryable=True)
         # Same usage plumbing as the real adapter (log line + sink), fake numbers.
@@ -184,9 +190,16 @@ DEFAULTS: dict[str, Any] = {
         ],
         "achievements": [],
     },
-    # No sections: a dump this long in a test takes the one-call path unless a
-    # test scripts ranges of its own (ADR 0019).
-    "segment": {"sections": []},
+    # Only dumps over 2,000 characters are segmented. This split (two jobs,
+    # then everything else as skills) is enough for a local walk-through to
+    # show several parts being read; tests script their own ranges.
+    "segment": {
+        "sections": [
+            {"kind": "experience", "start_line": 1, "end_line": 3, "job": 1},
+            {"kind": "experience", "start_line": 4, "end_line": 6, "job": 2},
+            {"kind": "skills", "start_line": 7, "end_line": 9999, "job": 0},
+        ]
+    },
     # No near-duplicates among the scripted skills (ADR 0021).
     "dedupe": {"groups": []},
     # One checked link: the Terraform bullet sits inside the Acme role's text.
