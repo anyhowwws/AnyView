@@ -90,7 +90,7 @@ def main() -> int:
             print(f"  {role.company} responsibility: {line}")
     print("\nSkill links:")
     for skill in patch.skills:
-        for target in (*skill.projects, *skill.roles):
+        for target in (*skill.projects, *skill.roles, *skill.achievements):
             quote = skill.link_evidence.get(target, "(label from an earlier dump)")
             print(f"  {skill.name} → {target}: {quote!r}")
     print("\nModel calls:")

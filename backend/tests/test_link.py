@@ -159,3 +159,15 @@ def test_names_credential_ignores_words_every_certification_shares():
     assert names_credential("Security Specialty", "AWS Certified Security – Specialty")
     assert not names_credential("AWS Certified Specialty", "AWS Certified Security – Specialty")
     assert names_credential("ML & SA Associate", "AWS Certified Solutions Architect – Associate")
+
+
+def test_the_schema_pins_skill_and_target_to_this_calls_keys_and_a_name_still_resolves():
+    fake = FakeModel(
+        {"link": {"links": [_link("Kubernetes", "r1", "Managed Amazon EKS day-2 operations")]}}
+    )
+    patch = link_skills(_patch(), TEXT, model=fake, session_id="s")
+    assert patch.skills[1].roles == ["r1"]  # "Kubernetes" answered with a name, still k2
+    from anyview.brain.link import link_schema
+
+    item = link_schema(["k1"], ["r1", "p1"])["properties"]["links"]["items"]["properties"]
+    assert item["skill"]["enum"] == ["k1"] and item["target"]["enum"] == ["r1", "p1"]
