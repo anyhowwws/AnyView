@@ -529,6 +529,7 @@ def drop_unchanged(patch: Patch, brain: Brain) -> Patch:
     would otherwise let an "A3" on an education draft resolve to an
     achievement and be compared field-for-field against it.
     """
+    _adopt_by_name(patch, brain)
     by_label = {
         e.label: e
         for group in (
@@ -595,6 +596,23 @@ def drop_unchanged(patch: Patch, brain: Brain) -> Patch:
     for entry in kept.feedback:
         entry.role, entry.project = relink(entry.role), relink(entry.project)
     return kept
+
+
+def _adopt_by_name(patch: Patch, brain: Brain) -> None:
+    """A new skill or language draft named like a live one is an update to it.
+
+    The database allows one live skill, and one live language, per name. A
+    section read on its own can propose "Terraform" as new while the garden
+    already has it, and confirming would then fail the whole reviewed patch.
+    The name is the identity the database enforces, so matching on it is not a
+    guess (ADR 0019).
+    """
+    for drafts, live in ((patch.skills, brain.skills), (patch.languages, brain.languages)):
+        label_by_name = {e.name.strip().lower(): e.label for e in live}
+        for d in drafts:
+            if d.existing is None and (label := label_by_name.get(d.name.strip().lower())):
+                log.info("draft %s names live %s; updating it instead", d.key, label)
+                d.existing = label
 
 
 def _carry_links(draft, live, label_of: dict[str, str]) -> None:

@@ -569,3 +569,13 @@ def test_only_skills_get_bracket_aliases():
         ]
     )
     assert len(merge([a, b]).education) == 2
+
+
+def test_a_new_skill_named_like_a_live_one_becomes_an_update_to_it():
+    """The database allows one live skill per name; a section read on its own
+    cannot know the garden already has "Terraform"."""
+    draft = SkillDraft(key="k1", name=" terraform ", depth=4, evidence="Terraform")
+    assert drop_unchanged(Patch(skills=[draft]), _brain(roles=[ROLE], skills=[SKILL])).is_empty()
+    changed = SkillDraft(key="k1", name="Terraform", depth=5, evidence="Terraform")
+    kept = drop_unchanged(Patch(skills=[changed]), _brain(roles=[ROLE], skills=[SKILL]))
+    assert kept.skills[0].existing == "K1"

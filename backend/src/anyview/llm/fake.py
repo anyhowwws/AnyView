@@ -133,6 +133,7 @@ DEFAULTS: dict[str, Any] = {
                 "start_date": "2021-01-01",
                 "end_date": None,
                 "level": "senior",
+                "responsibilities": ["Maintain the Terraform module library for 6 product teams"],
                 "evidence": "Acme Corp (2021–present) — Senior Cloud Architect",
             },  # fmt: skip
         ],

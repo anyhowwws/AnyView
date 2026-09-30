@@ -334,7 +334,17 @@ class Repository:
                 dump_id=dump_id,
                 proposal_id=proposal_id,
             )
-            _apply(c, uid, event.id, event.kind, payload, event.created_at)
+            try:
+                _apply(c, uid, event.id, event.kind, payload, event.created_at)
+            except sa.exc.IntegrityError as exc:
+                # One live skill or language per name. A name edited in the
+                # queue can still collide; the transaction rolls back whole.
+                if "_live_name_idx" in str(exc.orig):
+                    raise Conflict(
+                        "Your garden already has an entry with one of these names. "
+                        "Rename it, or untick it, and confirm again."
+                    ) from exc
+                raise
             c.execute(
                 _q("UPDATE proposals SET status = 'confirmed', resolved_at = now() WHERE id = :id"),
                 {"id": proposal_id},

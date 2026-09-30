@@ -576,3 +576,13 @@ def test_events_from_before_migration_006_still_replay(repo, db):
         _apply_patch(c, UID, event_id, payload)
     brain = repo.brain(UID)
     assert brain.roles[0].responsibilities == [] and brain.skills[0].role_ids == []
+
+
+def test_a_name_clash_is_a_conflict_and_writes_nothing(repo):
+    _confirm(repo, first_patch())
+    clash = Patch(skills=[SkillDraft(key="k1", name="TERRAFORM", depth=2, evidence="e")])
+    dump = repo.create_dump(UID, kind="text", text="t", object_name=None)
+    prop = repo.create_proposal(UID, dump_id=dump.id, patch=clash, model="fake")
+    with pytest.raises(Conflict, match="already has an entry"):
+        repo.confirm_proposal(UID, prop.id, clash)
+    assert len(repo.events(UID)) == 1 and repo.proposal(UID, prop.id).status == "pending"

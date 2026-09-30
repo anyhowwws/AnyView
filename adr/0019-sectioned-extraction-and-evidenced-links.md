@@ -106,7 +106,8 @@ evidence quote to the next role's or project's. Code checks that. A quote from
 the skills list justifies nothing, and a link that fails the check is dropped
 and logged. The rule the model is given: link only when the quote names the
 skill, a product that is an instance of it (EKS for Kubernetes), or the work it
-describes. The extraction call no longer proposes skill links at all.
+describes. The extraction call now links a skill only to an entry already in
+the garden (a label like `P2`), which this dump cannot quote.
 
 Each skill draft carries its links' quotes (`link_evidence`) to the review
 queue, where each link is shown with its quote and can be removed.
@@ -118,6 +119,15 @@ together, and Unicode is NFKC-normalised. A draft whose quote is still not
 found is **kept and flagged** (`unverified`). The queue shows it in its own
 section, unticked, for the user to accept or leave.
 
+### 6. One name, one skill
+
+The database allows one live skill, and one live language, per name. A section
+read on its own cannot know the garden already has "Terraform", so before the
+queue is built a new skill or language draft named like a live one becomes an
+update to it. The merge also treats a bracketed abbreviation as the same skill
+("Retrieval-Augmented Generation (RAG)" and "RAG"). A name edited in the queue
+that still collides is a 409 with a message, not a 500.
+
 ## Consequences
 
 - An upload makes 3 + *n* calls instead of 2: transcribe, segment (fast
@@ -126,13 +136,17 @@ section, unticked, for the user to accept or leave.
 - Latency is set by the experience section's call plus the segment and link
   calls. It should land close to today's single 50-second call; the ADR
   accepts it being somewhat slower.
-- Duplicate merging is by normalised name, which is exact-match. "AWS" and
+- Duplicate merging is by normalised name and bracketed alias. "AWS" and
   "Amazon Web Services" stay two skills, and the user merges them by hand.
+- On the resume that prompted this, a recall run (`scripts/extraction_recall.py`)
+  found all 14 certifications, both roles with 9 responsibilities, 8 projects
+  and 36 checked skill links, for about 26k output tokens across 10 calls.
 - Responsibilities carry no per-item quote. They are short restatements of
   bullets, covered by the role's evidence and confirmed by the user.
-- Linking reads only this dump. It does not link a new skill to a project
-  confirmed from an earlier dump, because that project's text is not here to
-  quote.
+- Linking reads only this dump. A link to a project confirmed from an earlier
+  dump still comes from the extraction call, unquoted, because that project's
+  text is not here to quote. On re-upload, a confirmed skill keeps the links it
+  had: absence is not evidence (ADR 0015).
 - Certifications still link to nothing. Tying a credential to the skills it
   demonstrates is the same linking pass with a new target kind, and a separate
   decision.
@@ -152,8 +166,8 @@ section, unticked, for the user to accept or leave.
   objection to splitting, that a bullet cut off from its employer heading is
   ambiguous, does not apply: an experience section keeps its roles and bullets
   together.
-- **Let the extraction call keep making skill links.** Its links had no quote
-  and no check, and it made few of them.
+- **Let the extraction call keep making skill links to new drafts.** Its links
+  had no quote and no check, and it made few of them.
 - **A fourth configured model (Gemini 3.8 Flash) for linking.** Cheaper per
   call, but another model id to configure and confirm in Model Garden. Linking
   runs on the judgement model at medium effort until cost says otherwise.
