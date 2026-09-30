@@ -4,7 +4,9 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, createDump, createDumpFromUpload, uploadResume } from "@/lib/api";
+import { ApiError, streamDump, streamDumpFromUpload, uploadResume } from "@/lib/api";
+import { applyProgress, startView, type IngestView } from "@/lib/ingest-progress";
+import { IngestProgress } from "@/components/brain/ingest-progress";
 import {
   CAPTURE_TEMPLATES,
   formatCapture,
@@ -24,6 +26,10 @@ export function CaptureBox({ onProposal }: Props) {
   const [formatted, setFormatted] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [stage, setStage] = useState<"idle" | "uploading" | "reading">("idle");
+  // What Donna is doing right now, from the stream's progress frames (ADR 0019).
+  const [progress, setProgress] = useState<{ view: IngestView; fromFile: boolean } | null>(null);
+  const report = (frame: Parameters<typeof applyProgress>[1]) =>
+    setProgress((p) => (p ? { ...p, view: applyProgress(p.view, frame) } : p));
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const busy = stage !== "idle";
@@ -42,6 +48,7 @@ export function CaptureBox({ onProposal }: Props) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
       setStage("idle");
+      setProgress(null);
     }
   }
 
@@ -53,7 +60,8 @@ export function CaptureBox({ onProposal }: Props) {
           e.preventDefault();
           if (!valid || busy) return;
           setStage("reading");
-          void run(() => createDump(formatted ? formatCapture(template, fields, text) : text));
+          setProgress({ view: startView(false), fromFile: false });
+          void run(() => streamDump(formatted ? formatCapture(template, fields, text) : text, report));
         }}
       >
         <label className="text-sm font-medium" htmlFor="dump">
@@ -153,19 +161,22 @@ export function CaptureBox({ onProposal }: Props) {
               if (!(f.type in UPLOAD_TYPES)) return setError("Upload a PDF, Word (.docx), PNG, JPG, or WebP file.");
               if (f.size > MAX_UPLOAD_BYTES) return setError("That file is over 10 MB.");
               setStage("uploading");
+              setProgress({ view: startView(true), fromFile: true });
               void run(async () => {
                 const object = await uploadResume(f);
                 setStage("reading");
-                return createDumpFromUpload(object);
+                return streamDumpFromUpload(object, report);
               });
             }}
           />
           <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => fileInput.current?.click()}>
             {stage === "uploading" ? "Uploading…" : "Upload resume or diagram"}
           </Button>
-          <span className="text-xs text-muted-foreground">
-            {busy ? "About 20 seconds." : "Donna drafts. You review. Only confirmed entries enter your Digital Garden."}
-          </span>
+          {!busy && (
+            <span className="text-xs text-muted-foreground">
+              Donna drafts. You review. Only confirmed entries enter your Digital Garden.
+            </span>
+          )}
         </div>
         {error && (
           <p role="alert" className="text-sm text-destructive">
@@ -173,6 +184,7 @@ export function CaptureBox({ onProposal }: Props) {
           </p>
         )}
       </form>
+      {progress && <IngestProgress view={progress.view} fromFile={progress.fromFile} />}
     </section>
   );
 }

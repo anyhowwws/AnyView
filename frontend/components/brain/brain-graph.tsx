@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Network, Search, Minus, Plus, RotateCcw, ArrowUpRight } from "lucide-react";
-import { buildBrainGraph, GRAPH_KINDS, KIND_NAMES } from "@/lib/brain-graph";
+import { buildBrainGraph, GRAPH_KINDS, KIND_COLORS, KIND_NAMES } from "@/lib/brain-graph";
 import type { Brain, EntityKind } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { layout, visibleConstellationLabels, type Lens, type Territory } from "@/lib/constellation";
@@ -19,7 +19,7 @@ function territoryName(t: Territory): string {
   return name.length > 28 ? name.slice(0, 27) + "…" : name;
 }
 
-const COLORS: Record<EntityKind, string> = { role: "#ffbe72", project: "#75e4cf", story: "#a5a3ff", skill: "#76c8ff", achievement: "#f1d78a", education: "#ed9dbf", language: "#b7da87", feedback: "#f2977a" };
+const COLORS = KIND_COLORS;
 
 export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => void }) {
   const { nodes, edges } = useMemo(() => buildBrainGraph(brain), [brain]);

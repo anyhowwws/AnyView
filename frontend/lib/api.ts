@@ -1,5 +1,6 @@
 import { idToken } from "@/lib/auth";
 import { readSse } from "@/lib/sse";
+import type { ProgressFrame } from "@/lib/ingest-progress";
 import type {
   Answer,
   Brain,
@@ -96,6 +97,50 @@ export const getDump = (id: string) => request<RawDump>("GET", `/brain/dumps/${i
 export const createDump = (text: string) => post<Proposal>("/brain/dumps", { text });
 export const createDumpFromUpload = (resumeObject: string) =>
   post<Proposal>("/brain/dumps/from-upload", { resume_object: resumeObject });
+
+/** `createDump`, streamed: reports each step through onProgress (ADR 0019). */
+export const streamDump = (text: string, onProgress: (frame: ProgressFrame) => void) =>
+  streamProposal("/brain/dumps/stream", { text }, onProgress);
+
+/** `createDumpFromUpload`, streamed. */
+export const streamDumpFromUpload = (resumeObject: string, onProgress: (frame: ProgressFrame) => void) =>
+  streamProposal("/brain/dumps/from-upload/stream", { resume_object: resumeObject }, onProgress);
+
+async function streamProposal(
+  path: string,
+  body: unknown,
+  onProgress: (frame: ProgressFrame) => void,
+): Promise<Proposal> {
+  const auth = await authHeaders();
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...auth },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
+  }
+  if (!res.ok) throw await toApiError(res);
+  if (!res.body) throw new ApiError("Empty response from the API.", 502, true);
+
+  let proposal: Proposal | null = null;
+  for await (const { event, data } of readSse(res.body)) {
+    if (event === "progress") {
+      onProgress(data as ProgressFrame);
+    } else if (event === "proposal") {
+      proposal = data as Proposal;
+    } else if (event === "error") {
+      const { message, status, retryable } = data as { message: string; status?: number; retryable: boolean };
+      throw new ApiError(message, status ?? 502, retryable);
+    } else if (event === "done") {
+      if (proposal) return proposal;
+      break;
+    }
+  }
+  throw new ApiError("The connection closed before Donna finished. Please try again.", 502, true);
+}
 export const confirmProposal = (id: string, patch: Patch) =>
   post<EventOut>(`/brain/proposals/${id}/confirm`, { patch });
 export const discardProposal = (id: string) => post<Brain>(`/brain/proposals/${id}/discard`, {});
