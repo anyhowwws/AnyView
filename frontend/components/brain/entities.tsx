@@ -50,7 +50,8 @@ export function Entities({ brain, onChanged }: Props) {
         <div key={role.id} className="space-y-3">
           <EntityCard kind="role" entity={role} title={`${role.title} · ${role.company}`} onChanged={onChanged}
             meta={`${role.start_date?.slice(0, 7) ?? "?"} → ${role.end_date?.slice(0, 7) ?? "now"}${role.level ? ` · ${role.level}` : ""}`}
-            fields={[["company", "Company"], ["title", "Title"], ["level", "Level"], ["start_date", "Start (YYYY-MM-DD)"], ["end_date", "End (YYYY-MM-DD)"]]}
+            fields={[["company", "Company"], ["title", "Title"], ["level", "Level"], ["start_date", "Start (YYYY-MM-DD)"], ["end_date", "End (YYYY-MM-DD)"], ["responsibilities", "Responsibilities, one per line", "lines"]]}
+            details={role.responsibilities ?? []}
           />
           <div className="ml-4 space-y-3 border-l pl-4">
             {projectsOf(role.id).map((p) => (
@@ -78,7 +79,7 @@ export function Entities({ brain, onChanged }: Props) {
           <div className="grid gap-2 sm:grid-cols-2">
             {brain.skills.map((k) => (
               <EntityCard key={k.id} kind="skill" entity={k} title={k.name} onChanged={onChanged}
-                meta={`depth ${k.depth}/5${k.project_ids.length ? ` · evidence: ${k.project_ids.map((id) => labelOf.get(id)).filter(Boolean).join(", ")}` : ""}`}
+                meta={`depth ${k.depth}/5${usedIn(k, labelOf)}`}
                 fields={[["name", "Skill"], ["depth", "Depth 1–5"]]}
               />
             ))}
@@ -167,17 +168,30 @@ function FeedbackCard({ feedback, labelOf, onChanged }: { feedback: Feedback; la
   );
 }
 
+/** " · used in P1, R2": the projects and roles that evidence a skill (ADR 0019). */
+function usedIn(skill: Skill, labelOf: Map<string, string>): string {
+  const labels = [...skill.project_ids, ...(skill.role_ids ?? [])].map((id) => labelOf.get(id)).filter(Boolean);
+  return labels.length ? ` · used in ${labels.join(", ")}` : "";
+}
+
 type Entity = Role | Project | Story | Skill | Achievement | Education | Language | Feedback;
-type FieldSpec = [name: string, label: string, multiline?: boolean];
+// "lines" edits a list of strings as one textarea, a line per item.
+type FieldSpec = [name: string, label: string, multiline?: boolean | "lines"];
+
+function asText(value: unknown): string {
+  if (Array.isArray(value)) return value.join("\n");
+  return value == null ? "" : String(value);
+}
 
 function EntityCard({
-  kind, entity, title, meta, badges, fields, footnote, onChanged,
+  kind, entity, title, meta, badges, details, fields, footnote, onChanged,
 }: {
   kind: EntityKind;
   entity: Entity;
   title: string;
   meta?: string;
   badges?: string[];
+  details?: string[];
   fields: FieldSpec[];
   footnote?: string;
   onChanged: Props["onChanged"];
@@ -191,7 +205,7 @@ function EntityCard({
   const raw = entity as unknown as Record<string, unknown>;
 
   function startEdit() {
-    setValues(Object.fromEntries(fields.map(([n]) => [n, raw[n] == null ? "" : String(raw[n])])));
+    setValues(Object.fromEntries(fields.map(([n]) => [n, asText(raw[n])])));
     setEditing(true);
   }
 
@@ -209,9 +223,10 @@ function EntityCard({
 
   async function save() {
     const changed: Record<string, unknown> = {};
-    for (const [n] of fields) {
-      const before = raw[n] == null ? "" : String(raw[n]);
-      if (values[n] !== before) changed[n] = n === "depth" ? Number(values[n]) : values[n] || null;
+    for (const [n, , multi] of fields) {
+      if (values[n] === asText(raw[n])) continue;
+      if (multi === "lines") changed[n] = values[n].split("\n").map((l) => l.trim()).filter(Boolean);
+      else changed[n] = n === "depth" ? Number(values[n]) : values[n] || null;
     }
     if (Object.keys(changed).length === 0) return setEditing(false);
     await act(async () => {
@@ -234,6 +249,11 @@ function EntityCard({
             <p className="mt-1 flex flex-wrap gap-1">
               {badges.map((b) => <Badge key={b} variant="secondary">{b.replace("_", " ")}</Badge>)}
             </p>
+          )}
+          {details && details.length > 0 && (
+            <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
+              {details.map((d) => <li key={d}>{d}</li>)}
+            </ul>
           )}
           {footnote && <p className="mt-1 text-xs text-muted-foreground">{footnote}</p>}
         </div>
@@ -266,7 +286,7 @@ function EntityCard({
               "aria-label": label,
               onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setValues((v) => ({ ...v, [n]: e.target.value })),
             };
-            return <div key={n} className={multi ? "sm:col-span-2" : ""}>{multi ? <Textarea rows={2} {...props} /> : <Input {...props} />}</div>;
+            return <div key={n} className={multi ? "sm:col-span-2" : ""}>{multi ? <Textarea rows={multi === "lines" ? 4 : 2} {...props} /> : <Input {...props} />}</div>;
           })}
           <div className="flex gap-2 sm:col-span-2">
             <Button type="submit" size="sm" disabled={busy}>{busy ? "Saving…" : "Save"}</Button>

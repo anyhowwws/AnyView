@@ -18,7 +18,7 @@ export const KIND_NAMES: Record<EntityKind, string> = {
 /** Read-only view of confirmed relationships. No inferred or synthetic edges. */
 export function buildBrainGraph(brain: Brain): { nodes: BrainNode[]; edges: BrainEdge[] } {
   const nodes: BrainNode[] = [
-    ...brain.roles.map((r) => ({ ...r, kind: "role" as const, title: r.company, detail: [r.title, r.start_date, r.end_date ?? "Present"].filter(Boolean).join(" · ") })),
+    ...brain.roles.map((r) => ({ ...r, kind: "role" as const, title: r.company, detail: [[r.title, r.start_date, r.end_date ?? "Present"].filter(Boolean).join(" · "), ...(r.responsibilities ?? []).map((line) => `• ${line}`)].join("\n") })),
     ...brain.projects.map((p) => ({ ...p, kind: "project" as const, title: p.name, detail: [p.problem, p.action, p.result, p.tech.join(", ")].filter(Boolean).join("\n\n") })),
     ...brain.stories.map((s) => ({ ...s, kind: "story" as const, detail: [s.situation, s.task, s.action, s.result, s.competencies.join(", ")].filter(Boolean).join("\n\n") })),
     ...brain.skills.map((s) => ({ ...s, kind: "skill" as const, title: s.name, detail: `Self-rated depth ${s.depth} of 5` })),
@@ -37,7 +37,10 @@ export function buildBrainGraph(brain: Brain): { nodes: BrainNode[]; edges: Brai
     link(s.role_id, s.id, "Story from role");
     link(s.project_id, s.id, "Story from project");
   });
-  brain.skills.forEach((s) => s.project_ids.forEach((p) => link(p, s.id, "Evidence for skill")));
+  brain.skills.forEach((s) => {
+    s.project_ids.forEach((p) => link(p, s.id, "Evidence for skill"));
+    (s.role_ids ?? []).forEach((r) => link(r, s.id, "Skill used in role"));
+  });
   (brain.feedback ?? []).forEach((f) => {
     link(f.role_id, f.id, "Feedback on role");
     link(f.project_id, f.id, "Feedback on project");

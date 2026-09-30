@@ -7,10 +7,10 @@ import type { Brain } from "../lib/types.ts";
 const source = { raw_dump_id: "dump", event_id: 1 };
 function fixture(): Brain {
   return {
-    roles: [{ id: "r", label: "R1", company: "Test employer", title: "Architect", start_date: null, end_date: null, level: null, source }],
+    roles: [{ id: "r", label: "R1", company: "Test employer", title: "Architect", start_date: null, end_date: null, level: null, responsibilities: [], source }],
     projects: [{ id: "p", label: "P1", role_id: "r", name: "Migration", problem: null, action: null, result: "Reduced costs", tech: [], metrics: [], source }],
     stories: [{ id: "s", label: "S1", role_id: "r", project_id: "p", title: "Cutover", situation: null, task: null, action: null, result: null, competencies: [], source }],
-    skills: [{ id: "k", label: "K1", name: "Terraform", depth: 4, project_ids: ["p"], source }],
+    skills: [{ id: "k", label: "K1", name: "Terraform", depth: 4, project_ids: ["p"], role_ids: [], source }],
     achievements: [{ id: "a", label: "A1", title: "Certification", kind: "credential", issuer: null, achieved_on: null, source }],
     education: [], languages: [], feedback: [],
     coverage: { competencies: [], roles: [], cells: {} }, pending_proposals: 2,
@@ -23,6 +23,15 @@ test("maps confirmed relationships and preserves isolated achievements", () => {
   assert.deepEqual(graph.edges.map((e) => [e.from, e.to]), [["r", "p"], ["r", "s"], ["p", "s"], ["p", "k"]]);
   assert.equal(graph.nodes.find((n) => n.id === "a")?.title, "Certification");
   assert.ok(graph.edges.every((e) => e.from !== "a" && e.to !== "a"));
+});
+
+test("a skill used in a role's ongoing work links to the role (ADR 0019)", () => {
+  const brain = fixture();
+  brain.roles[0].responsibilities = ["EKS day-2 operations"];
+  brain.skills[0].role_ids = ["r"];
+  const graph = buildBrainGraph(brain);
+  assert.ok(graph.edges.some((e) => e.from === "r" && e.to === "k" && e.relation === "Skill used in role"));
+  assert.match(graph.nodes.find((n) => n.id === "r")?.detail ?? "", /• EKS day-2 operations/);
 });
 
 test("does not draw links to retired or missing entities", () => {
