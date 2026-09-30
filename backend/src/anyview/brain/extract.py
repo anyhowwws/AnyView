@@ -101,7 +101,8 @@ Rules:
   otherwise: links to this patch's own drafts are made by a separate step.
 - `evidence` must be a verbatim quote from the dump (a sentence or fragment, under 300
   characters) that justifies the draft. Copy it exactly; do not paraphrase. A list line is
-  valid evidence for each item in it.
+  valid evidence for each item in it. Quote from one line where you can; never join lines
+  with a separator of your own (" | ", " — ").
 - Stories are STAR-shaped narratives; tag each with competencies from exactly this list:
   {", ".join(COMPETENCY_KEYS)}. Use only the ones the story clearly shows.
 - A skill is one specific thing the candidate could be asked about: a technology, platform,
