@@ -354,6 +354,8 @@ export interface SkillDraft extends Draft {
   achievements: string[];
   /** Link target (draft key or label) → the quote that justified it. */
   link_evidence: Record<string, string>;
+  /** Other names folded into this skill as near-duplicates (ADR 0021). */
+  merged_from?: string[];
 }
 export interface AchievementDraft extends Draft {
   kind: "achievement" | "credential";

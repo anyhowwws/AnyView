@@ -340,6 +340,13 @@ function DraftCard<G extends Group>({
               />
               <span className="tabular-nums">{(d.depth as number) ?? 3}/5</span>
             </label>
+            {((d.merged_from as string[]) ?? []).length > 0 && (
+              // Names folded into this one (ADR 0021). To split one back out,
+              // capture it on its own; confirming this card does not add it.
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                Also found as {((d.merged_from as string[]) ?? []).join(", ")}, merged into this one.
+              </p>
+            )}
             <SkillLinks
               projects={(d.projects as string[]) ?? []}
               roles={(d.roles as string[]) ?? []}
