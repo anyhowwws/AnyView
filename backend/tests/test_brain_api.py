@@ -333,6 +333,9 @@ def test_a_streamed_upload_reports_each_step_then_the_proposal(client, store):
         events = _sse_events(r)
     stages = [data["stage"] for event, data in events if event == "progress"]
     assert stages == ["reading", "read", "sections", "section_done", "tidying", "linking"]
+    done = next(d for e, d in events if e == "progress" and d["stage"] == "section_done")
+    assert done["names"][0] == "Senior Cloud Architect, Acme Corp"  # the role leads
+    assert "Terraform" in done["names"] and len(done["names"]) == done["found"]
     sections = next(d for e, d in events if e == "progress" and d["stage"] == "sections")
     assert sections["sections"] == [{"id": 0, "kind": "document", "label": ""}]
     kinds = [event for event, _ in events]

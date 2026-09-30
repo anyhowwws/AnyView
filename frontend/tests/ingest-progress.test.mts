@@ -18,8 +18,9 @@ test("an upload walks upload → read → parts → tidy → link, naming what i
   assert.equal(view.step, "parts");
   assert.equal(headline(view), "Reading 2 parts at once");
   assert.deepEqual(view.parts.map(partName), ["Multi-Cloud Solutions Architect", "Certifications"]);
-  view = applyProgress(view, { stage: "section_done", id: 1, found: 14 });
+  view = applyProgress(view, { stage: "section_done", id: 1, found: 14, names: ["AWS Certified Security - Specialty"] });
   assert.deepEqual(view.parts.map((p) => [p.done, p.found]), [[false, null], [true, 14]]);
+  assert.deepEqual(view.parts.map((p) => p.names), [[], ["AWS Certified Security - Specialty"]]);
   view = applyProgress(view, { stage: "section_done", id: 0, found: 9 });
   assert.equal(headline(view), "Putting the pieces together");
   view = applyProgress(view, { stage: "tidying", skills: 52 });

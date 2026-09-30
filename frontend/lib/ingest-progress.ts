@@ -14,6 +14,8 @@ export interface Part {
   label: string;
   done: boolean;
   found: number | null;
+  /** What this part found, by name, once read: shown while the rest are still being read. */
+  names: string[];
 }
 
 export interface IngestView {
@@ -28,7 +30,7 @@ export type ProgressFrame =
   | { stage: "reading"; file: string }
   | { stage: "read"; characters: number }
   | { stage: "sections"; sections: { id: number; kind: string; label: string }[] }
-  | { stage: "section_done"; id: number; found: number }
+  | { stage: "section_done"; id: number; found: number; names?: string[] }
   | { stage: "tidying"; skills: number }
   | { stage: "linking"; skills: number };
 
@@ -46,12 +48,14 @@ export function applyProgress(view: IngestView, frame: ProgressFrame): IngestVie
       return {
         ...view,
         step: "parts",
-        parts: frame.sections.map((s) => ({ ...s, done: false, found: null })),
+        parts: frame.sections.map((s) => ({ ...s, done: false, found: null, names: [] })),
       };
     case "section_done":
       return {
         ...view,
-        parts: view.parts.map((p) => (p.id === frame.id ? { ...p, done: true, found: frame.found } : p)),
+        parts: view.parts.map((p) =>
+          p.id === frame.id ? { ...p, done: true, found: frame.found, names: frame.names ?? [] } : p,
+        ),
       };
     case "tidying":
       return { ...view, step: "tidy" };

@@ -128,12 +128,15 @@
 .ingest-steps li[data-state="active"] .ingest-step-mark { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent); }
 .ingest-steps li[data-state="done"] .ingest-step-mark { border-color: var(--primary); background: var(--primary); }
 .ingest-count { margin-top: 18px; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
-.ingest-parts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 20px; margin-top: 8px; }
-.ingest-parts li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 36px; font-size: 13.5px; }
+.ingest-parts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 20px; margin-top: 8px; align-items: start; }
+.ingest-parts > li { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 36px; font-size: 13.5px; }
 .ingest-part-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); transition: color .3s; }
-.ingest-parts li[data-done="true"] .ingest-part-name { color: var(--foreground); }
+.ingest-parts > li[data-done="true"] .ingest-part-name { color: var(--foreground); }
 .ingest-part-state { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted-foreground); }
-.ingest-parts li[data-done="true"] .ingest-part-state { color: var(--primary); }
+.ingest-parts > li[data-done="true"] .ingest-part-state { color: var(--primary); }
+.ingest-found { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 2px 0 8px; }
+.ingest-found li { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px; font-size: 11.5px; line-height: 1.6; color: var(--foreground); background: color-mix(in srgb, var(--accent) 60%, transparent); }
+.ingest-found .ingest-found-more { border-style: dashed; background: none; color: var(--muted-foreground); }
 .ingest-node { position: relative; display: grid; place-items: center; width: 18px; height: 18px; }
 .ingest-node::before { content: ""; position: absolute; inset: 2px; border-radius: 999px; border: 1.5px solid var(--node); opacity: .55; }
 .ingest-node-core { width: 10px; height: 10px; border-radius: 999px; background: var(--node); }

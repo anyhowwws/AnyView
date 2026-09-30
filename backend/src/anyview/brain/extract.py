@@ -38,7 +38,7 @@ from pydantic import ValidationError
 from anyview.brain.dedupe import Group, near_duplicates
 from anyview.brain.evidence import contains, normalise
 from anyview.brain.link import link_skills
-from anyview.brain.models import LABEL_PREFIX, Brain, EntityKind, Patch, SkillDraft
+from anyview.brain.models import LABEL_PREFIX, Brain, EntityKind, Patch, RoleDraft, SkillDraft
 from anyview.brain.sections import Section, segment
 from anyview.llm.adapter import Effort, Model
 
@@ -327,7 +327,8 @@ def propose(
             session_id=session_id,
             section=part if sections else None,
         )
-        tell("section_done", {"id": i, "found": len(_all(patch))})
+        found = _all(patch)
+        tell("section_done", {"id": i, "found": len(found), "names": _names(found)})
         return patch
 
     # One call per section, all at once. `pool.map` returns results in section
@@ -344,6 +345,32 @@ def propose(
     patch = fold_duplicates(patch, groups, garden_skills)
     tell("linking", {"skills": len(patch.skills)})
     return link_skills(patch, dump_text, model=model, session_id=session_id)
+
+
+# How many names one section shows while the rest are still being read.
+NAMES_SHOWN = 8
+
+
+def _names(drafts: list) -> list[str]:
+    """What a section found, by name, for the progress view: roles first, so
+    a job's own title leads. Drafts, not confirmed entries; the queue is where
+    they are checked."""
+    order = {"RoleDraft": 0, "ProjectDraft": 1, "AchievementDraft": 2}
+    names = []
+    for d in sorted(drafts, key=lambda d: order.get(type(d).__name__, 3)):
+        name = next(
+            (
+                getattr(d, f)
+                for f in ("title", "name", "institution", "given_by")
+                if getattr(d, f, None)
+            ),
+            None,
+        )
+        if isinstance(d, RoleDraft):
+            name = f"{d.title}, {d.company}"
+        if name and name not in names:
+            names.append(name)
+    return names[:NAMES_SHOWN]
 
 
 def _describe(i: int, part: Section) -> dict:

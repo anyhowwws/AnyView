@@ -59,11 +59,13 @@ export function IngestProgress({ view, fromFile }: { view: IngestView; fromFile:
         })}
       </ol>
 
-      {view.parts.length > 1 && (
+      {view.parts.length > 0 && (
         <>
-          <p className="ingest-count">
-            {done} of {view.parts.length} parts read
-          </p>
+          {view.parts.length > 1 && (
+            <p className="ingest-count">
+              {done} of {view.parts.length} parts read
+            </p>
+          )}
           <ul className="ingest-parts">
             {view.parts.map((part, i) => {
               const kind = PART_KIND[part.kind];
@@ -95,6 +97,24 @@ export function IngestProgress({ view, fromFile }: { view: IngestView; fromFile:
                   <span className="ingest-part-state">
                     {part.done ? entriesLabel(part.found ?? 0) : "Reading"}
                   </span>
+                  {part.names.length > 0 && (
+                    // What this part found, arriving while the others are still read.
+                    <ul className="ingest-found" aria-label={`Found in ${partName(part)}`}>
+                      {part.names.map((name, n) => (
+                        <motion.li
+                          key={name}
+                          initial={reduce ? false : { opacity: 0, x: -4 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ duration: 0.3, delay: reduce ? 0 : n * 0.06, ease: [0.16, 1, 0.3, 1] }}
+                        >
+                          {name}
+                        </motion.li>
+                      ))}
+                      {(part.found ?? 0) > part.names.length && (
+                        <li className="ingest-found-more">and {(part.found ?? 0) - part.names.length} more</li>
+                      )}
+                    </ul>
+                  )}
                 </motion.li>
               );
             })}
