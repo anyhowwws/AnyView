@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { ApiError, editEntity, getDump, retireEntity, type EventOut } from "@/lib/api";
+import { EntryForm } from "@/components/brain/entry-form";
+import { ApiError, addEntity, editEntity, getDump, retireEntity, type EventOut } from "@/lib/api";
+import { ENTRY_FIELDS, monthLabel, type FieldSpec } from "@/lib/entry-fields";
 import type { Achievement, Brain, Education, EntityKind, Feedback, Language, Project, Role, Skill, Story } from "@/lib/types";
 
 interface Props {
@@ -17,6 +18,8 @@ interface Props {
  *  and Achievements. Every card can be edited in place or retired, and links
  *  to the dump it came from. */
 export function Entities({ brain, onChanged }: Props) {
+  // Which add form is open, and where: at the top, or under one role.
+  const [adding, setAdding] = useState<{ kind: EntityKind; roleId?: string } | null>(null);
   // During a rolling deploy an older API response can lack newly added arrays.
   const education = brain.education ?? [];
   const languages = brain.languages ?? [];
@@ -33,24 +36,53 @@ export function Entities({ brain, onChanged }: Props) {
   );
   const empty = brain.roles.length + brain.projects.length + brain.stories.length + brain.skills.length + brain.achievements.length + education.length + languages.length + feedback.length === 0;
 
-  if (empty) {
-    return (
-      <section className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-        Your Digital Garden is empty. Capture a role, project, story, certification, education entry, language, feedback, or upload a resume or diagram.
-      </section>
-    );
-  }
+  const added = (out: EventOut) => {
+    // Show the user where their new entry landed.
+    const before = new Set(labelOf.keys());
+    onChanged(out);
+    setAdding(null);
+    const fresh = allEntities(out.brain).find((e) => !before.has(e.id));
+    if (fresh) highlightSoon(fresh.id);
+  };
+  const addForm = (roleId?: string) =>
+    adding && adding.roleId === roleId ? (
+      <AddEntry kind={adding.kind} brain={brain} roleId={roleId} onAdded={added} onCancel={() => setAdding(null)} />
+    ) : null;
 
   return (
     <section aria-labelledby="entities-heading" className="space-y-6">
-      <h2 id="entities-heading" className="text-lg font-semibold tracking-tight">
-        What&apos;s growing in your Digital Garden
-      </h2>
+      <div className="space-y-3">
+        <h2 id="entities-heading" className="text-lg font-semibold tracking-tight">
+          What&apos;s growing in your Digital Garden
+        </h2>
+        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Add an entry">
+          <span className="mr-1 text-sm text-muted-foreground">Add</span>
+          {ADDABLE.map((kind) => (
+            <Button
+              key={kind}
+              type="button"
+              variant={adding?.kind === kind && !adding.roleId ? "default" : "outline"}
+              size="sm"
+              className="h-9 gap-1.5"
+              aria-pressed={adding?.kind === kind && !adding.roleId}
+              onClick={() => setAdding(adding?.kind === kind && !adding.roleId ? null : { kind })}
+            >
+              <Plus className="size-3.5" aria-hidden />
+              {KIND_NAME[kind]}
+            </Button>
+          ))}
+        </div>
+        {addForm(undefined)}
+      </div>
+      {empty && !adding && (
+        <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+          Your Digital Garden is empty. Add an entry above, capture a thought for Donna, or upload a resume.
+        </p>
+      )}
       {brain.roles.map((role) => (
         <div key={role.id} className="space-y-3">
           <EntityCard kind="role" entity={role} title={`${role.title} · ${role.company}`} onChanged={onChanged}
-            meta={`${role.start_date?.slice(0, 7) ?? "?"} → ${role.end_date?.slice(0, 7) ?? "now"}${role.level ? ` · ${role.level}` : ""}`}
-            fields={[["company", "Company"], ["title", "Title"], ["level", "Level"], ["start_date", "Start (YYYY-MM-DD)"], ["end_date", "End (YYYY-MM-DD)"], ["responsibilities", "Responsibilities, one per line", "lines"]]}
+            meta={`${role.start_date ? `${monthLabel(role.start_date)} – ${monthLabel(role.end_date) || "Present"}` : "Dates not set"}${role.level ? ` · ${role.level}` : ""}`}
             details={role.responsibilities ?? []}
           />
           <div className="ml-4 space-y-3 border-l pl-4">
@@ -63,6 +95,18 @@ export function Entities({ brain, onChanged }: Props) {
               </div>
             ))}
             {storiesOf(role.id, null).map((s) => <StoryCard key={s.id} story={s} labelOf={labelOf} onChanged={onChanged} />)}
+            {addForm(role.id)}
+            {adding?.roleId !== role.id && (
+              <div className="flex flex-wrap gap-1">
+                {(["project", "story"] as const).map((kind) => (
+                  <Button key={kind} type="button" variant="ghost" size="sm" className="h-8 gap-1 text-muted-foreground"
+                    onClick={() => setAdding({ kind, roleId: role.id })}>
+                    <Plus className="size-3.5" aria-hidden />
+                    {kind === "project" ? "Project" : "Story"} at {role.company}
+                  </Button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       ))}
@@ -79,8 +123,7 @@ export function Entities({ brain, onChanged }: Props) {
           <div className="grid gap-2 sm:grid-cols-2">
             {brain.skills.map((k) => (
               <EntityCard key={k.id} kind="skill" entity={k} title={k.name} onChanged={onChanged}
-                meta={`depth ${k.depth}/5${usedIn(k, labelOf)}`}
-                fields={[["name", "Skill"], ["depth", "Depth 1–5"]]}
+                meta={`depth ${k.depth}/5 · ${DEPTH_NAME[k.depth] ?? ""}${usedIn(k, labelOf)}`}
               />
             ))}
           </div>
@@ -92,8 +135,7 @@ export function Entities({ brain, onChanged }: Props) {
           <div className="grid gap-2 sm:grid-cols-2">
             {brain.achievements.map((a) => (
               <EntityCard key={a.id} kind="achievement" entity={a} title={a.title} onChanged={onChanged}
-                meta={[a.kind, a.issuer, a.achieved_on].filter(Boolean).join(" · ")}
-                fields={[["title", "Title"], ["issuer", "Issuer"], ["achieved_on", "Date (YYYY-MM-DD)"]]}
+                meta={[a.kind === "credential" ? "Certification" : "Achievement", a.issuer, monthLabel(a.achieved_on)].filter(Boolean).join(" · ")}
               />
             ))}
           </div>
@@ -104,8 +146,7 @@ export function Entities({ brain, onChanged }: Props) {
           <h3 className="text-sm font-medium text-muted-foreground">Education</h3>
           <div className="grid gap-2 sm:grid-cols-2">
             {education.map((e) => <EntityCard key={e.id} kind="education" entity={e} title={e.institution} onChanged={onChanged}
-              meta={[e.qualification, e.field, e.start_date?.slice(0, 7), e.end_date?.slice(0, 7)].filter(Boolean).join(" · ")}
-              fields={[["institution", "Institution"], ["qualification", "Qualification"], ["field", "Field of study"], ["start_date", "Start (YYYY-MM-DD)"], ["end_date", "End (YYYY-MM-DD)"]]}
+              meta={[e.qualification, e.field, e.start_date ? `${monthLabel(e.start_date)} – ${monthLabel(e.end_date) || "Ongoing"}` : e.end_date ? `Finished ${monthLabel(e.end_date)}` : null].filter(Boolean).join(" · ")}
             />)}
           </div>
         </div>
@@ -116,7 +157,6 @@ export function Entities({ brain, onChanged }: Props) {
           <div className="grid gap-2 sm:grid-cols-2">
             {languages.map((language) => <EntityCard key={language.id} kind="language" entity={language} title={language.name} onChanged={onChanged}
               meta={language.proficiency ?? "proficiency not recorded"}
-              fields={[["name", "Language"], ["proficiency", "Proficiency"]]}
             />)}
           </div>
         </div>
@@ -137,7 +177,6 @@ function ProjectCard({ project, onChanged }: { project: Project; onChanged: Prop
   return (
     <EntityCard kind="project" entity={project} title={project.name} onChanged={onChanged}
       meta={[project.result, project.tech.length ? project.tech.join(", ") : null].filter(Boolean).join(" · ")}
-      fields={[["name", "Name"], ["problem", "Problem", true], ["action", "What you did", true], ["result", "Result", true]]}
     />
   );
 }
@@ -147,7 +186,6 @@ function StoryCard({ story, labelOf, onChanged }: { story: Story; labelOf: Map<s
     <EntityCard kind="story" entity={story} title={story.title} onChanged={onChanged}
       meta={story.result ?? "no result recorded"}
       badges={story.competencies}
-      fields={[["title", "Title"], ["situation", "Situation", true], ["task", "Task", true], ["action", "Action", true], ["result", "Result", true]]}
       footnote={story.project_id ? `part of ${labelOf.get(story.project_id) ?? "a project"}` : undefined}
     />
   );
@@ -161,8 +199,7 @@ function FeedbackCard({ feedback, labelOf, onChanged }: { feedback: Feedback; la
       : undefined;
   return (
     <EntityCard kind="feedback" entity={feedback} title={feedback.given_by} onChanged={onChanged}
-      meta={[feedback.content, feedback.received_on].filter(Boolean).join(" · ")}
-      fields={[["given_by", "Who said it"], ["content", "What they said", true], ["received_on", "Date (YYYY-MM-DD)"]]}
+      meta={[feedback.content, monthLabel(feedback.received_on)].filter(Boolean).join(" · ")}
       footnote={about ? `about ${about}` : undefined}
     />
   );
@@ -177,16 +214,9 @@ function usedIn(skill: Skill, labelOf: Map<string, string>): string {
 }
 
 type Entity = Role | Project | Story | Skill | Achievement | Education | Language | Feedback;
-// "lines" edits a list of strings as one textarea, a line per item.
-type FieldSpec = [name: string, label: string, multiline?: boolean | "lines"];
-
-function asText(value: unknown): string {
-  if (Array.isArray(value)) return value.join("\n");
-  return value == null ? "" : String(value);
-}
 
 function EntityCard({
-  kind, entity, title, meta, badges, details, fields, footnote, onChanged,
+  kind, entity, title, meta, badges, details, footnote, onChanged,
 }: {
   kind: EntityKind;
   entity: Entity;
@@ -194,22 +224,14 @@ function EntityCard({
   meta?: string;
   badges?: string[];
   details?: string[];
-  fields: FieldSpec[];
   footnote?: string;
   onChanged: Props["onChanged"];
 }) {
   const [editing, setEditing] = useState(false);
   const [confirmingRetire, setConfirmingRetire] = useState(false);
-  const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
-  const raw = entity as unknown as Record<string, unknown>;
-
-  function startEdit() {
-    setValues(Object.fromEntries(fields.map(([n]) => [n, asText(raw[n])])));
-    setEditing(true);
-  }
 
   async function act(fn: () => Promise<void>) {
     setBusy(true);
@@ -223,23 +245,9 @@ function EntityCard({
     }
   }
 
-  async function save() {
-    const changed: Record<string, unknown> = {};
-    for (const [n, , multi] of fields) {
-      if (values[n] === asText(raw[n])) continue;
-      if (multi === "lines") changed[n] = values[n].split("\n").map((l) => l.trim()).filter(Boolean);
-      else changed[n] = n === "depth" ? Number(values[n]) : values[n] || null;
-    }
-    if (Object.keys(changed).length === 0) return setEditing(false);
-    await act(async () => {
-      onChanged(await editEntity(kind, entity.id, changed));
-      setEditing(false);
-    });
-  }
-
   return (
     // The id lets Discover's citation chips jump straight to this card.
-    <article id={`entity-${entity.id}`} tabIndex={-1} className="entity-card rounded-lg border p-3">
+    <article id={`entity-${entity.id}`} tabIndex={-1} className={`entity-card rounded-lg border p-3 ${editing ? "sm:col-span-2" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-medium">
@@ -261,7 +269,7 @@ function EntityCard({
         </div>
         {!editing && !confirmingRetire && (
           <div className="flex shrink-0 gap-1">
-            <Button variant="ghost" size="sm" className="h-9 sm:h-7" onClick={startEdit} aria-label={`Edit ${title}`}>Edit</Button>
+            <Button variant="ghost" size="sm" className="h-9 sm:h-7" onClick={() => { setError(null); setEditing(true); }} aria-label={`Edit ${title}`}>Edit</Button>
             <Button variant="ghost" size="sm" className="h-9 sm:h-7" disabled={busy} onClick={() => setConfirmingRetire(true)} aria-label={`Retire ${title}`}>
               Retire
             </Button>
@@ -280,23 +288,21 @@ function EntityCard({
         )}
       </div>
       {editing && (
-        <form className="mt-3 grid gap-2 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); void save(); }}>
-          {fields.map(([n, label, multi]) => {
-            const props = {
-              value: values[n] ?? "",
-              placeholder: label,
-              "aria-label": label,
-              onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setValues((v) => ({ ...v, [n]: e.target.value })),
-            };
-            return <div key={n} className={multi ? "sm:col-span-2" : ""}>{multi ? <Textarea rows={multi === "lines" ? 4 : 2} {...props} /> : <Input {...props} />}</div>;
-          })}
-          <div className="flex gap-2 sm:col-span-2">
-            <Button type="submit" size="sm" disabled={busy}>{busy ? "Saving…" : "Save"}</Button>
-            <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)}>Cancel</Button>
-          </div>
-        </form>
+        <div className="mt-3 rounded-lg border bg-muted/30 p-3">
+          <EntryForm
+            specs={ENTRY_FIELDS[kind]}
+            initial={entity as unknown as Record<string, unknown>}
+            submitLabel="Save changes"
+            busyLabel="Saving…"
+            busy={busy}
+            error={error}
+            onlyChanged
+            onSubmit={(changed) => void act(async () => { onChanged(await editEntity(kind, entity.id, changed)); setEditing(false); })}
+            onCancel={() => { setEditing(false); setError(null); }}
+          />
+        </div>
       )}
-      {error && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
+      {error && !editing && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
       <div className="mt-2">
         <button
           type="button"
@@ -313,5 +319,90 @@ function EntityCard({
         )}
       </div>
     </article>
+  );
+}
+
+const ADDABLE: EntityKind[] = ["role", "project", "story", "skill", "achievement", "education", "language", "feedback"];
+const KIND_NAME: Record<EntityKind, string> = {
+  role: "Role", project: "Project", story: "Story", skill: "Skill", achievement: "Certification",
+  education: "Education", language: "Language", feedback: "Feedback",
+};
+const DEPTH_NAME: Record<number, string> = { 1: "familiar", 2: "used", 3: "regular", 4: "led", 5: "expert" };
+
+function allEntities(b: Brain): Entity[] {
+  return [...b.roles, ...b.projects, ...b.stories, ...b.skills, ...b.achievements, ...(b.education ?? []), ...(b.languages ?? []), ...(b.feedback ?? [])];
+}
+
+/** Scroll to a card once React has rendered it, and flash its outline. */
+function highlightSoon(id: string) {
+  window.setTimeout(() => {
+    const card = document.getElementById(`entity-${id}`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.focus({ preventScroll: true });
+    card.classList.add("is-cited");
+    window.setTimeout(() => card.classList.remove("is-cited"), 2400);
+  }, 50);
+}
+
+/** A new entry typed in by hand (ADR 0022): saved at once, no review, with
+ *  the form itself kept as its source. Projects, stories and feedback can be
+ *  placed under a role (and a story or feedback under a project) here. */
+function AddEntry({
+  kind, brain, roleId, onAdded, onCancel,
+}: {
+  kind: EntityKind;
+  brain: Brain;
+  roleId?: string;
+  onAdded: (out: EventOut) => void;
+  onCancel: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const roleOptions = brain.roles.map((r) => ({ value: r.label, label: `${r.title} · ${r.company}` }));
+  const projectOptions = brain.projects
+    .filter((p) => !roleId || p.role_id === roleId)
+    .map((p) => ({ value: p.label, label: p.name }));
+  const links: FieldSpec[] = [];
+  if ((kind === "project" || kind === "story" || kind === "feedback") && roleOptions.length) {
+    links.push({ name: "role", label: kind === "feedback" ? "About the role" : "Role", control: "choice", options: roleOptions });
+  }
+  if ((kind === "story" || kind === "feedback") && projectOptions.length) {
+    links.push({ name: "project", label: kind === "feedback" ? "About the project" : "Part of project", control: "choice", options: projectOptions });
+  }
+  const specs = [...ENTRY_FIELDS[kind], ...links];
+  const role = brain.roles.find((r) => r.id === roleId);
+  const initial: Record<string, unknown> = { depth: 3, kind: "credential", role: role?.label ?? "" };
+
+  return (
+    <div className="rounded-lg border border-primary/50 bg-card p-4 shadow-sm" role="region" aria-label={`New ${KIND_NAME[kind].toLowerCase()}`}>
+      <p className="mb-1 text-sm font-semibold">
+        New {KIND_NAME[kind].toLowerCase()}
+        {role && <span className="font-normal text-muted-foreground"> at {role.company}</span>}
+      </p>
+      <p className="mb-4 text-xs text-muted-foreground">
+        Saved straight to your garden. Fields marked <span className="text-destructive">*</span> are required.
+      </p>
+      <EntryForm
+        key={`${kind}-${roleId ?? ""}`}
+        specs={specs}
+        initial={initial}
+        submitLabel={`Add ${KIND_NAME[kind].toLowerCase()}`}
+        busyLabel="Adding…"
+        busy={busy}
+        error={error}
+        onSubmit={async (fields) => {
+          setBusy(true);
+          setError(null);
+          try {
+            onAdded(await addEntity(kind, fields));
+          } catch (err) {
+            setError(err instanceof ApiError ? err.message : "Something went wrong.");
+            setBusy(false);
+          }
+        }}
+        onCancel={onCancel}
+      />
+    </div>
   );
 }

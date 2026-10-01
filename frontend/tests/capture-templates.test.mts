@@ -69,3 +69,10 @@ test("feedback requires who said it and what they said", () => {
     true,
   );
 });
+
+test("an end date before the start date makes a formatted capture invalid", () => {
+  const role = { company: "Example", title: "Architect" };
+  assert.equal(formattedCaptureIsValid("role", { ...role, start_date: "2021-04-01", end_date: "2017-08-01" }), false);
+  assert.equal(formattedCaptureIsValid("role", { ...role, start_date: "2017-08-01", end_date: "2017-08-01" }), true);
+  assert.equal(formattedCaptureIsValid("role", { ...role, start_date: "2017-08-01" }), true);
+});
