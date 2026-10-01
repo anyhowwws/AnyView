@@ -7,8 +7,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { ApiError, streamDump, streamDumpFromUpload, uploadResume } from "@/lib/api";
 import { applyProgress, startView, type IngestView } from "@/lib/ingest-progress";
 import { IngestProgress } from "@/components/brain/ingest-progress";
+import { MonthPicker } from "@/components/brain/entry-form";
+import { monthOf, thisMonth } from "@/lib/entry-fields";
 import {
   CAPTURE_TEMPLATES,
+  captureRangeError,
   formatCapture,
   formattedCaptureIsValid,
   type CaptureTemplate,
@@ -34,6 +37,7 @@ export function CaptureBox({ onProposal }: Props) {
   const fileInput = useRef<HTMLInputElement>(null);
   const busy = stage !== "idle";
   const definition = CAPTURE_TEMPLATES[template];
+  const rangeError = formatted ? captureRangeError(fields) : null;
   const valid = formatted
     ? formattedCaptureIsValid(template, fields)
     : text.trim().length >= 20;
@@ -109,6 +113,16 @@ export function CaptureBox({ onProposal }: Props) {
                       disabled={busy}
                       onChange={(e) => setFields((current) => ({ ...current, [field.key]: e.target.value }))}
                     />
+                  ) : field.type === "date" ? (
+                    <MonthPicker
+                      value={fields[field.key] ?? ""}
+                      disabled={busy}
+                      emptyMeans={field.key === "end_date" ? (template === "role" ? "Present" : "Ongoing") : undefined}
+                      min={field.key === "end_date" ? monthOf(fields.start_date) || undefined : undefined}
+                      max={field.key === "start_date" ? monthOf(fields.end_date) || undefined : field.key === "end_date" ? undefined : thisMonth()}
+                      aria-invalid={field.key === "end_date" && rangeError ? true : undefined}
+                      onChange={(v) => setFields((current) => ({ ...current, [field.key]: v }))}
+                    />
                   ) : field.type === "select" ? (
                     <select
                       value={fields[field.key] ?? ""}
@@ -128,6 +142,7 @@ export function CaptureBox({ onProposal }: Props) {
                       onChange={(e) => setFields((current) => ({ ...current, [field.key]: e.target.value }))}
                     />
                   )}
+                  {field.key === "end_date" && rangeError && <small className="text-xs text-destructive">{rangeError}</small>}
                 </label>
               ))}
             </div>

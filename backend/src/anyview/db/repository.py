@@ -324,31 +324,57 @@ class Repository:
                 raise Conflict("That proposal was already resolved.")
             dump_id = str(row[0])
 
-            labels = self._labels(c, uid)
-            payload = _resolve(patch, labels, dump_id)
-            event = self._append(
-                c,
-                uid,
-                kind="patch_confirmed",
-                payload=payload,
-                dump_id=dump_id,
-                proposal_id=proposal_id,
-            )
-            try:
-                _apply(c, uid, event.id, event.kind, payload, event.created_at)
-            except sa.exc.IntegrityError as exc:
-                # One live skill or language per name. A name edited in the
-                # queue can still collide; the transaction rolls back whole.
-                if "_live_name_idx" in str(exc.orig):
-                    raise Conflict(
-                        "Your garden already has an entry with one of these names. "
-                        "Rename it, or untick it, and confirm again."
-                    ) from exc
-                raise
+            event = self._confirm(c, uid, patch, dump_id, proposal_id)
             c.execute(
                 _q("UPDATE proposals SET status = 'confirmed', resolved_at = now() WHERE id = :id"),
                 {"id": proposal_id},
             )
+        return event
+
+    def add_entry(self, uid: str, patch: Patch, text: str) -> Event:
+        """An entry the user typed into a form (ADR 0022). The form's text is
+        stored as a raw dump, which is the entry's provenance, and the patch
+        is confirmed against it in the same transaction. No proposal: there
+        was nothing for the user to review that they had not just written."""
+        if patch.is_empty():
+            raise Conflict("Nothing to add.")
+        dump_id = str(uuid.uuid4())
+        with self.engine.begin() as c:
+            c.execute(
+                _q(
+                    "INSERT INTO raw_dumps (id, user_id, kind, text, object_name, text_sha256) "
+                    "VALUES (:id, :uid, 'text', :text, NULL, :sha)"
+                ),
+                {"id": dump_id, "uid": uid, "text": text, "sha": text_sha256(text)},
+            )
+            return self._confirm(c, uid, patch, dump_id, None)
+
+    def _confirm(
+        self, c: Connection, uid: str, patch: Patch, dump_id: str, proposal_id: str | None
+    ) -> Event:
+        """Resolve a reviewed patch to ids, append its event, apply it."""
+        labels = self._labels(c, uid)
+        payload = _resolve(patch, labels, dump_id)
+        event = self._append(
+            c,
+            uid,
+            kind="patch_confirmed",
+            payload=payload,
+            dump_id=dump_id,
+            proposal_id=proposal_id,
+        )
+        try:
+            _apply(c, uid, event.id, event.kind, payload, event.created_at)
+        except sa.exc.IntegrityError as exc:
+            # One live skill or language per name. A name edited in the
+            # queue (or typed into a form) can still collide; the transaction
+            # rolls back whole.
+            if "_live_name_idx" in str(exc.orig):
+                raise Conflict(
+                    "Your garden already has an entry with one of these names. "
+                    "Rename it, or untick it, and confirm again."
+                ) from exc
+            raise
         return event
 
     # --- direct edits ----------------------------------------------------------

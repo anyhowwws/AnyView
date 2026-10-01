@@ -97,6 +97,12 @@ Backend modules:
   `brain/models.py`, `TABLE` + every `_entities()` caller in `db/repository.py`, the extraction schema and
   prompt in `brain/extract.py`, and on the frontend `types.ts`, `capture-templates.ts` (the dropdown),
   `lib/brain-graph.ts` (nodes/edges) and `components/brain/{entities,review-queue,brain-graph,discover}.tsx`.
+- `anyview/brain/manual.py` — entries added by hand (ADR 0022): `POST /brain/entities/{kind}` turns a form into a
+  one-draft Patch and a `text` dump holding the form (its provenance), confirmed at once by `Repository.add_entry`
+  through the same `_resolve`/`_apply` path. No model call, no proposal.
+- Frontend form fields live in `frontend/lib/entry-fields.ts` (labels, hints, required, max lengths, month-precision
+  dates, start ≤ end) and render through `components/brain/entry-form.tsx`; the editor, the add form and the review
+  queue all use them. A new editable field goes there, not in a component.
 - `anyview/brain/discover.py` — Discover (ADR 0017): Donna answers questions about the confirmed
   garden over `POST /brain/discover` (SSE: tokens, then one `citations` frame). Whole garden in the
   system prompt, no retrieval yet; `discover_context()` is the seam Phase 2 retrieval replaces.

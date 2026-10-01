@@ -362,3 +362,78 @@ def test_a_streamed_text_dump_ends_in_the_same_proposal_shape(client):
         events = _sse_events(r)
     proposal = next(d for e, d in events if e == "proposal")
     assert proposal["patch"]["roles"][0]["company"] == "Acme Corp"
+
+
+def test_an_entry_added_by_hand_is_confirmed_with_its_form_as_source(client):
+    r = client.post(
+        "/brain/entities/education",
+        json={
+            "fields": {
+                "institution": "Nanyang Technological University",
+                "qualification": "B.Sc. (Hons)",
+                "start_date": "2017-08-01",
+                "end_date": "2021-04-01",
+            }
+        },
+    )
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["event"]["kind"] == "patch_confirmed" and out["event"]["proposal_id"] is None
+    (edu,) = out["brain"]["education"]
+    assert (
+        edu["institution"] == "Nanyang Technological University" and edu["end_date"] == "2021-04-01"
+    )
+    assert out["brain"]["pending_proposals"] == 0
+    # Provenance: the entry points at a dump holding what was typed.
+    source = client.get(f"/brain/dumps/{edu['source']['raw_dump_id']}").json()["text"]
+    assert source.startswith(
+        "Education added by hand\nInstitution: Nanyang Technological University"
+    )
+
+
+def test_a_hand_added_project_can_sit_under_an_existing_role(client):
+    role = client.post(
+        "/brain/entities/role", json={"fields": {"company": "Acme", "title": "Architect"}}
+    ).json()["brain"]["roles"][0]
+    r = client.post(
+        "/brain/entities/project",
+        json={"fields": {"name": "Landing zone", "role": role["label"], "tech": ["Terraform"]}},
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["brain"]["projects"][0]["role_id"] == role["id"]
+
+
+def test_a_bad_hand_added_entry_is_refused_and_writes_nothing(client):
+    assert (
+        client.post(
+            "/brain/entities/skill", json={"fields": {"name": "Go", "depth": 9}}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/brain/entities/role", json={"fields": {"company": "", "title": "x"}}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/brain/entities/role", json={"fields": {"company": "A", "title": "B", "evidence": "x"}}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            "/brain/entities/project", json={"fields": {"name": "P", "role": "R9"}}
+        ).status_code
+        == 409
+    )
+    assert client.get("/brain/events").json() == []
+    ok = client.post("/brain/entities/skill", json={"fields": {"name": "Go", "depth": 3}})
+    assert ok.status_code == 200
+    assert (
+        client.post(
+            "/brain/entities/skill", json={"fields": {"name": "Go", "depth": 4}}
+        ).status_code
+        == 409
+    )

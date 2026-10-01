@@ -18,6 +18,7 @@ from anyview.api.sse import Frame, stream_response
 from anyview.api.uploads import StoreDep, object_prefix
 from anyview.brain.discover import DiscoverRequest, answer
 from anyview.brain.extract import ExtractionFailed, Progress, drop_unchanged, propose
+from anyview.brain.manual import BadEntry, patch_for, source_text
 from anyview.brain.models import Brain, Event, Patch, Proposal, RawDump
 from anyview.db.repository import Conflict, NotFound, Repository
 from anyview.uploads.extract import (
@@ -266,6 +267,22 @@ def discard_proposal(proposal_id: str, user: CurrentUser, repo: RepoDep) -> Brai
 Kind = Literal[
     "role", "project", "story", "skill", "achievement", "education", "language", "feedback"
 ]
+
+
+@router.post("/entities/{kind}", response_model=EventOut)
+def add_entity(kind: Kind, body: EditRequest, user: CurrentUser, repo: RepoDep) -> EventOut:
+    """Add one entry from a form, with no model call and no review (ADR 0022).
+    The form's text becomes the dump the entry points back to."""
+    repo.ensure_user(user.uid, user.email)
+    text = source_text(kind, body.fields)
+    try:
+        patch = patch_for(kind, body.fields, evidence=text)
+        event = repo.add_entry(user.uid, patch, text)
+    except BadEntry as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except Conflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return EventOut(event=event, brain=repo.brain(user.uid))
 
 
 @router.patch("/entities/{kind}/{entity_id}", response_model=EventOut)

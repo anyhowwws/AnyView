@@ -5,10 +5,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { EntryFields } from "@/components/brain/entry-form";
 import { ApiError, confirmProposal, discardProposal } from "@/lib/api";
-import type { Brain, Competency, Patch, Proposal } from "@/lib/types";
+import { ENTRY_FIELDS, asFormValue, fromFormValue, validateEntry } from "@/lib/entry-fields";
+import type { Brain, Competency, EntityKind, Patch, Proposal } from "@/lib/types";
 import type { EventOut } from "@/lib/api";
 
 interface Props {
@@ -42,6 +42,17 @@ export function ReviewQueue({ proposals, competencies, onConfirmed, onDiscarded 
 }
 
 type Group = keyof Patch;
+// Each Patch group's entity kind, for its field definitions.
+const KIND_OF: Record<Group, EntityKind> = {
+  roles: "role", projects: "project", stories: "story", skills: "skill",
+  achievements: "achievement", education: "education", languages: "language", feedback: "feedback",
+};
+const problemsOf = (group: Group, draft: object) => {
+  const specs = ENTRY_FIELDS[KIND_OF[group]];
+  const d = draft as Record<string, unknown>;
+  return validateEntry(specs, Object.fromEntries(specs.map((s) => [s.name, asFormValue(d[s.name])])));
+};
+
 const GROUPS: { key: Group; label: string }[] = [
   { key: "roles", label: "Roles" },
   { key: "projects", label: "Projects" },
@@ -77,6 +88,8 @@ function ProposalCard({
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // After a refused Confirm, every problem shows, not just the touched ones.
+  const [attempted, setAttempted] = useState(false);
 
   // What gets confirmed: the ticked drafts, with any link to an unticked one
   // cut. Sending "p1" after p1 was unticked would be a reference to nothing,
@@ -114,6 +127,10 @@ function ProposalCard({
   };
   const unverified = GROUPS.flatMap(({ key }) => patch[key].filter((d) => d.unverified).map((d) => ({ group: key, draft: d })));
   const keptCount = GROUPS.reduce((n, g) => n + patch[g.key].filter((d) => !dropped.has(d.key)).length, 0);
+  const invalidCount = GROUPS.reduce(
+    (n, g) => n + patch[g.key].filter((d) => !dropped.has(d.key) && Object.keys(problemsOf(g.key, d)).length > 0).length,
+    0,
+  );
 
   function update<G extends Group>(group: G, key: string, fields: Partial<Patch[G][number]>) {
     setPatch((prev) => ({
@@ -141,6 +158,8 @@ function ProposalCard({
         draft={draft}
         competencies={competencies}
         kept={!dropped.has(draft.key)}
+        problems={problemsOf(group, draft)}
+        showAll={attempted}
         nameOf={nameOf}
         onKeep={(keep) =>
           setDropped((prev) => {
@@ -194,7 +213,10 @@ function ProposalCard({
           <Button
             className="h-11 px-5 text-base"
             disabled={busy || keptCount === 0}
-            onClick={() => void act(async () => onConfirmed(await confirmProposal(proposal.id, kept()), proposal.id))}
+            onClick={() => {
+              if (invalidCount > 0) return setAttempted(true);
+              void act(async () => onConfirmed(await confirmProposal(proposal.id, kept()), proposal.id));
+            }}
           >
             {busy ? "Saving…" : `Confirm ${keptCount} ${keptCount === 1 ? "entry" : "entries"}`}
           </Button>
@@ -206,6 +228,11 @@ function ProposalCard({
           >
             Discard all
           </Button>
+          {attempted && invalidCount > 0 && (
+            <span role="status" className="text-sm text-destructive">
+              {invalidCount} {invalidCount === 1 ? "entry needs" : "entries need"} fixing first, or untick {invalidCount === 1 ? "it" : "them"}.
+            </span>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -217,6 +244,8 @@ function DraftCard<G extends Group>({
   draft,
   competencies,
   kept,
+  problems,
+  showAll,
   nameOf,
   onKeep,
   onChange,
@@ -225,33 +254,26 @@ function DraftCard<G extends Group>({
   draft: Patch[G][number];
   competencies: Competency[];
   kept: boolean;
+  problems: Record<string, string>;
+  showAll: boolean;
   nameOf: (ref: string) => string;
   onKeep: (keep: boolean) => void;
   onChange: (fields: Partial<Patch[G][number]>) => void;
 }) {
   const d = draft as unknown as Record<string, unknown>;
   const patchOf = (fields: Record<string, unknown>) => fields as unknown as Partial<Patch[G][number]>;
-  const text = (name: string, label: string, multiline = false) => {
-    const value = (d[name] as string | null) ?? "";
-    const props = {
-      value,
-      placeholder: "—",
-      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-        onChange(patchOf({ [name]: e.target.value || null })),
-      disabled: !kept,
-    };
-    // A visible caption, so the field keeps its name once it has a value.
-    return (
-      <label className="flex flex-col gap-0.5">
-        <span className="text-xs font-semibold uppercase tracking-[0.11em] text-foreground/75">{label}</span>
-        {multiline ? <Textarea rows={2} {...props} /> : <Input {...props} />}
-      </label>
-    );
-  };
+  const specs = ENTRY_FIELDS[KIND_OF[group]];
+  // The form's own text, so a half-typed list line or a trailing space is not
+  // normalised away mid-keystroke; the draft gets the cleaned value.
+  const [texts, setTexts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(specs.map((s) => [s.name, asFormValue(d[s.name])])),
+  );
+  const [touched, setTouched] = useState<Set<string>>(new Set());
+  const shown = !kept ? {} : showAll ? problems : Object.fromEntries(Object.entries(problems).filter(([n]) => touched.has(n)));
 
   return (
-    <div className={`rounded-lg border p-3 ${kept ? "" : "opacity-50"}`}>
-      <div className="mb-2 flex items-start justify-between gap-3">
+    <div className={`rounded-lg border p-3 ${kept ? "" : "opacity-50"} ${kept && showAll && Object.keys(problems).length ? "border-destructive/60" : ""}`}>
+      <div className="mb-3 flex items-start justify-between gap-3">
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={kept} onChange={(e) => onKeep(e.target.checked)} className="size-4" />
           <span className="font-medium">
@@ -260,137 +282,76 @@ function DraftCard<G extends Group>({
         </label>
         {draft.unverified && <Badge variant="outline">Quote not found</Badge>}
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {group === "roles" && (
-          <>
-            {text("company", "Company")}
-            {text("title", "Title")}
-            {text("level", "Level (e.g. senior)")}
-            <div className="grid grid-cols-2 gap-2">
-              {text("start_date", "Start (YYYY-MM-DD)")}
-              {text("end_date", "End (blank = now)")}
+      <EntryFields
+        specs={specs}
+        values={texts}
+        errors={shown}
+        disabled={!kept}
+        onChange={(name, value) => {
+          setTexts((t) => ({ ...t, [name]: value }));
+          const spec = specs.find((s) => s.name === name)!;
+          onChange(patchOf({ [name]: fromFormValue(spec, value) }));
+        }}
+        onBlur={(name) => setTouched((t) => (t.has(name) ? t : new Set(t).add(name)))}
+      />
+      {(group === "stories" || group === "skills") && (
+        <div className="mt-4 grid gap-2 sm:grid-cols-2">
+          {group === "stories" && (
+            <div className="space-y-1.5 sm:col-span-2">
+              <span className="text-xs font-semibold text-foreground">Competencies it shows</span>
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label="Competencies">
+                {competencies.map((c) => {
+                  const on = ((d.competencies as string[]) ?? []).includes(c.key);
+                  return (
+                    <button
+                      key={c.key}
+                      type="button"
+                      disabled={!kept}
+                      aria-pressed={on}
+                      onClick={() => {
+                        const cur = (d.competencies as string[]) ?? [];
+                        onChange(patchOf({ competencies: on ? cur.filter((k) => k !== c.key) : [...cur, c.key] }));
+                      }}
+                      className={`min-h-8 rounded-full border px-3 py-1 text-xs ${on ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
+                    >
+                      {c.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <label className="flex flex-col gap-0.5 sm:col-span-2">
-              <span className="text-xs font-semibold uppercase tracking-[0.11em] text-foreground/75">
-                Responsibilities, one per line
-              </span>
-              <Textarea
-                rows={3}
-                placeholder="—"
+          )}
+          {group === "skills" && (
+            <>
+              {((d.merged_from as string[]) ?? []).length > 0 && (
+                // Names folded into this one (ADR 0021). To split one back out,
+                // capture it on its own; confirming this card does not add it.
+                <p className="text-xs text-muted-foreground sm:col-span-2">
+                  Also found as {((d.merged_from as string[]) ?? []).join(", ")}, merged into this one.
+                </p>
+              )}
+              <SkillLinks
+                projects={(d.projects as string[]) ?? []}
+                roles={(d.roles as string[]) ?? []}
+                certifications={(d.achievements as string[]) ?? []}
+                quotes={(d.link_evidence as Record<string, string>) ?? {}}
+                nameOf={nameOf}
                 disabled={!kept}
-                value={((d.responsibilities as string[]) ?? []).join("\n")}
-                onChange={(e) => onChange(patchOf({ responsibilities: e.target.value.split("\n") }))}
-                onBlur={(e) =>
-                  onChange(patchOf({ responsibilities: e.target.value.split("\n").map((l) => l.trim()).filter(Boolean) }))
+                onRemove={(ref) =>
+                  onChange(
+                    patchOf({
+                      projects: ((d.projects as string[]) ?? []).filter((r) => r !== ref),
+                      roles: ((d.roles as string[]) ?? []).filter((r) => r !== ref),
+                      achievements: ((d.achievements as string[]) ?? []).filter((r) => r !== ref),
+                    }),
+                  )
                 }
               />
-            </label>
-          </>
-        )}
-        {group === "projects" && (
-          <>
-            <div className="sm:col-span-2">{text("name", "Project name")}</div>
-            {text("problem", "Problem", true)}
-            {text("action", "What you did", true)}
-            <div className="sm:col-span-2">{text("result", "Result", true)}</div>
-          </>
-        )}
-        {group === "stories" && (
-          <>
-            <div className="sm:col-span-2">{text("title", "Story title")}</div>
-            {text("situation", "Situation", true)}
-            {text("task", "Task", true)}
-            {text("action", "Action", true)}
-            {text("result", "Result", true)}
-            <div className="flex flex-wrap gap-1.5 sm:col-span-2" role="group" aria-label="Competencies">
-              {competencies.map((c) => {
-                const on = ((d.competencies as string[]) ?? []).includes(c.key);
-                return (
-                  <button
-                    key={c.key}
-                    type="button"
-                    disabled={!kept}
-                    aria-pressed={on}
-                    onClick={() => {
-                      const cur = (d.competencies as string[]) ?? [];
-                      onChange(patchOf({ competencies: on ? cur.filter((k) => k !== c.key) : [...cur, c.key] }));
-                    }}
-                    className={`rounded-full border px-2.5 py-0.5 text-xs ${on ? "border-primary bg-primary text-primary-foreground" : "text-muted-foreground"}`}
-                  >
-                    {c.label}
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
-        {group === "skills" && (
-          <>
-            {text("name", "Skill")}
-            <label className="flex items-center gap-2 text-sm">
-              <span className="text-muted-foreground">Depth</span>
-              <input
-                type="range"
-                min={1}
-                max={5}
-                value={(d.depth as number) ?? 3}
-                disabled={!kept}
-                aria-label="Depth, 1 to 5"
-                onChange={(e) => onChange(patchOf({ depth: Number(e.target.value) }))}
-              />
-              <span className="tabular-nums">{(d.depth as number) ?? 3}/5</span>
-            </label>
-            {((d.merged_from as string[]) ?? []).length > 0 && (
-              // Names folded into this one (ADR 0021). To split one back out,
-              // capture it on its own; confirming this card does not add it.
-              <p className="text-xs text-muted-foreground sm:col-span-2">
-                Also found as {((d.merged_from as string[]) ?? []).join(", ")}, merged into this one.
-              </p>
-            )}
-            <SkillLinks
-              projects={(d.projects as string[]) ?? []}
-              roles={(d.roles as string[]) ?? []}
-              certifications={(d.achievements as string[]) ?? []}
-              quotes={(d.link_evidence as Record<string, string>) ?? {}}
-              nameOf={nameOf}
-              disabled={!kept}
-              onRemove={(ref) =>
-                onChange(
-                  patchOf({
-                    projects: ((d.projects as string[]) ?? []).filter((r) => r !== ref),
-                    roles: ((d.roles as string[]) ?? []).filter((r) => r !== ref),
-                    achievements: ((d.achievements as string[]) ?? []).filter((r) => r !== ref),
-                  }),
-                )
-              }
-            />
-          </>
-        )}
-        {group === "achievements" && (
-          <>
-            {text("title", "Title")}
-            {text("issuer", "Issuer")}
-            {text("achieved_on", "Date (YYYY-MM-DD)")}
-          </>
-        )}
-        {group === "education" && (
-          <>
-            {text("institution", "Institution")}
-            {text("qualification", "Qualification")}
-            {text("field", "Field of study")}
-            <div className="grid grid-cols-2 gap-2">{text("start_date", "Start (YYYY-MM-DD)")}{text("end_date", "End (YYYY-MM-DD)")}</div>
-          </>
-        )}
-        {group === "languages" && <>{text("name", "Language")}{text("proficiency", "Proficiency")}</>}
-        {group === "feedback" && (
-          <>
-            {text("given_by", "Who said it")}
-            <div className="sm:col-span-2">{text("content", "What they said", true)}</div>
-            {text("received_on", "Date (YYYY-MM-DD)")}
-          </>
-        )}
-      </div>
-      <blockquote className="mt-2 border-l-2 pl-2 text-xs text-muted-foreground">“{draft.evidence}”</blockquote>
+            </>
+          )}
+        </div>
+      )}
+      <blockquote className="mt-3 border-l-2 pl-2 text-xs text-muted-foreground">“{draft.evidence}”</blockquote>
     </div>
   );
 }

@@ -144,6 +144,9 @@ async function streamProposal(
 export const confirmProposal = (id: string, patch: Patch) =>
   post<EventOut>(`/brain/proposals/${id}/confirm`, { patch });
 export const discardProposal = (id: string) => post<Brain>(`/brain/proposals/${id}/discard`, {});
+/** An entry typed into a form: confirmed at once, no model, no review (ADR 0022). */
+export const addEntity = (kind: EntityKind, fields: Record<string, unknown>) =>
+  post<EventOut>(`/brain/entities/${kind}`, { fields });
 export const editEntity = (kind: EntityKind, id: string, fields: Record<string, unknown>) =>
   patchJson<EventOut>(`/brain/entities/${kind}/${id}`, { fields });
 export const retireEntity = (kind: EntityKind, id: string) =>

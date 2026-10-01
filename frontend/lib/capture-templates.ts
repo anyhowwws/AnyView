@@ -118,7 +118,17 @@ export function formatCapture(template: CaptureTemplate, values: Record<string, 
 }
 
 export function formattedCaptureIsValid(template: CaptureTemplate, values: Record<string, string>): boolean {
-  return CAPTURE_TEMPLATES[template].fields
-    .filter((field) => field.required)
-    .every((field) => Boolean(values[field.key]?.trim()));
+  return (
+    CAPTURE_TEMPLATES[template].fields
+      .filter((field) => field.required)
+      .every((field) => Boolean(values[field.key]?.trim())) && !captureRangeError(values)
+  );
+}
+
+/** An end date before its start date, as a message for the end field. Dates
+ *  compare as YYYY-MM strings, which sort the same way the calendar does. */
+export function captureRangeError(values: Record<string, string>): string | null {
+  const start = values.start_date?.slice(0, 7);
+  const end = values.end_date?.slice(0, 7);
+  return start && end && end < start ? "End date must be on or after the start date." : null;
 }
