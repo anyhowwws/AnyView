@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,8 +18,9 @@ interface Props {
  *  and Achievements. Every card can be edited in place or retired, and links
  *  to the dump it came from. */
 export function Entities({ brain, onChanged }: Props) {
-  // Which add form is open, and where: at the top, or under one role.
-  const [adding, setAdding] = useState<{ kind: EntityKind; roleId?: string } | null>(null);
+  // Which add form is open, and where: `at` is the section (or role) whose
+  // button opened it, so the form appears beside that button.
+  const [adding, setAdding] = useState<{ kind: EntityKind; at: string; roleId?: string } | null>(null);
   // During a rolling deploy an older API response can lack newly added arrays.
   const education = brain.education ?? [];
   const languages = brain.languages ?? [];
@@ -44,42 +45,53 @@ export function Entities({ brain, onChanged }: Props) {
     const fresh = allEntities(out.brain).find((e) => !before.has(e.id));
     if (fresh) highlightSoon(fresh.id);
   };
-  const addForm = (roleId?: string) =>
-    adding && adding.roleId === roleId ? (
-      <AddEntry kind={adding.kind} brain={brain} roleId={roleId} onAdded={added} onCancel={() => setAdding(null)} />
+  const addForm = (at: string) =>
+    adding && adding.at === at ? (
+      <AddEntry kind={adding.kind} brain={brain} roleId={adding.roleId} onAdded={added} onCancel={() => setAdding(null)} />
     ) : null;
+  const addButton = (kind: EntityKind, at: string, label = KIND_NAME[kind], roleId?: string) => {
+    const open = adding?.kind === kind && adding.at === at;
+    return (
+      <Button
+        key={`${kind}-${at}`}
+        type="button"
+        variant={open ? "secondary" : "ghost"}
+        size="sm"
+        className="h-8 gap-1"
+        aria-expanded={open}
+        onClick={() => setAdding(open ? null : { kind, at, roleId })}
+      >
+        <Plus className="size-3.5" aria-hidden />
+        Add {label.toLowerCase()}
+      </Button>
+    );
+  };
+  // One section per kind, always shown so it can be added to while empty.
+  const section = (at: string, title: string, kinds: EntityKind[], count: number, children: ReactNode, grid = true) => (
+    <div className="space-y-2" aria-labelledby={`entities-${at}`} role="group">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-1">
+        <h3 id={`entities-${at}`} className="text-sm font-medium text-muted-foreground">
+          {title} <span className="tabular-nums">· {count}</span>
+        </h3>
+        <div className="flex flex-wrap gap-1 text-primary">{kinds.map((k) => addButton(k, at))}</div>
+      </div>
+      {addForm(at)}
+      {count === 0 && adding?.at !== at && <p className="text-xs text-muted-foreground">None yet.</p>}
+      {count > 0 && (grid ? <div className="grid gap-2 sm:grid-cols-2">{children}</div> : <div className="space-y-6">{children}</div>)}
+    </div>
+  );
 
   return (
     <section aria-labelledby="entities-heading" className="space-y-6">
-      <div className="space-y-3">
-        <h2 id="entities-heading" className="text-lg font-semibold tracking-tight">
-          What&apos;s growing in your Digital Garden
-        </h2>
-        <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Add an entry">
-          <span className="mr-1 text-sm text-muted-foreground">Add</span>
-          {ADDABLE.map((kind) => (
-            <Button
-              key={kind}
-              type="button"
-              variant={adding?.kind === kind && !adding.roleId ? "default" : "outline"}
-              size="sm"
-              className="h-9 gap-1.5"
-              aria-pressed={adding?.kind === kind && !adding.roleId}
-              onClick={() => setAdding(adding?.kind === kind && !adding.roleId ? null : { kind })}
-            >
-              <Plus className="size-3.5" aria-hidden />
-              {KIND_NAME[kind]}
-            </Button>
-          ))}
-        </div>
-        {addForm(undefined)}
-      </div>
+      <h2 id="entities-heading" className="text-lg font-semibold tracking-tight">
+        What&apos;s growing in your Digital Garden
+      </h2>
       {empty && !adding && (
-        <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          Your Digital Garden is empty. Add an entry above, capture a thought for Donna, or upload a resume.
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+          Your Digital Garden is empty. Add an entry in any section below, capture a thought for Donna, or upload a resume.
         </p>
       )}
-      {brain.roles.map((role) => (
+      {section("roles", "Roles", ["role"], brain.roles.length, brain.roles.map((role) => (
         <div key={role.id} className="space-y-3">
           <EntityCard kind="role" entity={role} title={`${role.title} · ${role.company}`} onChanged={onChanged}
             meta={`${role.start_date ? `${monthLabel(role.start_date)} – ${monthLabel(role.end_date) || "Present"}` : "Dates not set"}${role.level ? ` · ${role.level}` : ""}`}
@@ -96,79 +108,48 @@ export function Entities({ brain, onChanged }: Props) {
             ))}
             {storiesOf(role.id, null).map((s) => <StoryCard key={s.id} story={s} labelOf={labelOf} onChanged={onChanged} />)}
             {addForm(role.id)}
-            {adding?.roleId !== role.id && (
-              <div className="flex flex-wrap gap-1">
-                {(["project", "story"] as const).map((kind) => (
-                  <Button key={kind} type="button" variant="ghost" size="sm" className="h-8 gap-1 text-muted-foreground"
-                    onClick={() => setAdding({ kind, roleId: role.id })}>
-                    <Plus className="size-3.5" aria-hidden />
-                    {kind === "project" ? "Project" : "Story"} at {role.company}
-                  </Button>
-                ))}
+            {adding?.at !== role.id && (
+              <div className="flex flex-wrap gap-1 text-muted-foreground">
+                {addButton("project", role.id, `Project at ${role.company}`, role.id)}
+                {addButton("story", role.id, `Story at ${role.company}`, role.id)}
               </div>
             )}
           </div>
         </div>
-      ))}
-      {(orphanProjects.length > 0 || orphanStories.length > 0) && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-medium text-muted-foreground">Not linked to a role</h3>
+      )), false)}
+      {section("unlinked", "Projects & stories not linked to a role", ["project", "story"], orphanProjects.length + orphanStories.length, (
+        <>
           {orphanProjects.map((p) => <ProjectCard key={p.id} project={p} onChanged={onChanged} />)}
           {orphanStories.map((s) => <StoryCard key={s.id} story={s} labelOf={labelOf} onChanged={onChanged} />)}
-        </div>
-      )}
-      {brain.skills.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">Skills</h3>
-          <div className="grid gap-2 sm:grid-cols-2">
+        </>
+      ), false)}
+      {section("skills", "Skills", ["skill"], brain.skills.length, (<>
             {brain.skills.map((k) => (
               <EntityCard key={k.id} kind="skill" entity={k} title={k.name} onChanged={onChanged}
                 meta={`depth ${k.depth}/5 · ${DEPTH_NAME[k.depth] ?? ""}${usedIn(k, labelOf)}`}
               />
             ))}
-          </div>
-        </div>
-      )}
-      {brain.achievements.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">Certifications &amp; achievements</h3>
-          <div className="grid gap-2 sm:grid-cols-2">
+          </>))}
+      {section("achievements", "Certifications & achievements", ["achievement"], brain.achievements.length, (<>
             {brain.achievements.map((a) => (
               <EntityCard key={a.id} kind="achievement" entity={a} title={a.title} onChanged={onChanged}
                 meta={[a.kind === "credential" ? "Certification" : "Achievement", a.issuer, monthLabel(a.achieved_on)].filter(Boolean).join(" · ")}
               />
             ))}
-          </div>
-        </div>
-      )}
-      {education.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">Education</h3>
-          <div className="grid gap-2 sm:grid-cols-2">
+          </>))}
+      {section("education", "Education", ["education"], education.length, (<>
             {education.map((e) => <EntityCard key={e.id} kind="education" entity={e} title={e.institution} onChanged={onChanged}
               meta={[e.qualification, e.field, e.start_date ? `${monthLabel(e.start_date)} – ${monthLabel(e.end_date) || "Ongoing"}` : e.end_date ? `Finished ${monthLabel(e.end_date)}` : null].filter(Boolean).join(" · ")}
             />)}
-          </div>
-        </div>
-      )}
-      {languages.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">Languages</h3>
-          <div className="grid gap-2 sm:grid-cols-2">
+          </>))}
+      {section("languages", "Languages", ["language"], languages.length, (<>
             {languages.map((language) => <EntityCard key={language.id} kind="language" entity={language} title={language.name} onChanged={onChanged}
               meta={language.proficiency ?? "proficiency not recorded"}
             />)}
-          </div>
-        </div>
-      )}
-      {feedback.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-medium text-muted-foreground">Feedback</h3>
-          <div className="grid gap-2 sm:grid-cols-2">
+          </>))}
+      {section("feedback", "Feedback", ["feedback"], feedback.length, (<>
             {feedback.map((f) => <FeedbackCard key={f.id} feedback={f} labelOf={labelOf} onChanged={onChanged} />)}
-          </div>
-        </div>
-      )}
+          </>))}
     </section>
   );
 }
@@ -322,7 +303,6 @@ function EntityCard({
   );
 }
 
-const ADDABLE: EntityKind[] = ["role", "project", "story", "skill", "achievement", "education", "language", "feedback"];
 const KIND_NAME: Record<EntityKind, string> = {
   role: "Role", project: "Project", story: "Story", skill: "Skill", achievement: "Certification",
   education: "Education", language: "Language", feedback: "Feedback",
