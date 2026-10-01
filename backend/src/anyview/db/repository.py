@@ -100,6 +100,16 @@ def text_sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+# Edit fields that point at other entities, and the kind they point at.
+LINK_TARGET: dict[str, EntityKind] = {
+    "role_id": "role",
+    "project_id": "project",
+    "role_ids": "role",
+    "project_ids": "project",
+    "achievement_ids": "achievement",
+}
+
+
 class Repository:
     def __init__(self, engine: Engine) -> None:
         self.engine = engine
@@ -389,6 +399,7 @@ class Repository:
             raise Conflict("Nothing to change.")
         with self.engine.begin() as c:
             self._require_live(c, uid, kind, entity_id)
+            self._require_link_targets(c, uid, fields)
             payload = {"kind": kind, "id": entity_id, "fields": fields}
             event = self._append(c, uid, kind="entity_edited", payload=payload)
             _apply(c, uid, event.id, event.kind, payload, event.created_at)
@@ -401,6 +412,21 @@ class Repository:
             event = self._append(c, uid, kind="entity_retired", payload=payload)
             _apply(c, uid, event.id, event.kind, payload, event.created_at)
         return event
+
+    def _require_link_targets(self, c: Connection, uid: str, fields: dict[str, Any]) -> None:
+        """Every id a link field names must be this user's, live, and of the
+        right kind. A foreign key alone would accept another user's role."""
+        for field, value in fields.items():
+            target = LINK_TARGET.get(field)
+            if target is None or value is None:
+                continue
+            ids = value if isinstance(value, list) else [value]
+            for target_id in ids:
+                try:
+                    uuid.UUID(str(target_id))
+                    self._require_live(c, uid, target, str(target_id))
+                except (ValueError, NotFound) as exc:
+                    raise Conflict(f"That {target} is not in your garden.") from exc
 
     def _require_live(self, c: Connection, uid: str, kind: EntityKind, entity_id: str) -> None:
         found = c.execute(

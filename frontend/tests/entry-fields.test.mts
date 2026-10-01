@@ -4,6 +4,7 @@ import {
   ENTRY_FIELDS,
   dateForMonth,
   fromFormValue,
+  linkSpecs,
   monthLabel,
   monthOf,
   validateEntry,
@@ -45,4 +46,21 @@ test("form text goes back to the shapes the API stores", () => {
   assert.deepEqual(fromFormValue(responsibilities, " On-call \n\n Hiring "), ["On-call", "Hiring"]);
   assert.equal(fromFormValue(ENTRY_FIELDS.role[2], "  "), null);
   assert.equal(fromFormValue(ENTRY_FIELDS.skill[1], "4"), 4);
+});
+
+test("link fields name entries by label when adding and by id when editing", () => {
+  const brain = {
+    roles: [{ id: "r-id", label: "R1", title: "Architect", company: "Acme" }],
+    projects: [{ id: "p-id", label: "P1", name: "Landing zone" }],
+    achievements: [],
+  } as never;
+  const add = linkSpecs("skill", brain, "add");
+  assert.deepEqual(add.map((s) => s.name), ["projects", "roles"]); // no certifications to offer
+  assert.equal(add[0].options?.[0].value, "P1");
+  const edit = linkSpecs("story", brain, "edit");
+  assert.deepEqual(edit.map((s) => s.name), ["role_id", "project_id"]);
+  assert.equal(edit[0].options?.[0].value, "r-id");
+  assert.deepEqual(fromFormValue(linkSpecs("skill", brain, "edit")[0], "p-id\n"), ["p-id"]);
+  assert.equal(fromFormValue(edit[0], ""), null);
+  assert.deepEqual(linkSpecs("education", brain, "edit"), []);
 });

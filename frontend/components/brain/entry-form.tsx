@@ -98,6 +98,28 @@ export function EntryFields({
               onChange={(v) => { onChange(spec.name, v); onBlur?.(spec.name); }}
             />
           );
+        } else if (spec.control === "links") {
+          const picked = value.split("\n").filter(Boolean);
+          control = (
+            <div id={id} role="group" aria-labelledby={`${id}-label`} aria-describedby={describedBy} className="flex flex-wrap gap-1.5">
+              {(spec.options ?? []).map((o) => {
+                const on = picked.includes(o.value);
+                return (
+                  <button
+                    key={o.value}
+                    type="button"
+                    disabled={disabled}
+                    aria-pressed={on}
+                    onClick={() => onChange(spec.name, (on ? picked.filter((v) => v !== o.value) : [...picked, o.value]).join("\n"))}
+                    className={`min-h-9 rounded-full border px-3 py-1 text-xs transition-colors disabled:opacity-50 ${on ? "border-primary bg-primary text-primary-foreground" : "border-input text-muted-foreground hover:bg-accent"}`}
+                  >
+                    {on && <span aria-hidden>✓ </span>}
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+          );
         } else if (spec.control === "choice") {
           // Keep a value the entry already has even when it is not one of the
           // offered choices ("Working proficiency" from a resume).
@@ -105,7 +127,7 @@ export function EntryFields({
           const custom = value && !options.some((o) => o.value === value) ? [{ value, label: value }] : [];
           control = (
             <select {...shared} className={CONTROL} value={value} onChange={(e) => onChange(spec.name, e.target.value)} onBlur={() => onBlur?.(spec.name)}>
-              {!spec.required && <option value="">Not set</option>}
+              {!spec.required && <option value="">{spec.emptyLabel ?? "Not set"}</option>}
               {spec.required && !value && <option value="" disabled>Choose…</option>}
               {[...custom, ...options].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
@@ -140,7 +162,7 @@ export function EntryFields({
         return (
           <div key={spec.name} className={`flex min-w-0 flex-col gap-1.5 ${spec.wide || spec.control === "depth" ? "sm:col-span-2" : ""}`}>
             <div className="flex items-baseline justify-between gap-2">
-              <label id={`${id}-label`} htmlFor={spec.control === "depth" ? undefined : id} className="text-xs font-semibold text-foreground">
+              <label id={`${id}-label`} htmlFor={spec.control === "depth" || spec.control === "links" ? undefined : id} className="text-xs font-semibold text-foreground">
                 {spec.label}
                 {spec.required ? (
                   <span className="ml-1 text-destructive" aria-hidden>*</span>
@@ -169,7 +191,7 @@ export function EntryFields({
 
 /** A whole form: values, validation, Save/Cancel. Errors appear once a field
  *  has been left, or for every field after a Save attempt; the first invalid
- *  field takes focus so the problem is never off-screen. Escape cancels. */
+ *  field takes focus so the problem is never off-screen. */
 export function EntryForm({
   specs,
   initial,
@@ -230,7 +252,6 @@ export function EntryForm({
       noValidate
       className="space-y-4"
       onSubmit={(e) => { e.preventDefault(); submit(); }}
-      onKeyDown={(e) => { if (e.key === "Escape" && !busy) { e.stopPropagation(); onCancel(); } }}
     >
       <EntryFields
         specs={specs}
@@ -253,7 +274,7 @@ export function EntryForm({
             ? `Fix ${invalid} ${invalid === 1 ? "field" : "fields"} to continue.`
             : onlyChanged && !dirty
               ? "No changes yet."
-              : "Esc to cancel"}
+              : ""}
         </span>
       </div>
     </form>
