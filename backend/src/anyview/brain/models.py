@@ -163,6 +163,11 @@ class Patch(BaseModel):
 class Provenance(BaseModel):
     raw_dump_id: str
     event_id: int
+    # Filled in by Repository.brain (ADR 0023) so a card can say where the
+    # entry came from without fetching the whole dump.
+    origin: Literal["resume", "file", "capture", "manual"] | None = None
+    added_on: dt.datetime | None = None  # when that source was given
+    evidence: str | None = None  # the quote that justified it; never for "manual"
 
 
 class Role(BaseModel):

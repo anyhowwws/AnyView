@@ -609,3 +609,18 @@ def test_a_certification_evidences_a_skill_and_replays(repo, db):
     before = _snapshot(db)
     repo.rebuild(UID)
     assert _snapshot(db) == before
+
+
+def test_origin_tells_a_resume_from_an_uploaded_file(repo):
+    resume = repo.create_dump(UID, kind="resume_pdf", text="cv", object_name="uploads/x/cv.pdf")
+    p = repo.create_proposal(UID, dump_id=resume.id, patch=first_patch(), model="fake")
+    repo.confirm_proposal(UID, p.id, first_patch())
+    diagram = repo.create_dump(UID, kind="text", text="diagram", object_name="uploads/x/d.png")
+    patch = Patch(achievements=[AchievementDraft(key="a1", title="PCA", evidence="PCA 2024")])
+    p = repo.create_proposal(UID, dump_id=diagram.id, patch=patch, model="fake")
+    repo.confirm_proposal(UID, p.id, patch)
+    b = repo.brain(UID)
+    assert b.roles[0].source.origin == "resume"
+    assert b.roles[0].source.evidence == "Acme Corp (2021–present)"
+    assert b.achievements[-1].source.origin == "file"
+    assert b.achievements[-1].source.evidence == "PCA 2024"

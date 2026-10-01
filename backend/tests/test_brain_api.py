@@ -506,3 +506,20 @@ def test_links_must_point_at_your_own_live_entries_of_the_right_kind(client):
         assert client.patch(url, json={"fields": {"role_id": bad}}).status_code == 409
     client.delete(f"/brain/entities/role/{role['id']}")
     assert client.patch(url, json={"fields": {"role_id": role["id"]}}).status_code == 409
+
+
+def test_each_entry_says_where_it_came_from_and_keeps_its_quote(client):
+    p = _dump(client)
+    b = client.post(f"/brain/proposals/{p['id']}/confirm", json={"patch": p["patch"]}).json()[
+        "brain"
+    ]
+    story = b["stories"][0]["source"]
+    assert story["origin"] == "capture" and story["added_on"]
+    assert story["evidence"] == p["patch"]["stories"][0]["evidence"]
+    # The quote survives an edit, and a rebuild from the log.
+    sid = b["stories"][0]["id"]
+    client.patch(f"/brain/entities/story/{sid}", json={"fields": {"result": "Faster"}})
+    assert client.get("/brain").json()["stories"][0]["source"]["evidence"] == story["evidence"]
+
+    by_hand = _add(client, "language", name="Malay")["languages"][0]["source"]
+    assert by_hand["origin"] == "manual" and by_hand["evidence"] is None

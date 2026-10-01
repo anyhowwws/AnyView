@@ -43,3 +43,4 @@ record of having been wrong is the useful part.
 | [0020](0020-certifications-evidence-skills.md) | Certifications evidence skills | Accepted |
 | [0021](0021-near-duplicate-skills.md) | Near-duplicate skills are folded by a checked model call | Accepted |
 | [0022](0022-entries-added-by-hand.md) | Entries added by hand skip the model and the review queue | Accepted |
+| [0023](0023-entries-show-their-origin-and-quote.md) | Entries show their origin and quote, not their whole source | Accepted |

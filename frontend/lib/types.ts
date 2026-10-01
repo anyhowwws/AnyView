@@ -189,6 +189,11 @@ export type EntityKind = "role" | "project" | "story" | "skill" | "achievement" 
 export interface Provenance {
   raw_dump_id: string;
   event_id: number;
+  /** Where the entry came from (ADR 0023). Absent from an older API. */
+  origin?: "resume" | "file" | "capture" | "manual" | null;
+  added_on?: string | null;
+  /** The quote that justified it; null when added by hand or never kept. */
+  evidence?: string | null;
 }
 
 export interface Role {

@@ -531,10 +531,68 @@ class Repository:
                 {"uid": uid},
             ).scalar_one()
             competencies = self._competencies(c)
+            self._add_origins(
+                c,
+                uid,
+                [
+                    *roles,
+                    *projects,
+                    *stories,
+                    *skills,
+                    *achievements,
+                    *education,
+                    *languages,
+                    *feedback,
+                ],
+            )
         return Brain(
             roles=roles, projects=projects, stories=stories, skills=skills, achievements=achievements, education=education, languages=languages, feedback=feedback,
             coverage=_coverage(competencies, roles, projects, stories), pending_proposals=pending,
         )  # fmt: skip
+
+    def _add_origins(self, c: Connection, uid: str, entities: list[Any]) -> None:
+        """Say where each entry came from (ADR 0023): its source's kind and
+        date, and the quote that justified it. A dump nobody proposed from
+        is a form typed in by hand (ADR 0022); its text is the entry itself,
+        so it is not repeated as a quote."""
+        dumps = {
+            str(r[0]): r[1:]
+            for r in c.execute(
+                _q(
+                    "SELECT d.id, d.kind, d.object_name, d.created_at, "
+                    "EXISTS (SELECT 1 FROM proposals p WHERE p.raw_dump_id = d.id) "
+                    "FROM raw_dumps d WHERE d.user_id = :uid"
+                ),
+                {"uid": uid},
+            ).all()
+        }
+        # Table names come from TABLE, never from a request.
+        quotes = {
+            str(r[0]): r[1]
+            for r in c.execute(
+                _q(
+                    " UNION ALL ".join(
+                        f"SELECT id, evidence FROM {t} WHERE user_id = :uid AND evidence IS NOT NULL"
+                        for t in TABLE.values()
+                    )
+                ),
+                {"uid": uid},
+            ).all()
+        }
+        for e in entities:
+            dump = dumps.get(e.source.raw_dump_id)
+            if dump is None:
+                continue
+            kind, object_name, created_at, proposed = dump
+            if kind in ("resume_pdf", "resume_docx"):
+                origin = "resume"
+            elif object_name:
+                origin = "file"  # a diagram or image, read as text
+            else:
+                origin = "capture" if proposed else "manual"
+            e.source.origin = origin
+            e.source.added_on = created_at
+            e.source.evidence = None if origin == "manual" else quotes.get(e.id)
 
     def roles_for_user(self, uid: str) -> list[Role]:
         with self.engine.begin() as c:
@@ -975,6 +1033,7 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
         "roles": [
             {
                 "id": ids[d.key],
+                "evidence": d.evidence,
                 "company": d.company,
                 "title": d.title,
                 "start_date": d.start_date,
@@ -987,6 +1046,7 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
         "projects": [
             {
                 "id": ids[d.key],
+                "evidence": d.evidence,
                 "role_id": ref(d.role, "role"),
                 "name": d.name,
                 "problem": d.problem,
@@ -1000,6 +1060,7 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
         "stories": [
             {
                 "id": ids[d.key],
+                "evidence": d.evidence,
                 "role_id": ref(d.role, "role"),
                 "project_id": ref(d.project, "project"),
                 "title": d.title,
@@ -1014,6 +1075,7 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
         "skills": [
             {
                 "id": ids[d.key],
+                "evidence": d.evidence,
                 "name": d.name,
                 "depth": d.depth,
                 "project_ids": [ref(p, "project") for p in d.projects],
@@ -1025,6 +1087,7 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
         "achievements": [
             {
                 "id": ids[d.key],
+                "evidence": d.evidence,
                 "kind": d.kind,
                 "title": d.title,
                 "issuer": d.issuer,
@@ -1035,6 +1098,7 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
         "education": [
             {
                 "id": ids[d.key],
+                "evidence": d.evidence,
                 "institution": d.institution,
                 "qualification": d.qualification,
                 "field": d.field,
@@ -1044,12 +1108,13 @@ def _resolve(patch: Patch, labels: dict[str, str], dump_id: str) -> dict:
             for d in patch.education
         ],
         "languages": [
-            {"id": ids[d.key], "name": d.name, "proficiency": d.proficiency}
+            {"id": ids[d.key], "evidence": d.evidence, "name": d.name, "proficiency": d.proficiency}
             for d in patch.languages
         ],
         "feedback": [
             {
                 "id": ids[d.key],
+                "evidence": d.evidence,
                 "role_id": ref(d.role, "role"),
                 "project_id": ref(d.project, "project"),
                 "given_by": d.given_by,
@@ -1084,16 +1149,17 @@ def _apply(
 
 def _apply_patch(c: Connection, uid: str, event_id: int, p: dict) -> None:
     dump = p["raw_dump_id"]
-    base = {"uid": uid, "e": event_id, "d": dump}
+    # Events from before migration 008 carry no quote.
+    base = {"uid": uid, "e": event_id, "d": dump, "evidence": None}
     for r in p["roles"]:
         c.execute(
             _q(
-                "INSERT INTO roles (id, user_id, company, title, start_date, end_date, level, responsibilities, raw_dump_id, event_id) "
-                "VALUES (:id, :uid, :company, :title, :start_date, :end_date, :level, :responsibilities, :d, :e) "
+                "INSERT INTO roles (id, user_id, company, title, start_date, end_date, level, responsibilities, evidence, raw_dump_id, event_id) "
+                "VALUES (:id, :uid, :company, :title, :start_date, :end_date, :level, :responsibilities, :evidence, :d, :e) "
                 "ON CONFLICT (id) DO UPDATE SET company = EXCLUDED.company, title = EXCLUDED.title, "
                 "start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date, level = EXCLUDED.level, "
                 "responsibilities = EXCLUDED.responsibilities, "
-                "raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
+                "evidence = EXCLUDED.evidence, raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
             ),
             # Events from before migration 006 carry no responsibilities (ADR 0019).
             {**base, "responsibilities": [], **r},
@@ -1101,11 +1167,11 @@ def _apply_patch(c: Connection, uid: str, event_id: int, p: dict) -> None:
     for r in p["projects"]:
         c.execute(
             _q(
-                "INSERT INTO projects (id, user_id, role_id, name, problem, action, result, tech, metrics, raw_dump_id, event_id) "
-                "VALUES (:id, :uid, :role_id, :name, :problem, :action, :result, :tech, :metrics, :d, :e) "
+                "INSERT INTO projects (id, user_id, role_id, name, problem, action, result, tech, metrics, evidence, raw_dump_id, event_id) "
+                "VALUES (:id, :uid, :role_id, :name, :problem, :action, :result, :tech, :metrics, :evidence, :d, :e) "
                 "ON CONFLICT (id) DO UPDATE SET role_id = EXCLUDED.role_id, name = EXCLUDED.name, "
                 "problem = EXCLUDED.problem, action = EXCLUDED.action, result = EXCLUDED.result, "
-                "tech = EXCLUDED.tech, metrics = EXCLUDED.metrics, raw_dump_id = EXCLUDED.raw_dump_id, "
+                "tech = EXCLUDED.tech, metrics = EXCLUDED.metrics, evidence = EXCLUDED.evidence, raw_dump_id = EXCLUDED.raw_dump_id, "
                 "event_id = EXCLUDED.event_id, retired_at = NULL"
             ),
             {**base, **r},
@@ -1113,35 +1179,41 @@ def _apply_patch(c: Connection, uid: str, event_id: int, p: dict) -> None:
     for r in p["stories"]:
         c.execute(
             _q(
-                "INSERT INTO stories (id, user_id, role_id, project_id, title, situation, task, action, result, competencies, raw_dump_id, event_id) "
-                "VALUES (:id, :uid, :role_id, :project_id, :title, :situation, :task, :action, :result, :competencies, :d, :e) "
+                "INSERT INTO stories (id, user_id, role_id, project_id, title, situation, task, action, result, competencies, evidence, raw_dump_id, event_id) "
+                "VALUES (:id, :uid, :role_id, :project_id, :title, :situation, :task, :action, :result, :competencies, :evidence, :d, :e) "
                 "ON CONFLICT (id) DO UPDATE SET role_id = EXCLUDED.role_id, project_id = EXCLUDED.project_id, "
                 "title = EXCLUDED.title, situation = EXCLUDED.situation, task = EXCLUDED.task, "
                 "action = EXCLUDED.action, result = EXCLUDED.result, competencies = EXCLUDED.competencies, "
-                "raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
+                "evidence = EXCLUDED.evidence, raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
             ),
             {**base, **r},
         )
     for r in p["skills"]:
         c.execute(
             _q(
-                "INSERT INTO skills (id, user_id, name, depth, raw_dump_id, event_id) "
-                "VALUES (:id, :uid, :name, :depth, :d, :e) "
+                "INSERT INTO skills (id, user_id, name, depth, evidence, raw_dump_id, event_id) "
+                "VALUES (:id, :uid, :name, :depth, :evidence, :d, :e) "
                 "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, depth = EXCLUDED.depth, "
-                "raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
+                "evidence = EXCLUDED.evidence, raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
             ),
-            {**base, "id": r["id"], "name": r["name"], "depth": r["depth"]},
+            {
+                **base,
+                "id": r["id"],
+                "name": r["name"],
+                "depth": r["depth"],
+                "evidence": r.get("evidence"),
+            },
         )
         _set_evidence(c, r["id"], r["project_ids"])
         _set_skill_roles(c, r["id"], r.get("role_ids", []))  # absent before migration 006
     for r in p["achievements"]:
         c.execute(
             _q(
-                "INSERT INTO achievements (id, user_id, kind, title, issuer, achieved_on, raw_dump_id, event_id) "
-                "VALUES (:id, :uid, :kind, :title, :issuer, :achieved_on, :d, :e) "
+                "INSERT INTO achievements (id, user_id, kind, title, issuer, achieved_on, evidence, raw_dump_id, event_id) "
+                "VALUES (:id, :uid, :kind, :title, :issuer, :achieved_on, :evidence, :d, :e) "
                 "ON CONFLICT (id) DO UPDATE SET kind = EXCLUDED.kind, title = EXCLUDED.title, "
                 "issuer = EXCLUDED.issuer, achieved_on = EXCLUDED.achieved_on, "
-                "raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
+                "evidence = EXCLUDED.evidence, raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
             ),
             {**base, **r},
         )
@@ -1152,28 +1224,28 @@ def _apply_patch(c: Connection, uid: str, event_id: int, p: dict) -> None:
     for r in p.get("education", []):
         c.execute(
             _q(
-                "INSERT INTO education (id, user_id, institution, qualification, field, start_date, end_date, raw_dump_id, event_id) "
-                "VALUES (:id, :uid, :institution, :qualification, :field, :start_date, :end_date, :d, :e) "
-                "ON CONFLICT (id) DO UPDATE SET institution = EXCLUDED.institution, qualification = EXCLUDED.qualification, field = EXCLUDED.field, start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date, raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
+                "INSERT INTO education (id, user_id, institution, qualification, field, start_date, end_date, evidence, raw_dump_id, event_id) "
+                "VALUES (:id, :uid, :institution, :qualification, :field, :start_date, :end_date, :evidence, :d, :e) "
+                "ON CONFLICT (id) DO UPDATE SET institution = EXCLUDED.institution, qualification = EXCLUDED.qualification, field = EXCLUDED.field, start_date = EXCLUDED.start_date, end_date = EXCLUDED.end_date, evidence = EXCLUDED.evidence, raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
             ),
             {**base, **r},
         )
     for r in p.get("languages", []):
         c.execute(
             _q(
-                "INSERT INTO languages (id, user_id, name, proficiency, raw_dump_id, event_id) VALUES (:id, :uid, :name, :proficiency, :d, :e) "
-                "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, proficiency = EXCLUDED.proficiency, raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
+                "INSERT INTO languages (id, user_id, name, proficiency, evidence, raw_dump_id, event_id) VALUES (:id, :uid, :name, :proficiency, :evidence, :d, :e) "
+                "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, proficiency = EXCLUDED.proficiency, evidence = EXCLUDED.evidence, raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
             ),
             {**base, **r},
         )
     for r in p.get("feedback", []):
         c.execute(
             _q(
-                "INSERT INTO feedback (id, user_id, role_id, project_id, given_by, content, received_on, raw_dump_id, event_id) "
-                "VALUES (:id, :uid, :role_id, :project_id, :given_by, :content, :received_on, :d, :e) "
+                "INSERT INTO feedback (id, user_id, role_id, project_id, given_by, content, received_on, evidence, raw_dump_id, event_id) "
+                "VALUES (:id, :uid, :role_id, :project_id, :given_by, :content, :received_on, :evidence, :d, :e) "
                 "ON CONFLICT (id) DO UPDATE SET role_id = EXCLUDED.role_id, project_id = EXCLUDED.project_id, "
                 "given_by = EXCLUDED.given_by, content = EXCLUDED.content, received_on = EXCLUDED.received_on, "
-                "raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
+                "evidence = EXCLUDED.evidence, raw_dump_id = EXCLUDED.raw_dump_id, event_id = EXCLUDED.event_id, retired_at = NULL"
             ),
             {**base, **r},
         )

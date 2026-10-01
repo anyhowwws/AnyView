@@ -5,7 +5,8 @@ import { Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EntryForm } from "@/components/brain/entry-form";
-import { ApiError, addEntity, editEntity, getDump, retireEntity, type EventOut } from "@/lib/api";
+import { ApiError, addEntity, editEntity, retireEntity, type EventOut } from "@/lib/api";
+import { EntrySource } from "@/components/brain/entry-source";
 import { ENTRY_FIELDS, linkSpecs, monthLabel } from "@/lib/entry-fields";
 import type { Achievement, Brain, Education, EntityKind, Feedback, Language, Project, Role, Skill, Story } from "@/lib/types";
 
@@ -19,8 +20,8 @@ interface Props {
 }
 
 /** Entities grouped by role: Role → its Projects → their Stories; then Skills
- *  and Achievements. Every card can be edited in place or retired, and links
- *  to the dump it came from. */
+ *  and Achievements. Every card can be edited in place or retired, and says
+ *  where it came from (ADR 0023). */
 export function Entities({ brain, onChanged }: Props) {
   // Which add form is open, and where: `at` is the section (or role) whose
   // button opened it, so the form appears beside that button.
@@ -53,7 +54,7 @@ export function Entities({ brain, onChanged }: Props) {
     adding && adding.at === at ? (
       <AddEntry kind={adding.kind} brain={brain} roleId={adding.roleId} onAdded={added} onCancel={() => setAdding(null)} />
     ) : null;
-  const addButton = (kind: EntityKind, at: string, label = KIND_NAME[kind], roleId?: string) => {
+  const addButton = (kind: EntityKind, at: string, label = KIND_NAME[kind].toLowerCase(), roleId?: string) => {
     const open = adding?.kind === kind && adding.at === at;
     return (
       <Button
@@ -66,7 +67,7 @@ export function Entities({ brain, onChanged }: Props) {
         onClick={() => setAdding(open ? null : { kind, at, roleId })}
       >
         <Plus className="size-3.5" aria-hidden />
-        Add {label.toLowerCase()}
+        Add {label}
       </Button>
     );
   };
@@ -115,8 +116,8 @@ export function Entities({ brain, onChanged }: Props) {
             {addForm(role.id)}
             {adding?.at !== role.id && (
               <div className="flex flex-wrap gap-1 text-muted-foreground">
-                {addButton("project", role.id, `Project at ${role.company}`, role.id)}
-                {addButton("story", role.id, `Story at ${role.company}`, role.id)}
+                {addButton("project", role.id, `project at ${role.company}`, role.id)}
+                {addButton("story", role.id, `story at ${role.company}`, role.id)}
               </div>
             )}
           </div>
@@ -218,7 +219,6 @@ function EntityCard({
   const [confirmingRetire, setConfirmingRetire] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<string | null>(null);
   const garden = useContext(GardenContext);
 
   async function act(fn: () => Promise<void>) {
@@ -291,21 +291,7 @@ function EntityCard({
         </div>
       )}
       {error && !editing && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
-      <div className="mt-2">
-        <button
-          type="button"
-          className="text-xs text-muted-foreground underline underline-offset-4"
-          onClick={() => {
-            if (source !== null) return setSource(null);
-            void act(async () => setSource((await getDump(entity.source.raw_dump_id)).text));
-          }}
-        >
-          {source === null ? "Show source" : "Hide source"}
-        </button>
-        {source !== null && (
-          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">{source}</pre>
-        )}
-      </div>
+      <EntrySource source={entity.source} />
     </article>
   );
 }

@@ -100,6 +100,10 @@ Backend modules:
 - `anyview/brain/manual.py` — entries added by hand (ADR 0022): `POST /brain/entities/{kind}` turns a form into a
   one-draft Patch and a `text` dump holding the form (its provenance), confirmed at once by `Repository.add_entry`
   through the same `_resolve`/`_apply` path. No model call, no proposal.
+- Each entry keeps the quote that justified it (`evidence` column, migration 008, ADR 0023). `Repository.brain` adds
+  `origin`/`added_on`/`evidence` to its `Provenance`; the card shows an origin line that opens to the quote, then the
+  document (`components/brain/entry-source.tsx`). Link fields (`linkSpecs`) refer by label when adding, by id when
+  editing; `edit_entity` checks every link target is the user's own live entry of the right kind.
 - Frontend form fields live in `frontend/lib/entry-fields.ts` (labels, hints, required, max lengths, month-precision
   dates, start ≤ end) and render through `components/brain/entry-form.tsx`; the editor, the add form and the review
   queue all use them. A new editable field goes there, not in a component.
