@@ -7,7 +7,7 @@
 // month-precision in the UI because resumes are: "2017-08" is shown, and
 // stored as "2017-08-01" unless the entry already had a day in that month.
 
-import type { EntityKind } from "./types";
+import type { Brain, EntityKind } from "./types";
 
 export type FieldControl =
   | "text"
@@ -15,7 +15,8 @@ export type FieldControl =
   | "lines" // a list of strings, one per line
   | "month" // a month picker; stores YYYY-MM-DD
   | "depth" // skill depth, 1–5
-  | "choice"; // a fixed list, plus whatever value the entry already had
+  | "choice" // a fixed list, plus whatever value the entry already had
+  | "links"; // several other entries, picked as toggles; one value per line
 
 export interface FieldSpec {
   name: string;
@@ -31,6 +32,8 @@ export interface FieldSpec {
   emptyMeans?: string;
   /** A date that cannot be later than this month. */
   notFuture?: boolean;
+  /** What an empty choice is called ("Not linked"). */
+  emptyLabel?: string;
 }
 
 /** Start and end fields that must be in order. */
@@ -143,7 +146,7 @@ export function asFormValue(value: unknown): string {
 
 /** Form text back to what the API stores for that field. */
 export function fromFormValue(spec: FieldSpec, text: string): unknown {
-  if (spec.control === "lines") return text.split("\n").map((l) => l.trim()).filter(Boolean);
+  if (spec.control === "lines" || spec.control === "links") return text.split("\n").map((l) => l.trim()).filter(Boolean);
   if (spec.control === "depth") return Number(text);
   const trimmed = text.trim();
   return trimmed === "" ? null : trimmed;
@@ -171,4 +174,35 @@ export function validateEntry(specs: FieldSpec[], values: Record<string, string>
     }
   }
   return errors;
+}
+
+// --- Links ------------------------------------------------------------------
+
+/** The fields that place an entry among the others: a project's role, a
+ *  story's role and project, a skill's projects, roles and certifications.
+ *  Adding refers to entries by label ("R1"), as a draft does; editing sets
+ *  ids, as the edit route stores them. */
+export function linkSpecs(kind: EntityKind, brain: Pick<Brain, "roles" | "projects" | "achievements">, mode: "add" | "edit"): FieldSpec[] {
+  const ref = (e: { id: string; label: string }) => (mode === "add" ? e.label : e.id);
+  const roles = brain.roles.map((r) => ({ value: ref(r), label: `${r.title} · ${r.company}` }));
+  const projects = brain.projects.map((p) => ({ value: ref(p), label: p.name }));
+  const certs = brain.achievements.map((a) => ({ value: ref(a), label: a.title }));
+  const one = (name: string, label: string, options: FieldSpec["options"], hint?: string): FieldSpec =>
+    ({ name, label, control: "choice", options, emptyLabel: "Not linked", hint });
+  const many = (name: string, label: string, options: FieldSpec["options"], hint: string): FieldSpec =>
+    ({ name, label, control: "links", options, wide: true, hint });
+  const n = (add: string, edit: string) => (mode === "add" ? add : edit);
+  const specs: FieldSpec[] = [];
+  if (kind === "project" || kind === "story" || kind === "feedback") {
+    if (roles.length) specs.push(one(n("role", "role_id"), kind === "feedback" ? "About the role" : "Role", roles));
+  }
+  if (kind === "story" || kind === "feedback") {
+    if (projects.length) specs.push(one(n("project", "project_id"), kind === "feedback" ? "About the project" : "Part of project", projects));
+  }
+  if (kind === "skill") {
+    if (projects.length) specs.push(many(n("projects", "project_ids"), "Used in projects", projects, "Tap each project that used it."));
+    if (roles.length) specs.push(many(n("roles", "role_ids"), "Used in roles", roles, "Tap each role where you used it."));
+    if (certs.length) specs.push(many(n("achievements", "achievement_ids"), "Certified by", certs, "Certifications that attest to it."));
+  }
+  return specs;
 }

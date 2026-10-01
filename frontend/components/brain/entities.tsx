@@ -1,13 +1,17 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EntryForm } from "@/components/brain/entry-form";
-import { ApiError, addEntity, editEntity, getDump, retireEntity, type EventOut } from "@/lib/api";
-import { ENTRY_FIELDS, monthLabel, type FieldSpec } from "@/lib/entry-fields";
+import { ApiError, addEntity, editEntity, retireEntity, type EventOut } from "@/lib/api";
+import { ENTRY_FIELDS, linkSpecs, monthLabel } from "@/lib/entry-fields";
 import type { Achievement, Brain, Education, EntityKind, Feedback, Language, Project, Role, Skill, Story } from "@/lib/types";
+
+// The garden being shown, so any card's editor can offer links to the rest of
+// it without every card being handed the whole brain.
+const GardenContext = createContext<Brain | null>(null);
 
 interface Props {
   brain: Brain;
@@ -15,8 +19,7 @@ interface Props {
 }
 
 /** Entities grouped by role: Role → its Projects → their Stories; then Skills
- *  and Achievements. Every card can be edited in place or retired, and links
- *  to the dump it came from. */
+ *  and Achievements. Every card can be edited in place or retired. */
 export function Entities({ brain, onChanged }: Props) {
   // Which add form is open, and where: `at` is the section (or role) whose
   // button opened it, so the form appears beside that button.
@@ -49,7 +52,7 @@ export function Entities({ brain, onChanged }: Props) {
     adding && adding.at === at ? (
       <AddEntry kind={adding.kind} brain={brain} roleId={adding.roleId} onAdded={added} onCancel={() => setAdding(null)} />
     ) : null;
-  const addButton = (kind: EntityKind, at: string, label = KIND_NAME[kind], roleId?: string) => {
+  const addButton = (kind: EntityKind, at: string, label = KIND_NAME[kind].toLowerCase(), roleId?: string) => {
     const open = adding?.kind === kind && adding.at === at;
     return (
       <Button
@@ -62,7 +65,7 @@ export function Entities({ brain, onChanged }: Props) {
         onClick={() => setAdding(open ? null : { kind, at, roleId })}
       >
         <Plus className="size-3.5" aria-hidden />
-        Add {label.toLowerCase()}
+        Add {label}
       </Button>
     );
   };
@@ -82,6 +85,7 @@ export function Entities({ brain, onChanged }: Props) {
   );
 
   return (
+    <GardenContext.Provider value={brain}>
     <section aria-labelledby="entities-heading" className="space-y-6">
       <h2 id="entities-heading" className="text-lg font-semibold tracking-tight">
         What&apos;s growing in your Digital Garden
@@ -110,8 +114,8 @@ export function Entities({ brain, onChanged }: Props) {
             {addForm(role.id)}
             {adding?.at !== role.id && (
               <div className="flex flex-wrap gap-1 text-muted-foreground">
-                {addButton("project", role.id, `Project at ${role.company}`, role.id)}
-                {addButton("story", role.id, `Story at ${role.company}`, role.id)}
+                {addButton("project", role.id, `project at ${role.company}`, role.id)}
+                {addButton("story", role.id, `story at ${role.company}`, role.id)}
               </div>
             )}
           </div>
@@ -151,6 +155,7 @@ export function Entities({ brain, onChanged }: Props) {
             {feedback.map((f) => <FeedbackCard key={f.id} feedback={f} labelOf={labelOf} onChanged={onChanged} />)}
           </>))}
     </section>
+    </GardenContext.Provider>
   );
 }
 
@@ -212,7 +217,7 @@ function EntityCard({
   const [confirmingRetire, setConfirmingRetire] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [source, setSource] = useState<string | null>(null);
+  const garden = useContext(GardenContext);
 
   async function act(fn: () => Promise<void>) {
     setBusy(true);
@@ -271,7 +276,7 @@ function EntityCard({
       {editing && (
         <div className="mt-3 rounded-lg border bg-muted/30 p-3">
           <EntryForm
-            specs={ENTRY_FIELDS[kind]}
+            specs={[...ENTRY_FIELDS[kind], ...(garden ? linkSpecs(kind, garden, "edit") : [])]}
             initial={entity as unknown as Record<string, unknown>}
             submitLabel="Save changes"
             busyLabel="Saving…"
@@ -284,21 +289,6 @@ function EntityCard({
         </div>
       )}
       {error && !editing && <p role="alert" className="mt-2 text-xs text-destructive">{error}</p>}
-      <div className="mt-2">
-        <button
-          type="button"
-          className="text-xs text-muted-foreground underline underline-offset-4"
-          onClick={() => {
-            if (source !== null) return setSource(null);
-            void act(async () => setSource((await getDump(entity.source.raw_dump_id)).text));
-          }}
-        >
-          {source === null ? "Show source" : "Hide source"}
-        </button>
-        {source !== null && (
-          <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-muted p-2 text-xs">{source}</pre>
-        )}
-      </div>
     </article>
   );
 }
@@ -339,18 +329,7 @@ function AddEntry({
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const roleOptions = brain.roles.map((r) => ({ value: r.label, label: `${r.title} · ${r.company}` }));
-  const projectOptions = brain.projects
-    .filter((p) => !roleId || p.role_id === roleId)
-    .map((p) => ({ value: p.label, label: p.name }));
-  const links: FieldSpec[] = [];
-  if ((kind === "project" || kind === "story" || kind === "feedback") && roleOptions.length) {
-    links.push({ name: "role", label: kind === "feedback" ? "About the role" : "Role", control: "choice", options: roleOptions });
-  }
-  if ((kind === "story" || kind === "feedback") && projectOptions.length) {
-    links.push({ name: "project", label: kind === "feedback" ? "About the project" : "Part of project", control: "choice", options: projectOptions });
-  }
-  const specs = [...ENTRY_FIELDS[kind], ...links];
+  const specs = [...ENTRY_FIELDS[kind], ...linkSpecs(kind, brain, "add")];
   const role = brain.roles.find((r) => r.id === roleId);
   const initial: Record<string, unknown> = { depth: 3, kind: "credential", role: role?.label ?? "" };
 

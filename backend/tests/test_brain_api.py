@@ -437,3 +437,72 @@ def test_a_bad_hand_added_entry_is_refused_and_writes_nothing(client):
         ).status_code
         == 409
     )
+
+
+def _add(client, entity, **fields):
+    r = client.post(f"/brain/entities/{entity}", json={"fields": fields})
+    assert r.status_code == 200, r.text
+    return r.json()["brain"]
+
+
+def test_hand_added_entries_can_be_linked_and_unlinked_later(client):
+    _add(client, "role", company="Acme", title="Architect")
+    _add(client, "project", name="Landing zone")
+    _add(client, "achievement", title="Professional Cloud Architect", kind="credential")
+    b = _add(client, "skill", name="Terraform", depth=4)
+    role, project, cert, skill = (
+        b["roles"][0],
+        b["projects"][0],
+        b["achievements"][0],
+        b["skills"][0],
+    )
+    assert project["role_id"] is None
+
+    r = client.patch(
+        f"/brain/entities/project/{project['id']}", json={"fields": {"role_id": role["id"]}}
+    )
+    assert r.status_code == 200 and r.json()["brain"]["projects"][0]["role_id"] == role["id"]
+    r = client.patch(
+        f"/brain/entities/skill/{skill['id']}",
+        json={
+            "fields": {
+                "project_ids": [project["id"]],
+                "role_ids": [role["id"]],
+                "achievement_ids": [cert["id"]],
+            }
+        },
+    )
+    linked = r.json()["brain"]["skills"][0]
+    assert (linked["project_ids"], linked["role_ids"], linked["achievement_ids"]) == (
+        [project["id"]],
+        [role["id"]],
+        [cert["id"]],
+    )
+    r = client.patch(f"/brain/entities/project/{project['id']}", json={"fields": {"role_id": None}})
+    assert r.json()["brain"]["projects"][0]["role_id"] is None
+
+
+def test_a_skill_added_by_hand_can_be_linked_on_the_form(client):
+    role = _add(client, "role", company="Acme", title="Architect")["roles"][0]
+    skill = _add(client, "skill", name="Terraform", depth=3, roles=[role["label"]])["skills"][0]
+    assert skill["role_ids"] == [role["id"]]
+
+
+def test_links_must_point_at_your_own_live_entries_of_the_right_kind(client):
+    from tests.conftest import FAKE_TOKENS
+
+    FAKE_TOKENS["stranger4"] = {
+        "sub": "uid-stranger4",
+        "email": "jordan@example.com",
+        "email_verified": True,
+    }
+    other = TestClient(app, headers={"Authorization": "Bearer stranger4"})
+    theirs = _add(other, "role", company="Elsewhere", title="CTO")["roles"][0]
+    b = _add(client, "role", company="Acme", title="Architect")
+    b = _add(client, "project", name="Landing zone")
+    project, role = b["projects"][0], b["roles"][0]
+    url = f"/brain/entities/project/{project['id']}"
+    for bad in (theirs["id"], project["id"], "not-a-uuid"):
+        assert client.patch(url, json={"fields": {"role_id": bad}}).status_code == 409
+    client.delete(f"/brain/entities/role/{role['id']}")
+    assert client.patch(url, json={"fields": {"role_id": role["id"]}}).status_code == 409
