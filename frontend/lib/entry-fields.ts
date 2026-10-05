@@ -184,9 +184,23 @@ export function validateEntry(specs: FieldSpec[], values: Record<string, string>
  *  ids, as the edit route stores them. */
 export function linkSpecs(kind: EntityKind, brain: Pick<Brain, "roles" | "projects" | "achievements">, mode: "add" | "edit"): FieldSpec[] {
   const ref = (e: { id: string; label: string }) => (mode === "add" ? e.label : e.id);
-  const roles = brain.roles.map((r) => ({ value: ref(r), label: `${r.title} · ${r.company}` }));
-  const projects = brain.projects.map((p) => ({ value: ref(p), label: p.name }));
-  const certs = brain.achievements.map((a) => ({ value: ref(a), label: a.title }));
+  return linkFields(kind, {
+    roles: brain.roles.map((r) => ({ value: ref(r), label: `${r.title} · ${r.company}` })),
+    projects: brain.projects.map((p) => ({ value: ref(p), label: p.name })),
+    certs: brain.achievements.map((a) => ({ value: ref(a), label: a.title })),
+  }, mode);
+}
+
+type Options = NonNullable<FieldSpec["options"]>;
+
+/** The link fields for a kind, given what can be linked to. The review queue
+ *  calls this directly, offering the proposal's own new drafts by key ("r1")
+ *  beside the garden's entries by label ("R2"), as a Patch refers to them. */
+export function linkFields(
+  kind: EntityKind,
+  { roles, projects, certs }: { roles: Options; projects: Options; certs: Options },
+  mode: "add" | "edit",
+): FieldSpec[] {
   const one = (name: string, label: string, options: FieldSpec["options"], hint?: string): FieldSpec =>
     ({ name, label, control: "choice", options, emptyLabel: "Not linked", hint });
   const many = (name: string, label: string, options: FieldSpec["options"], hint: string): FieldSpec =>

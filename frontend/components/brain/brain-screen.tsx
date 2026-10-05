@@ -70,6 +70,7 @@ export function BrainScreen() {
         <ReviewQueue
           proposals={proposals}
           competencies={brain?.coverage.competencies ?? []}
+          garden={brain ?? undefined}
           onConfirmed={(out, id) => {
             setBrain(out.brain);
             setProposals((prev) => prev.filter((p) => p.id !== id));
