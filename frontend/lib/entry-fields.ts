@@ -58,15 +58,15 @@ export const ENTRY_FIELDS: Record<EntityKind, FieldSpec[]> = {
     { name: "level", label: "Level", control: "text", max: 80, placeholder: "e.g. Senior", hint: "How senior the role was." },
     { name: "start_date", label: "Started", control: "month" },
     { name: "end_date", label: "Ended", control: "month", emptyMeans: "Present", hint: "Leave as Present if you still work here." },
-    { name: "responsibilities", label: "Responsibilities", control: "lines", wide: true, hint: "One per line. Ongoing work; bounded work with an outcome is a project." },
+    { name: "responsibilities", label: "Responsibilities", control: "lines", wide: true, hint: "Enter starts the next one. Ongoing work; bounded work with an outcome is a project." },
   ],
   project: [
     { name: "name", label: "Project name", control: "text", required: true, max: 200, wide: true },
     { name: "problem", label: "Problem", control: "textarea", placeholder: "What needed to change?" },
     { name: "action", label: "What you did", control: "textarea", placeholder: "Your own contribution" },
     { name: "result", label: "Result", control: "textarea", wide: true, placeholder: "What improved, ideally with a number" },
-    { name: "tech", label: "Technologies", control: "lines", hint: "One per line." },
-    { name: "metrics", label: "Metrics", control: "lines", hint: "One per line, e.g. 38% lower monthly cost." },
+    { name: "tech", label: "Technologies", control: "lines", placeholder: "e.g. Terraform", hint: "Enter starts the next one." },
+    { name: "metrics", label: "Metrics", control: "lines", placeholder: "e.g. 38% lower monthly cost", hint: "Enter starts the next one." },
   ],
   story: [
     { name: "title", label: "Story title", control: "text", required: true, max: 200, wide: true, hint: "A short name you will recognise." },
