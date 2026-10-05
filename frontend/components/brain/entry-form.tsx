@@ -148,7 +148,7 @@ export function EntryFields({
           );
         } else if (spec.control === "textarea") {
           control = (
-            <Textarea
+            <AutoTextarea
               {...shared}
               rows={3}
               className="min-h-20 text-sm"
@@ -607,4 +607,18 @@ function BulletList({
       </button>
     </div>
   );
+}
+
+/** A textarea that grows with its text, so a long STAR answer is read in one
+ *  view instead of scrolled inside a three-line box. CSS field-sizing would
+ *  do this, but not every browser has it yet. */
+function AutoTextarea(props: React.ComponentProps<typeof Textarea>) {
+  const box = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + 2}px`; // + the 1px top and bottom border
+  }, [props.value]);
+  return <Textarea ref={box} {...props} className={`${props.className ?? ""} resize-none overflow-hidden`} />;
 }

@@ -7,18 +7,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
 import { EntryFields } from "@/components/brain/entry-form";
 import { ApiError, confirmProposal, discardProposal } from "@/lib/api";
-import { ENTRY_FIELDS, asFormValue, fromFormValue, validateEntry } from "@/lib/entry-fields";
+import { ENTRY_FIELDS, asFormValue, fromFormValue, linkFields, validateEntry, type FieldSpec } from "@/lib/entry-fields";
 import type { Brain, Competency, EntityKind, Patch, Proposal } from "@/lib/types";
 import type { EventOut } from "@/lib/api";
 
 interface Props {
   proposals: Proposal[];
   competencies: Competency[];
+  /** What a draft can be linked to besides this proposal's own drafts. */
+  garden?: Pick<Brain, "roles" | "projects">;
   onConfirmed: (out: EventOut, proposalId: string) => void;
   onDiscarded: (brain: Brain, proposalId: string) => void;
 }
 
-export function ReviewQueue({ proposals, competencies, onConfirmed, onDiscarded }: Props) {
+export function ReviewQueue({ proposals, competencies, garden, onConfirmed, onDiscarded }: Props) {
   if (proposals.length === 0) return null;
   return (
     <section aria-labelledby="queue-heading" className="space-y-3">
@@ -33,7 +35,7 @@ export function ReviewQueue({ proposals, competencies, onConfirmed, onDiscarded 
       <AnimatePresence initial={false}>
         {proposals.map((p) => (
           <motion.div key={p.id} layout exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.25 }}>
-            <ProposalCard proposal={p} competencies={competencies} onConfirmed={onConfirmed} onDiscarded={onDiscarded} />
+            <ProposalCard proposal={p} competencies={competencies} garden={garden} onConfirmed={onConfirmed} onDiscarded={onDiscarded} />
           </motion.div>
         ))}
       </AnimatePresence>
@@ -67,11 +69,13 @@ const GROUPS: { key: Group; label: string }[] = [
 function ProposalCard({
   proposal,
   competencies,
+  garden,
   onConfirmed,
   onDiscarded,
 }: {
   proposal: Proposal;
   competencies: Competency[];
+  garden: Props["garden"];
   onConfirmed: Props["onConfirmed"];
   onDiscarded: Props["onDiscarded"];
 }) {
@@ -150,6 +154,27 @@ function ProposalCard({
     }
   }
 
+  // Where a project, story or feedback draft can sit: a role or project this
+  // proposal adds (by key, "r1") or one already in the garden (by label, "R2"),
+  // which is how a Patch refers to them. A draft that updates a garden entry
+  // stands in for it, so that entry is not offered twice.
+  const updated = new Set(GROUPS.flatMap((g) => patch[g.key].map((d) => d.existing).filter(Boolean)));
+  const tag = (d: { key: string; existing: string | null }) =>
+    dropped.has(d.key) ? " (unticked)" : d.existing ? ` (updates ${d.existing})` : " (new)";
+  const linkOptions = {
+    roles: [
+      ...patch.roles.map((d) => ({ value: d.key, label: `${d.title} · ${d.company}${tag(d)}` })),
+      ...(garden?.roles ?? []).filter((r) => !updated.has(r.label)).map((r) => ({ value: r.label, label: `${r.title} · ${r.company}` })),
+    ],
+    projects: [
+      ...patch.projects.map((d) => ({ value: d.key, label: `${d.name}${tag(d)}` })),
+      ...(garden?.projects ?? []).filter((p) => !updated.has(p.label)).map((p) => ({ value: p.label, label: p.name })),
+    ],
+    certs: [],
+  };
+  // Skills keep their own list of evidenced links (SkillLinks) instead.
+  const linksFor = (group: Group): FieldSpec[] => (group === "skills" ? [] : linkFields(KIND_OF[group], linkOptions, "add"));
+
   function card<G extends Group>(group: G, draft: Patch[G][number]) {
     return (
       <DraftCard
@@ -157,6 +182,7 @@ function ProposalCard({
         group={group}
         draft={draft}
         competencies={competencies}
+        links={linksFor(group)}
         kept={!dropped.has(draft.key)}
         problems={problemsOf(group, draft)}
         showAll={attempted}
@@ -243,6 +269,7 @@ function DraftCard<G extends Group>({
   group,
   draft,
   competencies,
+  links,
   kept,
   problems,
   showAll,
@@ -253,6 +280,7 @@ function DraftCard<G extends Group>({
   group: G;
   draft: Patch[G][number];
   competencies: Competency[];
+  links: FieldSpec[];
   kept: boolean;
   problems: Record<string, string>;
   showAll: boolean;
@@ -262,7 +290,7 @@ function DraftCard<G extends Group>({
 }) {
   const d = draft as unknown as Record<string, unknown>;
   const patchOf = (fields: Record<string, unknown>) => fields as unknown as Partial<Patch[G][number]>;
-  const specs = ENTRY_FIELDS[KIND_OF[group]];
+  const specs = [...ENTRY_FIELDS[KIND_OF[group]], ...links];
   // The form's own text, so a half-typed list line or a trailing space is not
   // normalised away mid-keystroke; the draft gets the cleaned value.
   const [texts, setTexts] = useState<Record<string, string>>(() =>
