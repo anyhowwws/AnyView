@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useState, type ReactNode } from "react";
-import { Plus } from "lucide-react";
+import { ChevronDown, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EntryForm } from "@/components/brain/entry-form";
@@ -163,6 +163,13 @@ function ProjectCard({ project, onChanged }: { project: Project; onChanged: Prop
   return (
     <EntityCard kind="project" entity={project} title={project.name} onChanged={onChanged}
       meta={[project.result, project.tech.length ? project.tech.join(", ") : null].filter(Boolean).join(" · ")}
+      sections={[
+        { label: "Problem", text: project.problem },
+        { label: "What you did", text: project.action },
+        { label: "Result", text: project.result },
+        { label: "Technologies", items: project.tech, chips: true },
+        { label: "Metrics", items: project.metrics },
+      ]}
     />
   );
 }
@@ -171,6 +178,12 @@ function StoryCard({ story, labelOf, onChanged }: { story: Story; labelOf: Map<s
   return (
     <EntityCard kind="story" entity={story} title={story.title} onChanged={onChanged}
       meta={story.result ?? "no result recorded"}
+      sections={[
+        { label: "Situation", text: story.situation },
+        { label: "Task", text: story.task },
+        { label: "Action", text: story.action },
+        { label: "Result", text: story.result },
+      ]}
       badges={story.competencies}
       footnote={story.project_id ? `part of ${labelOf.get(story.project_id) ?? "a project"}` : undefined}
     />
@@ -186,6 +199,10 @@ function FeedbackCard({ feedback, labelOf, onChanged }: { feedback: Feedback; la
   return (
     <EntityCard kind="feedback" entity={feedback} title={feedback.given_by} onChanged={onChanged}
       meta={[feedback.content, monthLabel(feedback.received_on)].filter(Boolean).join(" · ")}
+      sections={[
+        { label: "What they said", text: feedback.content },
+        { label: "When", text: monthLabel(feedback.received_on) },
+      ]}
       footnote={about ? `about ${about}` : undefined}
     />
   );
@@ -201,8 +218,11 @@ function usedIn(skill: Skill, labelOf: Map<string, string>): string {
 
 type Entity = Role | Project | Story | Skill | Achievement | Education | Language | Feedback;
 
+/** A labelled part of an entry, shown in full when the card is expanded. */
+type CardSection = { label: string; text?: string | null; items?: string[]; chips?: boolean };
+
 function EntityCard({
-  kind, entity, title, meta, badges, details, footnote, onChanged,
+  kind, entity, title, meta, badges, details, sections, footnote, onChanged,
 }: {
   kind: EntityKind;
   entity: Entity;
@@ -210,10 +230,14 @@ function EntityCard({
   meta?: string;
   badges?: string[];
   details?: string[];
+  /** Longer fields, read in full by expanding the card instead of opening Edit. */
+  sections?: CardSection[];
   footnote?: string;
   onChanged: Props["onChanged"];
 }) {
   const [editing, setEditing] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const filled = (sections ?? []).filter((x) => (x.text && x.text.trim()) || (x.items && x.items.length));
   const [confirmingRetire, setConfirmingRetire] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -240,7 +264,8 @@ function EntityCard({
             <span className="mr-1.5 text-xs text-muted-foreground tabular-nums">{entity.label}</span>
             {title}
           </p>
-          {meta && <p className="truncate text-xs text-muted-foreground">{meta}</p>}
+          {/* Collapsed, one truncated line; expanded, the full sections replace it. */}
+          {meta && !(expanded && filled.length) && <p className="truncate text-xs text-muted-foreground">{meta}</p>}
           {badges && badges.length > 0 && (
             <p className="mt-1 flex flex-wrap gap-1">
               {badges.map((b) => <Badge key={b} variant="secondary">{b.replace("_", " ")}</Badge>)}
@@ -251,7 +276,41 @@ function EntityCard({
               {details.map((d) => <li key={d}>{d}</li>)}
             </ul>
           )}
+          {expanded && filled.length > 0 && (
+            <dl id={`entity-${entity.id}-details`} className="mt-2 space-y-2.5">
+              {filled.map((x) => (
+                <div key={x.label}>
+                  <dt className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{x.label}</dt>
+                  {x.items && x.chips ? (
+                    <dd className="mt-1 flex flex-wrap gap-1">
+                      {x.items.map((item) => <Badge key={item} variant="secondary">{item}</Badge>)}
+                    </dd>
+                  ) : x.items ? (
+                    <dd>
+                      <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-sm leading-relaxed text-foreground/90">
+                        {x.items.map((item) => <li key={item}>{item}</li>)}
+                      </ul>
+                    </dd>
+                  ) : (
+                    <dd className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">{x.text}</dd>
+                  )}
+                </div>
+              ))}
+            </dl>
+          )}
           {footnote && <p className="mt-1 text-xs text-muted-foreground">{footnote}</p>}
+          {filled.length > 0 && !editing && (
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-controls={`entity-${entity.id}-details`}
+              onClick={() => setExpanded((e) => !e)}
+              className="mt-1.5 inline-flex min-h-7 items-center gap-1 rounded text-xs font-medium text-primary hover:underline underline-offset-4"
+            >
+              <ChevronDown className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden />
+              {expanded ? "Show less" : "Show details"}
+            </button>
+          )}
         </div>
         {!editing && !confirmingRetire && (
           <div className="flex shrink-0 gap-1">
