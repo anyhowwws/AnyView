@@ -169,7 +169,7 @@ export function BrainGraph({ brain, onBrowse }: { brain: Brain; onBrowse: () => 
 
   return (
     <section className="brain-map constellation" aria-label="Digital Garden relationship map">
-      <div className="constellation-heading"><div><span>The view from your garden</span><h3>Experience constellation</h3></div><span className="constellation-status">● {nodes.length} confirmed entries</span></div>
+      <div className="constellation-heading"><div><span>THE VIEW FROM YOUR GARDEN</span><h3>Experience constellation</h3></div><span className="constellation-status">● {nodes.length} confirmed entries</span></div>
       <div className="graph-toolbar">
         <label className="graph-search"><Search size={17} aria-hidden /><span className="sr-only">Search brain graph</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Find a story, skill, or project…" /></label>
         <label className="sr-only" htmlFor="graph-type">Entry type</label>

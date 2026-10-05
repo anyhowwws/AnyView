@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -132,11 +132,25 @@ export function EntryFields({
               {[...custom, ...options].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           );
-        } else if (spec.control === "textarea" || spec.control === "lines") {
+        } else if (spec.control === "lines") {
+          control = (
+            <BulletList
+              id={id}
+              label={spec.label}
+              value={value}
+              placeholder={spec.placeholder}
+              disabled={disabled}
+              invalid={Boolean(error)}
+              describedBy={describedBy}
+              onChange={(v) => onChange(spec.name, v)}
+              onBlur={() => onBlur?.(spec.name)}
+            />
+          );
+        } else if (spec.control === "textarea") {
           control = (
             <Textarea
               {...shared}
-              rows={spec.control === "lines" ? 4 : 3}
+              rows={3}
               className="min-h-20 text-sm"
               value={value}
               placeholder={spec.placeholder}
@@ -162,7 +176,7 @@ export function EntryFields({
         return (
           <div key={spec.name} className={`flex min-w-0 flex-col gap-1.5 ${spec.wide || spec.control === "depth" ? "sm:col-span-2" : ""}`}>
             <div className="flex items-baseline justify-between gap-2">
-              <label id={`${id}-label`} htmlFor={spec.control === "depth" || spec.control === "links" ? undefined : id} className="text-xs font-semibold text-foreground">
+              <label id={`${id}-label`} htmlFor={spec.control === "depth" || spec.control === "links" || spec.control === "lines" ? undefined : id} className="text-xs font-semibold text-foreground">
                 {spec.label}
                 {spec.required ? (
                   <span className="ml-1 text-destructive" aria-hidden>*</span>
@@ -437,6 +451,160 @@ function DepthPicker({
         ))}
       </div>
       <p className="mt-1 text-xs text-muted-foreground">{chosen ? chosen.hint : "Pick how deeply you have used it."}</p>
+    </div>
+  );
+}
+
+/** A list edited as bullet rows, one auto-growing box per item, so a long
+ *  item wraps under its own text instead of under the bullet. Enter starts
+ *  the next item, Backspace at the start of a row joins it to the one above,
+ *  and pasting several lines makes several items. The value stays one item
+ *  per line, so saving is unchanged. */
+function BulletList({
+  id,
+  label,
+  value,
+  placeholder,
+  disabled,
+  invalid,
+  describedBy,
+  onChange,
+  onBlur,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  placeholder?: string;
+  disabled?: boolean;
+  invalid?: boolean;
+  describedBy?: string;
+  onChange: (value: string) => void;
+  onBlur: () => void;
+}) {
+  const items = value === "" ? [""] : value.split("\n");
+  const boxes = useRef<(HTMLTextAreaElement | null)[]>([]);
+  // Where the cursor goes after a row is added, removed or joined.
+  const [focusAt, setFocusAt] = useState<{ row: number; caret: number } | null>(null);
+  const set = (next: string[]) => onChange(next.join("\n"));
+
+  useLayoutEffect(() => {
+    // Grow each box to fit its text (CSS field-sizing is not in every browser).
+    for (const box of boxes.current) {
+      if (!box) continue;
+      box.style.height = "auto";
+      box.style.height = `${box.scrollHeight}px`;
+    }
+  }, [value]);
+
+  useEffect(() => {
+    if (!focusAt) return;
+    const box = boxes.current[focusAt.row];
+    if (box) {
+      box.focus();
+      const caret = Math.min(focusAt.caret, box.value.length);
+      box.setSelectionRange(caret, caret);
+    }
+    setFocusAt(null);
+  }, [focusAt]);
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>, row: number) {
+    const box = e.currentTarget;
+    const start = box.selectionStart;
+    const end = box.selectionEnd;
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+      e.preventDefault();
+      const text = items[row];
+      set([...items.slice(0, row), text.slice(0, start), text.slice(end), ...items.slice(row + 1)]);
+      setFocusAt({ row: row + 1, caret: 0 });
+    } else if (e.key === "Backspace" && start === 0 && end === 0 && row > 0) {
+      e.preventDefault();
+      const above = items[row - 1];
+      set([...items.slice(0, row - 1), above + items[row], ...items.slice(row + 1)]);
+      setFocusAt({ row: row - 1, caret: above.length });
+    } else if (e.key === "ArrowUp" && start === 0 && end === 0 && row > 0) {
+      e.preventDefault();
+      setFocusAt({ row: row - 1, caret: items[row - 1].length });
+    } else if (e.key === "ArrowDown" && start === box.value.length && row < items.length - 1) {
+      e.preventDefault();
+      setFocusAt({ row: row + 1, caret: 0 });
+    }
+  }
+
+  function onPaste(e: React.ClipboardEvent<HTMLTextAreaElement>, row: number) {
+    const pasted = e.clipboardData.getData("text");
+    if (!pasted.includes("\n")) return;
+    e.preventDefault();
+    // A pasted list loses its own bullets; the rows draw theirs. Blank lines
+    // inside it go, but a break at either end stays: pasting "\nnext" at the
+    // end of a row starts a new row instead of gluing onto this one.
+    const raw = pasted.split(/\r?\n/).map((l) => l.replace(/^\s*(?:[-*•▪◦·]|\d+[.)])\s+/, "").trim());
+    const lines = raw.filter((l, i) => l || i === 0 || i === raw.length - 1);
+    const box = e.currentTarget;
+    const text = items[row];
+    const last = lines.length - 1;
+    const caret = lines[last].length;
+    lines[0] = text.slice(0, box.selectionStart) + lines[0];
+    lines[last] = lines[last] + text.slice(box.selectionEnd);
+    set([...items.slice(0, row), ...lines, ...items.slice(row + 1)]);
+    setFocusAt({ row: row + last, caret: last === 0 ? caret + box.selectionStart : caret });
+  }
+
+  return (
+    <div
+      id={id}
+      role="group"
+      aria-labelledby={`${id}-label`}
+      aria-describedby={describedBy}
+      className={
+        "bullet-list rounded-lg border px-1.5 py-1.5 transition-colors focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50 dark:bg-input/30 " +
+        (invalid ? "border-destructive" : "border-input") +
+        (disabled ? " opacity-50" : "")
+      }
+    >
+      <ul className="space-y-0.5">
+        {items.map((item, row) => (
+          <li key={row} className="group flex items-start gap-2 rounded-md pl-2 pr-1 hover:bg-accent/40 focus-within:bg-accent/60">
+            <span aria-hidden className="mt-[0.72rem] size-1.5 shrink-0 rounded-full bg-primary/70" />
+            <textarea
+              ref={(el) => { boxes.current[row] = el; }}
+              rows={1}
+              value={item}
+              disabled={disabled}
+              placeholder={row === 0 ? placeholder : undefined}
+              aria-label={`${label}, item ${row + 1} of ${items.length}`}
+              className="min-h-8 w-full resize-none overflow-hidden bg-transparent py-1.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
+              onChange={(e) => set(items.map((t, i) => (i === row ? e.target.value.replace(/\n/g, " ") : t)))}
+              onKeyDown={(e) => onKeyDown(e, row)}
+              onPaste={(e) => onPaste(e, row)}
+              onBlur={onBlur}
+            />
+            <button
+              type="button"
+              disabled={disabled}
+              aria-label={`Remove ${label.toLowerCase()} item ${row + 1}`}
+              onClick={() => {
+                set(items.length === 1 ? [""] : items.filter((_, i) => i !== row));
+                setFocusAt({ row: Math.max(0, row - 1), caret: Number.MAX_SAFE_INTEGER });
+              }}
+              className="mt-1 grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
+            >
+              <X className="size-3.5" />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => {
+          set([...items, ""]);
+          setFocusAt({ row: items.length, caret: 0 });
+        }}
+        className="ml-1 mt-1 inline-flex min-h-8 items-center gap-1 rounded-md px-1.5 text-xs font-medium text-primary hover:bg-accent"
+      >
+        <Plus className="size-3.5" aria-hidden />
+        Add another
+      </button>
     </div>
   );
 }

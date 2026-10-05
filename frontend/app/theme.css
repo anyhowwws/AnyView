@@ -53,6 +53,8 @@ html .graph-inspector [data-slot=button] { max-width: 100%; height: auto; min-he
 html .graph-filter { appearance: none; padding-right: 32px; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='m1 1 5 5 5-5' fill='none' stroke='%23adc4bf' stroke-width='2'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; }
 html input::placeholder, html textarea::placeholder { color: var(--muted-foreground); opacity: 1; }
 html input:focus-visible, html textarea:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+/* Bullet-list rows sit inside one box that already shows focus; the row tints instead. */
+html .bullet-list textarea:focus-visible { outline: none; }
 html input[type=checkbox] { accent-color: var(--primary); width: 18px; height: 18px; }
 html [data-slot=button] { min-height: 40px; }
 html select { color: var(--foreground); }
