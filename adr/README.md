@@ -21,7 +21,7 @@ record of having been wrong is the useful part.
 
 | # | Title | Status |
 |---|-------|--------|
-| [0001](0001-gcp-over-aws.md) | GCP over AWS | Accepted |
+| [0001](0001-gcp-over-aws.md) | GCP over AWS | Accepted, amended by 0023 |
 | [0002](0002-postgres-over-firestore.md) | Cloud SQL for PostgreSQL over Firestore | Accepted |
 | [0003](0003-retrieval-over-user-authored-brain.md) | Retrieval over the user-authored brain (supersedes the earlier no-RAG decision) | Accepted |
 | [0004](0004-llm-access-via-vertex-ai.md) | LLM access via Vertex AI, IAM-governed | Superseded by 0007 (model); access decision stands |
@@ -43,3 +43,4 @@ record of having been wrong is the useful part.
 | [0020](0020-certifications-evidence-skills.md) | Certifications evidence skills | Accepted |
 | [0021](0021-near-duplicate-skills.md) | Near-duplicate skills are folded by a checked model call | Accepted |
 | [0022](0022-entries-added-by-hand.md) | Entries added by hand skip the model and the review queue | Accepted |
+| [0023](0023-one-warm-api-instance.md) | One warm API instance instead of scaling to zero | Accepted |

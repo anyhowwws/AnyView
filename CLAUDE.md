@@ -183,6 +183,9 @@ retrieval test set.
 
 ## Gotchas
 
+- The API keeps one warm instance (`min_instance_count = 1`, ADR 0023): a cold start took ~66 s and
+  Cloud Run refused requests outright while it booted. GETs in `frontend/lib/api.ts` also retry for
+  ~75 s, which covers deploys and instance replacement. Don't put it back to zero without reading 0023.
 - Cloud Run service is created with a placeholder image; `lifecycle.ignore_changes`
   on the image means Terraform never fights CI. Don't remove that.
 - Voice mode needs the TTS model enabled in Model Garden. It is a different model family
