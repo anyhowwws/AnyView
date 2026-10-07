@@ -67,16 +67,32 @@ async function toApiError(res: Response): Promise<ApiError> {
   return new ApiError(detail, res.status, retryable);
 }
 
+// Cloud Run scales to zero, and a cold start can take over a minute. While the
+// new instance boots, requests are refused at once with a 500 that carries no
+// CORS headers, so the browser reports a plain network error. A read is safe to
+// repeat, so GETs wait it out: about 75 s in total, then give up.
+const COLD_START_DELAYS_MS = [1000, 2000, 4000, 8000, 10000, 10000, 10000, 10000, 10000, 10000];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function request<T>(method: "GET" | "PATCH" | "DELETE", path: string): Promise<T> {
-  const auth = await authHeaders();
-  let res: Response;
-  try {
-    res = await fetch(`${BASE}${path}`, { method, headers: auth });
-  } catch {
-    throw new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
+  // Only GET is retried: repeating a DELETE that half-worked is not our call.
+  const delays = method === "GET" ? COLD_START_DELAYS_MS : [];
+  for (let attempt = 0; ; attempt++) {
+    const auth = await authHeaders(); // fresh token each time; also cheap
+    let failure: ApiError;
+    try {
+      const res = await fetch(`${BASE}${path}`, { method, headers: auth });
+      if (res.ok) return (await res.json()) as T;
+      failure = await toApiError(res);
+    } catch {
+      failure = new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
+    }
+    // 4xx (other than 429) will not change on a retry.
+    const transient = failure.status === 0 || failure.status === 429 || failure.status >= 500;
+    if (!transient || attempt >= delays.length) throw failure;
+    await sleep(delays[attempt]);
   }
-  if (!res.ok) throw await toApiError(res);
-  return (await res.json()) as T;
 }
 
 // --- The Digital Garden -----------------------------------------------------
