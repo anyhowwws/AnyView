@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-09-16
+- **Amendment (2026-10-08):** "Cold starts" below no longer holds. Cold starts
+  hurt (a ~66 s boot during which Cloud Run refused requests), so the API keeps
+  one warm instance. See 0023.
 
 ## Context
 

@@ -7,7 +7,9 @@ resource "google_cloud_run_v2_service" "api" {
     service_account = google_service_account.api.email
 
     scaling {
-      min_instance_count = 0 # scale to zero; cold starts are acceptable for a single-user tool
+      # One warm instance (ADR 0023). A cold start took ~66 s, and Cloud Run
+      # refused requests outright while it booted.
+      min_instance_count = 1
       max_instance_count = var.api_max_instances
     }
 
@@ -25,7 +27,8 @@ resource "google_cloud_run_v2_service" "api" {
           cpu    = "1"
           memory = "512Mi"
         }
-        cpu_idle = true # bill CPU only while handling requests
+        cpu_idle          = true # bill CPU only while handling requests
+        startup_cpu_boost = true # extra CPU while booting: imports + migrations (ADR 0023)
       }
 
       env {
