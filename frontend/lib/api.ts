@@ -291,7 +291,7 @@ export function getReport(session: Session): Promise<Report> {
 
 export interface ReportHandlers {
   /** The report's header (company, room, garden_used), sent at once with no items. */
-  onHeader: (header: Report) => void;
+  onHeader?: (header: Report) => void;
   /** One scored question, in finishing order; `index` is its position. */
   onItem: (index: number, item: QuestionReport) => void;
 }
@@ -319,7 +319,7 @@ export async function streamReport(session: Session, handlers: ReportHandlers): 
   for await (const { event, data } of readSse(res.body)) {
     if (event === "report") {
       header = data as Report;
-      handlers.onHeader(header);
+      handlers.onHeader?.(header);
     } else if (event === "item") {
       const { index, item } = data as { index: number; item: QuestionReport };
       items[index] = item;

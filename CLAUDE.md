@@ -164,7 +164,7 @@ terraform plan                                                   # terraform.tfv
   and `ideal` calls side by side inside `_score_one` (the SDK client is thread-safe). Keep new
   per-answer work inside `_score_one` so it stays parallel. `POST /interview/report/stream` sends
   the header, then one `item` frame per answer in finishing order (`score_as_ready`); the report
-  screen fills in as they land. `/interview/report` (`finish()`) is the same, collected.
+  screen counts them under a loader and shows the whole report, in question order, once all are in. `/interview/report` (`finish()`) is the same, collected.
 - Scoring prompts use explicit rubric anchors. Per-dimension scores only; never
   a blended number.
 - If the brain lacks material, the model says so. It never invents.

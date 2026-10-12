@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Practice } from "@/components/practice";
-import { ReportView, type Slot } from "@/components/report-view";
+import { ReportView } from "@/components/report-view";
+import { ScoringWait } from "@/components/scoring-wait";
 import { SetupForm } from "@/components/setup-form";
 import { ApiError, startInterview, streamReport, submitAnswer, uploadResume } from "@/lib/api";
 import { signOut } from "@/lib/auth";
 import { EMPTY, clear, load, save, type Saved } from "@/lib/store";
-import type { QuestionReport, Report, Session, SetupInput } from "@/lib/types";
+import type { Session, SetupInput } from "@/lib/types";
 
 /** Top-level flow: setup → practice → report. Owns the session and persists it. */
 export function App() {
@@ -16,10 +17,9 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<"idle" | "uploading" | "starting">("idle");
   const [error, setError] = useState<string | null>(null);
-  // The report as it streams in (null = not scored yet). Not persisted: a
-  // reload re-scores, since the stream that was filling it is gone.
-  const [header, setHeader] = useState<Report | null>(null);
-  const [scored, setScored] = useState<(QuestionReport | null)[]>([]);
+  // How many answers are scored so far, from the stream. Not persisted: a
+  // reload re-scores, since the stream that was counting is gone.
+  const [scoredCount, setScoredCount] = useState(0);
   const scoringStarted = useRef(false); // effects run twice in dev; score once
 
   useEffect(() => {
@@ -68,15 +68,13 @@ export function App() {
       }
     });
 
-  /** Stream the report in. Each question lands in `scored` as it finishes;
-   *  only the whole report is saved. */
+  /** Stream the report in, counting answers as they are scored; the report
+   *  itself is shown and saved only once it is whole. */
   async function score(session: Session, base: Saved) {
     scoringStarted.current = true;
-    setScored(session.questions.map(() => null));
+    setScoredCount(0);
     const report = await streamReport(session, {
-      onHeader: setHeader,
-      onItem: (index, item) =>
-        setScored((prev) => prev.map((existing, i) => (i === index ? item : existing))),
+      onItem: () => setScoredCount((n) => n + 1),
     });
     update({ ...base, session, phase: "report", report });
   }
@@ -109,8 +107,7 @@ export function App() {
     clear();
     setSaved(EMPTY);
     setError(null);
-    setHeader(null);
-    setScored([]);
+    setScoredCount(0);
     scoringStarted.current = false;
   };
 
@@ -135,31 +132,16 @@ export function App() {
         />
       )}
 
-      {saved.phase === "report" && saved.session && (
-        <ReportView
-          header={saved.report ?? header ?? headerFrom(saved.session)}
-          slots={slotsFor(saved.session, saved.report?.items ?? scored)}
-          onRestart={onRestart}
-          error={saved.report ? null : error}
+      {saved.phase === "report" && !saved.report && saved.session && (
+        <ScoringWait
+          scored={scoredCount}
+          total={saved.session.questions.length}
+          error={error}
           onRetry={() => saved.session && run(() => score(saved.session!, saved))}
         />
       )}
+
+      {saved.phase === "report" && saved.report && <ReportView report={saved.report} onRestart={onRestart} />}
     </>
   );
-}
-
-/** The report's header before the server's arrives (it is the first frame, so
- *  this shows for moments). The server's says whether the garden was read. */
-function headerFrom(session: Session): Omit<Report, "items"> {
-  const { company, role, seniority, difficulty, garden } = session.setup;
-  return { session_id: session.session_id, company, role, seniority, difficulty, garden_used: Boolean(garden) };
-}
-
-/** One slot per question, in question order, with its result once it has one. */
-function slotsFor(session: Session, results: (QuestionReport | null)[]): Slot[] {
-  return session.questions.map((question, i) => ({
-    question,
-    answer: session.answers[i]?.text ?? "",
-    result: results[i] ?? null,
-  }));
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -345,7 +346,8 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
               >
                 {jobText ? "Choose a different posting" : "Choose file"}
               </Button>
-              <span className="text-sm text-muted-foreground" aria-live="polite">
+              <span className="flex items-center gap-2 text-sm text-muted-foreground" aria-live="polite">
+                {jobBusy && <Loader2 size={14} className="animate-spin motion-reduce:animate-none" aria-hidden />}
                 {jobBusy
                   ? "Reading the posting…"
                   : jobText
