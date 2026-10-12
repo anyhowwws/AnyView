@@ -236,6 +236,9 @@ retrieval test set.
 - Hosting cache headers (`firebase.json`): everything outside `/_next/` is `no-cache` (revalidated each load),
   `/_next/static/**` is `immutable` for a year (hashed names). Firebase's default is `max-age=3600` on
   everything, which kept the old page in browsers for up to an hour after a deploy.
+- The static export writes each route as a flat file (`out/practice.html`). `cleanUrls: true` in
+  `firebase.json` is what maps `/practice` to it; without it a refresh or a pasted link falls
+  through the `**` rewrite to `index.html` (the garden) while the URL still says `/practice`.
 - Don't run `next build` while `next dev` is up — both use `frontend/.next/` and the
   dev server then throws `__webpack_modules__[moduleId] is not a function`. Stop
   dev, build, restart dev (or `rm -rf frontend/.next`).
