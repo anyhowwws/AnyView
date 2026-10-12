@@ -402,16 +402,41 @@ def answer(body: AnswerRequest) -> Session:
     return engine.submit_answer(body.session, body.answer)
 
 
-@router.post("/report", response_model=Report)
-def report(session: Session, user: CurrentUser, model: ModelDep, repo: RepoDep) -> Report:
+def _for_report(session: Session, repo: Any, uid: str) -> Session:
     """The report is coaching, not simulation, so the ideal answers read the
     garden at every difficulty (ADR 0014). At `panel` the session already
     carries it; below that it is attached here, where it can reach the report
     without ever having reached the questions."""
     if session.setup.garden is None:
-        garden = _garden(repo, user.uid)
+        garden = _garden(repo, uid)
         if garden:
             session = session.model_copy(
                 update={"setup": session.setup.model_copy(update={"garden": garden})}
             )
-    return engine.finish(session, model=model)
+    return session
+
+
+@router.post("/report", response_model=Report)
+def report(session: Session, user: CurrentUser, model: ModelDep, repo: RepoDep) -> Report:
+    return engine.finish(_for_report(session, repo, user.uid), model=model)
+
+
+@router.post("/report/stream")
+def stream_report(session: Session, user: CurrentUser, model: ModelDep, repo: RepoDep):
+    """`POST /report`, streamed, so the report fills in while it is written:
+
+        event: report   data: <Report with items: []>     (at once: the header)
+        event: item     data: {"index": 2, "item": <QuestionReport>}   (×5, as each finishes)
+        event: done     data: {}
+
+    Items arrive in finishing order; `index` is the question's position. The
+    session is checked before the stream opens, so a bad one is a plain 409."""
+    session = _for_report(session, repo, user.uid)
+    header = engine.begin_scoring(session)
+
+    def frames():
+        yield ("report", header.model_dump(mode="json"))
+        for index, item in engine.score_as_ready(session, model=model):
+            yield ("item", {"index": index, "item": item.model_dump(mode="json")})
+
+    return stream_response(frames())

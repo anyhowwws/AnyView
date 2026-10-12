@@ -88,6 +88,33 @@ def test_full_journey_to_report(client, setup):
     assert report["items"][0]["ideal"]["has_material"] is True
 
 
+def test_streamed_report_sends_the_header_then_each_item(client, setup):
+    session = _start(client, setup)
+    for i in range(5):
+        r = client.post(
+            "/interview/answer",
+            json={"session": session, "answer": {"question_id": i + 1, "text": f"answer {i + 1}"}},
+        )
+        session = r.json()
+
+    with client.stream("POST", "/interview/report/stream", json=session) as r:
+        assert r.status_code == 200
+        events = _sse_events(r)
+    kinds = [e for e, _ in events]
+    assert kinds == ["report"] + ["item"] * 5 + ["done"]
+    assert events[0][1]["items"] == [] and "total" not in events[0][1]
+    items = {d["index"]: d["item"] for e, d in events if e == "item"}
+    assert sorted(items) == [0, 1, 2, 3, 4]
+    assert all(items[i]["question"]["id"] == i + 1 for i in items)
+    assert all(len(item["dimensions"]) == 4 for item in items.values())
+
+
+def test_streamed_report_before_wrap_is_a_409_not_a_stream(client, setup):
+    session = _start(client, setup)
+    r = client.post("/interview/report/stream", json=session)
+    assert r.status_code == 409
+
+
 # --- Failure paths -------------------------------------------------------------
 
 

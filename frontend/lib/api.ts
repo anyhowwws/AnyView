@@ -9,6 +9,7 @@ import type {
   JobDocument,
   Patch,
   Proposal,
+  QuestionReport,
   RawDump,
   Report,
   ResumeOnFile,
@@ -286,6 +287,54 @@ export function submitAnswer(session: Session, answer: Answer): Promise<Session>
 
 export function getReport(session: Session): Promise<Report> {
   return post<Report>("/interview/report", session);
+}
+
+export interface ReportHandlers {
+  /** The report's header (company, room, garden_used), sent at once with no items. */
+  onHeader: (header: Report) => void;
+  /** One scored question, in finishing order; `index` is its position. */
+  onItem: (index: number, item: QuestionReport) => void;
+}
+
+/** `getReport`, streamed: each question arrives as soon as it is scored, so the
+ *  report fills in while you read it. Resolves with the whole report in
+ *  question order. */
+export async function streamReport(session: Session, handlers: ReportHandlers): Promise<Report> {
+  const auth = await authHeaders();
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/interview/report/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...auth },
+      body: JSON.stringify(session),
+    });
+  } catch {
+    throw new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
+  }
+  if (!res.ok) throw await toApiError(res);
+  if (!res.body) throw new ApiError("Empty response from the API.", 502, true);
+
+  let header: Report | null = null;
+  const items: (QuestionReport | null)[] = session.questions.map(() => null);
+  for await (const { event, data } of readSse(res.body)) {
+    if (event === "report") {
+      header = data as Report;
+      handlers.onHeader(header);
+    } else if (event === "item") {
+      const { index, item } = data as { index: number; item: QuestionReport };
+      items[index] = item;
+      handlers.onItem(index, item);
+    } else if (event === "error") {
+      const { message, retryable } = data as { message: string; retryable: boolean };
+      throw new ApiError(message, 502, retryable);
+    } else if (event === "done") {
+      if (header && items.every((item) => item !== null)) {
+        return { ...header, items: items as QuestionReport[] };
+      }
+      break;
+    }
+  }
+  throw new ApiError("The connection closed before scoring finished. Please try again.", 502, true);
 }
 
 export interface AskHandlers {

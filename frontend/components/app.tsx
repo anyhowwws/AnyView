@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Practice } from "@/components/practice";
-import { ReportView } from "@/components/report-view";
+import { ReportView, type Slot } from "@/components/report-view";
 import { SetupForm } from "@/components/setup-form";
-import { ApiError, getReport, startInterview, submitAnswer, uploadResume } from "@/lib/api";
+import { ApiError, startInterview, streamReport, submitAnswer, uploadResume } from "@/lib/api";
 import { signOut } from "@/lib/auth";
 import { EMPTY, clear, load, save, type Saved } from "@/lib/store";
-import type { SetupInput } from "@/lib/types";
+import type { QuestionReport, Report, Session, SetupInput } from "@/lib/types";
 
 /** Top-level flow: setup → practice → report. Owns the session and persists it. */
 export function App() {
@@ -16,6 +16,11 @@ export function App() {
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<"idle" | "uploading" | "starting">("idle");
   const [error, setError] = useState<string | null>(null);
+  // The report as it streams in (null = not scored yet). Not persisted: a
+  // reload re-scores, since the stream that was filling it is gone.
+  const [header, setHeader] = useState<Report | null>(null);
+  const [scored, setScored] = useState<(QuestionReport | null)[]>([]);
+  const scoringStarted = useRef(false); // effects run twice in dev; score once
 
   useEffect(() => {
     // sessionStorage only exists in the browser; read it after mount.
@@ -63,24 +68,50 @@ export function App() {
       }
     });
 
+  /** Stream the report in. Each question lands in `scored` as it finishes;
+   *  only the whole report is saved. */
+  async function score(session: Session, base: Saved) {
+    scoringStarted.current = true;
+    setScored(session.questions.map(() => null));
+    const report = await streamReport(session, {
+      onHeader: setHeader,
+      onItem: (index, item) =>
+        setScored((prev) => prev.map((existing, i) => (i === index ? item : existing))),
+    });
+    update({ ...base, session, phase: "report", report });
+  }
+
   const onAnswer = (text: string) =>
     run(async () => {
       if (!saved.session) return;
       const q = saved.session.questions[saved.session.current];
       const session = await submitAnswer(saved.session, { question_id: q.id, text });
       if (session.state === "wrap") {
-        update({ ...saved, session, phase: "report" });
-        const report = await getReport(session);
-        update({ ...saved, session, phase: "report", report });
+        const next: Saved = { ...saved, session, phase: "report" };
+        update(next);
+        await score(session, next);
       } else {
         update({ ...saved, session });
       }
     });
 
+  // Reloaded mid-scoring: the stream died with the old page, so start again.
+  useEffect(() => {
+    if (!hydrated || scoringStarted.current) return;
+    if (saved.phase === "report" && !saved.report && saved.session) {
+      const { session } = saved;
+      run(() => score(session, saved));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once, after hydration
+  }, [hydrated]);
+
   const onRestart = () => {
     clear();
     setSaved(EMPTY);
     setError(null);
+    setHeader(null);
+    setScored([]);
+    scoringStarted.current = false;
   };
 
   if (!hydrated) return null;
@@ -104,30 +135,31 @@ export function App() {
         />
       )}
 
-      {saved.phase === "report" && !saved.report && (
-        <div className="mx-auto flex max-w-2xl flex-col items-center gap-3 py-24 text-center">
-          {error ? (
-            <>
-              <p className="text-sm text-destructive" role="alert">{error}</p>
-              <button
-                className="text-sm underline underline-offset-4"
-                onClick={() => saved.session && run(async () => {
-                  const report = await getReport(saved.session!);
-                  update({ ...saved, report });
-                })}
-              >
-                Try again
-              </button>
-            </>
-          ) : (
-            <p className="text-sm text-muted-foreground" role="status">
-              Scoring your five answers against the rubric. This usually takes under a minute.
-            </p>
-          )}
-        </div>
+      {saved.phase === "report" && saved.session && (
+        <ReportView
+          header={saved.report ?? header ?? headerFrom(saved.session)}
+          slots={slotsFor(saved.session, saved.report?.items ?? scored)}
+          onRestart={onRestart}
+          error={saved.report ? null : error}
+          onRetry={() => saved.session && run(() => score(saved.session!, saved))}
+        />
       )}
-
-      {saved.phase === "report" && saved.report && <ReportView report={saved.report} onRestart={onRestart} />}
     </>
   );
+}
+
+/** The report's header before the server's arrives (it is the first frame, so
+ *  this shows for moments). The server's says whether the garden was read. */
+function headerFrom(session: Session): Omit<Report, "items"> {
+  const { company, role, seniority, difficulty, garden } = session.setup;
+  return { session_id: session.session_id, company, role, seniority, difficulty, garden_used: Boolean(garden) };
+}
+
+/** One slot per question, in question order, with its result once it has one. */
+function slotsFor(session: Session, results: (QuestionReport | null)[]): Slot[] {
+  return session.questions.map((question, i) => ({
+    question,
+    answer: session.answers[i]?.text ?? "",
+    result: results[i] ?? null,
+  }));
 }

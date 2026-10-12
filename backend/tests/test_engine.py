@@ -102,7 +102,8 @@ def test_session_round_trips_through_json(setup):
 
 
 def test_finish_scores_answers_concurrently(setup):
-    """Ten model calls that each take 0.2s must not take 2s end to end."""
+    """Ten model calls that each take 0.2s must not take 2s end to end — nor
+    0.4s, which is what running each answer's score and ideal in turn costs."""
     import time
 
     class SlowFake(FakeModel):
@@ -118,4 +119,26 @@ def test_finish_scores_answers_concurrently(setup):
     report = engine.finish(session, model=fake)
     elapsed = time.monotonic() - started
     assert [item.question.id for item in report.items] == [1, 2, 3, 4, 5]
-    assert elapsed < 1.0, f"took {elapsed:.2f}s — scoring is not concurrent"
+    assert elapsed < 0.35, f"took {elapsed:.2f}s — scoring is not concurrent"
+
+
+def test_score_as_ready_yields_each_answer_as_it_finishes(setup):
+    """Question 1 is slow on purpose: the other four must come out first, each
+    tagged with its own position so the caller can put it back in place."""
+    import time
+
+    class Q1IsSlow(FakeModel):
+        def generate(self, **kwargs):
+            if "answer one" in kwargs["user"]:
+                time.sleep(0.3)
+            return super().generate(**kwargs)
+
+    fake = Q1IsSlow()
+    session = engine.start(setup, session_id="sess-0001", model=fake)
+    for i, text in enumerate(["answer one", "b", "c", "d", "e"]):
+        session = engine.submit_answer(session, Answer(question_id=i + 1, text=text))
+    header = engine.begin_scoring(session)
+    assert header.items == []
+    order = [(i, item.question.id) for i, item in engine.score_as_ready(session, model=fake)]
+    assert order[-1] == (0, 1)
+    assert sorted(order) == [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
