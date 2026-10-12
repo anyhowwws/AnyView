@@ -160,8 +160,11 @@ terraform plan                                                   # terraform.tfv
   pipeline on a document you know the answer for; keep real resumes out of the repo.
 - Each question carries its own `seconds` (ADR 0016), chosen by the model when it plans and
   clamped by `engine.start` into 45–300. The clock only runs when `setup.time_bounded`.
-- `finish()` scores the five answers concurrently (thread pool; the SDK client is
-  thread-safe). Keep new per-answer work inside `_score_one` so it stays parallel.
+- Scoring is concurrent twice over: the five answers in a thread pool, and each answer's `score`
+  and `ideal` calls side by side inside `_score_one` (the SDK client is thread-safe). Keep new
+  per-answer work inside `_score_one` so it stays parallel. `POST /interview/report/stream` sends
+  the header, then one `item` frame per answer in finishing order (`score_as_ready`); the report
+  screen fills in as they land. `/interview/report` (`finish()`) is the same, collected.
 - Scoring prompts use explicit rubric anchors. Per-dimension scores only; never
   a blended number.
 - If the brain lacks material, the model says so. It never invents.

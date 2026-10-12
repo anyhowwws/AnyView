@@ -15,7 +15,7 @@ so every transition in the brief's diagram is visible in `TRANSITIONS`.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from pydantic import ValidationError
 
@@ -171,25 +171,31 @@ def _score_one(
     session: Session, system: str, question: Question, answer: Answer, *, model: Model
 ) -> QuestionReport:
     """Two structured calls for one answer: the rubric score, and the ideal
-    answer grounded in whatever record the setup carries."""
-    score_reply = model.generate(
-        system=system,
-        user=score_user(question, answer.text),
-        session_id=session.session_id,
-        call="score",
-        output_schema=SCORE_SCHEMA,
-        effort="high",
-        max_tokens=2048,
-    )
-    ideal_reply = model.generate(
-        system=system,
-        user=ideal_user(question, session.setup),
-        session_id=session.session_id,
-        call="ideal",
-        output_schema=IDEAL_SCHEMA,
-        effort="high",
-        max_tokens=2048,
-    )
+    answer grounded in whatever record the setup carries. Neither reads the
+    other, so they run side by side: the score in a helper thread, the ideal
+    answer in this one. `.result()` waits for the score and re-raises any
+    error it hit, exactly as if it had been called here."""
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        score_future = pool.submit(
+            model.generate,
+            system=system,
+            user=score_user(question, answer.text),
+            session_id=session.session_id,
+            call="score",
+            output_schema=SCORE_SCHEMA,
+            effort="high",
+            max_tokens=2048,
+        )
+        ideal_reply = model.generate(
+            system=system,
+            user=ideal_user(question, session.setup),
+            session_id=session.session_id,
+            call="ideal",
+            output_schema=IDEAL_SCHEMA,
+            effort="high",
+            max_tokens=2048,
+        )
+        score_reply = score_future.result()
     try:
         score = ScoreOutput.model_validate(_structured(score_reply, "score the answer"))
         ideal = IdealAnswer.model_validate(_structured(ideal_reply, "write the ideal answer"))
@@ -206,22 +212,14 @@ def _score_one(
     )
 
 
-def finish(session: Session, *, model: Model) -> Report:
-    """wrap → score → report. The five answers are scored concurrently: each
-    takes 20–40 s on the model and none depends on another, so wall time is
-    one answer's worth, not five. The SDK client is thread-safe, and
-    `pool.map` returns results in question order whichever finishes first."""
+def begin_scoring(session: Session) -> Report:
+    """wrap → score. Checks the session can be scored and returns the report's
+    header with no items yet. Separate from the scoring itself so a streamed
+    route can refuse a bad session with a plain 4xx before the stream opens."""
     require_state(session, State.WRAP)
     if len(session.answers) != len(session.questions):
         raise EngineError("Every question needs an answer before scoring.")
-    session = _move(session, State.SCORE)
-
-    system = session_system(session.setup)
-    pairs = list(zip(session.questions, session.answers, strict=True))
-    with ThreadPoolExecutor(max_workers=len(pairs)) as pool:
-        items = list(pool.map(lambda qa: _score_one(session, system, *qa, model=model), pairs))
-
-    _move(session, State.REPORT)
+    _move(session, State.SCORE)
     return Report(
         session_id=session.session_id,
         company=session.setup.company,
@@ -229,5 +227,35 @@ def finish(session: Session, *, model: Model) -> Report:
         seniority=session.setup.seniority,
         difficulty=session.setup.difficulty,
         garden_used=bool(session.setup.garden and session.setup.garden.strip()),
-        items=items,
+        items=[],
     )
+
+
+def score_as_ready(session: Session, *, model: Model) -> Iterator[tuple[int, QuestionReport]]:
+    """Score every answer concurrently and yield `(index, item)` as each one
+    finishes — in finishing order, not question order. Each takes 20–40 s on
+    the model and none depends on another, so the wall time is the slowest
+    answer's, and a caller can show the first result long before the last.
+    The SDK client is thread-safe. Call `begin_scoring` first."""
+    system = session_system(session.setup)
+    pairs = list(zip(session.questions, session.answers, strict=True))
+    with ThreadPoolExecutor(max_workers=len(pairs)) as pool:
+        # future → its question's position, so a result can be put back in place.
+        futures = {
+            pool.submit(_score_one, session, system, question, answer, model=model): i
+            for i, (question, answer) in enumerate(pairs)
+        }
+        for future in as_completed(futures):
+            yield futures[future], future.result()
+
+
+def finish(session: Session, *, model: Model) -> Report:
+    """wrap → score → report, all at once: `score_as_ready` collected back into
+    question order."""
+    report = begin_scoring(session)
+    items: list[QuestionReport | None] = [None] * len(session.questions)
+    for i, item in score_as_ready(session, model=model):
+        items[i] = item
+    # The transitions are checked, not stored: the browser owns the session.
+    _move(_move(session, State.SCORE), State.REPORT)
+    return report.model_copy(update={"items": items})
