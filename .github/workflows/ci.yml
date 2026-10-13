@@ -13,6 +13,16 @@ env:
   REGION: us-central1
   SERVICE: anyview-api
   REPO: anyview
+  # Terraform reads TF_VAR_* as input variables, so the git-ignored terraform.tfvars
+  # is not needed in CI (ADR 0024). Anything not set here uses the variable's default.
+  # The first plan after setting these up must say "No changes"; if it does not,
+  # tfvars on a laptop differs from what is set here.
+  TF_VAR_project_id: ${{ vars.GCP_PROJECT_ID }}
+  TF_VAR_github_repo: ${{ github.repository }}
+  TF_VAR_billing_account_id: ${{ vars.TF_BILLING_ACCOUNT_ID }}
+  TF_VAR_db_owner_iam_user: ${{ vars.TF_DB_OWNER_IAM_USER }}
+  TF_VAR_allowed_emails: ${{ vars.TF_ALLOWED_EMAILS }} # JSON list: ["a@example.com"]
+  TF_VAR_local_signers: ${{ vars.TF_LOCAL_SIGNERS || '[]' }}
 
 jobs:
   backend:
@@ -83,11 +93,138 @@ jobs:
       - run: terraform init -backend=false -input=false
       - run: terraform validate
 
+  # Plan: read-only. On a pull request the plan is posted as a comment; on main it is
+  # saved so the apply job runs exactly what was shown, not a fresh plan (ADR 0024).
+  # -lock=false because a plan changes nothing, so two PRs can plan at once and the
+  # plan identity needs no write access to the state bucket.
+  terraform-plan:
+    needs: terraform
+    # Fork PRs get no OIDC token or repository variables, so they get the static checks only.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_TF_PLAN_SA }}
+
+      # The wrapper would swallow plan's exit code, which is how "changes" is detected.
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - run: terraform init -input=false -backend-config="bucket=${{ vars.GCP_PROJECT_ID }}-tfstate"
+
+      - id: plan
+        run: |
+          # Exit codes with -detailed-exitcode: 0 no changes, 1 error, 2 changes.
+          set +e
+          terraform plan -input=false -lock=false -no-color -detailed-exitcode -out=tfplan
+          code=$?
+          set -e
+          if [ "$code" -eq 1 ]; then exit 1; fi
+          echo "changes=$([ "$code" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          terraform show -no-color tfplan > plan.txt
+
+      # What a reviewer reads: on a PR in the comment, on main in the run summary.
+      # There is no approval step between a merge and the apply (ADR 0024), so the
+      # PR comment is the only place the plan is looked at before it runs.
+      - name: Show the plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANGES: ${{ steps.plan.outputs.changes }}
+        run: |
+          {
+            echo "<!-- terraform-plan -->"
+            echo "### Terraform plan for ${GITHUB_SHA::7}"
+            echo
+            if [ "$CHANGES" = "true" ]; then echo "This plan **changes infrastructure**."; else echo "No changes."; fi
+            echo
+            echo '```'
+            head -c 60000 plan.txt   # a comment holds 65,536 characters
+            echo '```'
+          } > summary.md
+          cat summary.md >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gh pr comment "${{ github.event.pull_request.number }}" \
+              --body-file summary.md --edit-last --create-if-none
+          fi
+
+      # The plan file is kept in the private state bucket, not as a workflow artifact:
+      # artifacts of a public repository can be downloaded by anyone signed in to
+      # GitHub, and a plan file holds the whole configuration.
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Keep the plan for the apply job
+        if: github.event_name == 'push' && steps.plan.outputs.changes == 'true'
+        run: gcloud storage cp tfplan "gs://${{ vars.GCP_PROJECT_ID }}-tfstate/plans/${GITHUB_SHA}.tfplan"
+
+  # Apply: only on main, only when the plan has changes, and it applies the plan the
+  # previous job just made. The apply identity trusts only workflows running on main
+  # (infra/terraform_ci.tf), so a pull request cannot become it.
+  terraform-apply:
+    needs: terraform-plan
+    if: github.event_name == 'push' && needs.terraform-plan.outputs.changes == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: terraform-state
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: infra
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_TF_APPLY_SA }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - run: terraform init -input=false -backend-config="bucket=${{ vars.GCP_PROJECT_ID }}-tfstate"
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Fetch the plan that was shown
+        run: gcloud storage cp "gs://${{ vars.GCP_PROJECT_ID }}-tfstate/plans/${GITHUB_SHA}.tfplan" tfplan
+
+      # Applying a saved plan refuses to run if the state moved since it was made.
+      - run: terraform apply -input=false tfplan
+
+      - name: Remove the plan
+        if: always()
+        run: gcloud storage rm "gs://${{ vars.GCP_PROJECT_ID }}-tfstate/plans/${GITHUB_SHA}.tfplan"
+
   # Deploy only runs on main, and only once backend/frontend/terraform all pass —
-  # a push that fails CI never reaches Cloud Run or Hosting.
+  # a push that fails CI never reaches Cloud Run or Hosting. It waits for the apply,
+  # so infrastructure a release depends on exists first. The apply is skipped when
+  # the plan has no changes, hence the status check instead of a plain `needs`.
   deploy-api:
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: [backend, frontend, terraform]
+    if: >-
+      ${{ !failure() && !cancelled() &&
+      github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+    needs: [backend, frontend, terraform, terraform-plan, terraform-apply]
     runs-on: ubuntu-latest
     concurrency:
       group: deploy-main

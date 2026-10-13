@@ -65,3 +65,13 @@ output "db_iam_user" {
   description = "The API's IAM database user name."
   value       = local.db_api_user
 }
+
+output "tf_plan_sa" {
+  description = "Set as the GitHub repository variable GCP_TF_PLAN_SA (ADR 0024)."
+  value       = google_service_account.tf_plan.email
+}
+
+output "tf_apply_sa" {
+  description = "Set as the GitHub repository variable GCP_TF_APPLY_SA (ADR 0024)."
+  value       = google_service_account.tf_apply.email
+}

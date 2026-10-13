@@ -36,7 +36,7 @@ writes simple scripts). So:
 | Auth | Identity Platform: Google sign-in only, email allow-list (`ALLOWED_EMAILS`), Firebase ID token verified by `google-auth` on every `/interview/*` route | 0009 |
 | Secrets | Secret Manager, Terraform provisions the *parameter*, never the value | brief |
 | IaC | Terraform, everything; console-clicked resources do not exist. The `aws` provider manages **only** Route 53 records for `anyview.anyapps.cloud` | brief, 0008 |
-| CI/CD | GitHub Actions → WIF → GCP. No stored keys. | brief |
+| CI/CD | GitHub Actions → WIF → GCP. No stored keys. Terraform plans on PRs, applies automatically on main | brief, 0024 |
 
 Out of scope (brief): LangChain/orchestration libs, any vector DB, chunking raw
 docs, Firestore, scraping Glassdoor/Blind, GKE/HA/multi-region, API keys.
@@ -59,7 +59,7 @@ infra/bootstrap/       State bucket only. Local state. Run once.
 infra/                 Main GCP stack. GCS backend, bucket via -backend-config. No AWS credentials needed (ADR 0012).
 infra/dns/              The one AWS resource (Route 53 CNAME). Own state, own `aws login`. Applied rarely (ADR 0012).
 adr/                   Decision records, numbered. Write one *as* a decision is made.
-.github/workflows/     ci.yml — lint/test/validate, then (push to main only, after those pass) WIF → Artifact Registry → Cloud Run → Hosting
+.github/workflows/     ci.yml — lint/test/validate + terraform plan (PRs: comment; main: saved), then (push to main only, after those pass) terraform apply → Artifact Registry → Cloud Run → Hosting
 ```
 
 Backend modules:

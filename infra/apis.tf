@@ -10,6 +10,7 @@ locals {
     "sts.googleapis.com",                  # WIF token exchange
     "cloudresourcemanager.googleapis.com", # project-level IAM
     "billingbudgets.googleapis.com",       # budget alert
+    "cloudbilling.googleapis.com",         # reading a billing account's IAM policy (ADR 0024)
     "secretmanager.googleapis.com",        # secrets (Phase 1+; the API, not any value)
     "logging.googleapis.com",
     "monitoring.googleapis.com",
