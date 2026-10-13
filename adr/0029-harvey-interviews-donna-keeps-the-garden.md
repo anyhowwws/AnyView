@@ -19,13 +19,27 @@ read your resume", "Donna moves on when the clock runs out", "Ask Donna about yo
   Copy avoids pronouns for him; "Harvey" or "the interviewer" instead.
 - **Donna is the Digital Garden's assistant.** Discover, the review queue, resume and dump
   extraction, and the capture box keep her name. Her voice is not decided yet.
-- **Harvey's voice is configured as `HARVEY_VOICE`**, default **`Orus`**.
+- **Harvey's voice is configured as `HARVEY_VOICE`**, default **`Alnilam`** (chosen by the owner after auditioning; first `Orus`, see below).
   `DONNA_VOICE` and the Terraform variable `donna_voice` are gone, along with the frontend's
   `DonnaVoice`/`donnaVoice()`. The garden gets its own setting when she gets a voice.
 - **The voice name was checked against Vertex, not assumed.** "Orbit" was the first choice, but
   a synthesis call with it returns `400 INVALID_ARGUMENT`; `Orus` and `Charon` both succeed.
   An unknown voice name fails every spoken question, and the app then falls back to text, so a
-  wrong name would have looked like "voice is broken". Orus was chosen as the nearest name.
+  wrong name would have looked like "voice is broken". Orus was the first stand-in, until Alnilam was picked.
+
+- **Harvey has a delivery.** `prompts.HARVEY_DELIVERY` is direction for the TTS model, put in
+  front of every line he speaks as `"<style>: <line>"` (`adapter.spoken_prompt`): a sharp New
+  York closer, smooth low-to-mid baritone, dry and slightly smug, brisk and clipped. It is a code
+  constant, not an environment variable: it is part of who Harvey is, and changing it is a
+  reviewed change.
+- **The delivery was tuned by stopwatch as well as by ear.** The first version asked for
+  "short, deliberate pauses" and ran about 30% slower than plain speech (9.6 s against 7.2 s
+  for a sample question), which the owner heard as too slow. Dropping the pause and
+  relaxed-pace wording gave 7.5 s. A "noticeably faster" variant ran 6.6 s and was passed over
+  as likely to feel rushed over five questions. The direction is not read aloud, which was
+  checked by transcribing the clips. One styled "let's move on" once came back with its line
+  said twice (9.5 s); three repeats were all normal, so it is a rare quirk and no guard is
+  added. A TTS quota exists (requests per minute per model): generate audition clips slowly.
 
 ## Consequences
 

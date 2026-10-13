@@ -38,7 +38,12 @@ from anyview.interview.models import (
     SetupInput,
     State,
 )
-from anyview.interview.prompts import INTERJECTIONS, JOB_PARSE_SYSTEM, job_parse_user
+from anyview.interview.prompts import (
+    HARVEY_DELIVERY,
+    INTERJECTIONS,
+    JOB_PARSE_SYSTEM,
+    job_parse_user,
+)
 from anyview.interview.voice import voiced
 from anyview.llm.adapter import Model
 from anyview.uploads.extract import (
@@ -465,6 +470,7 @@ def ask(session: Session, model: ModelDep, settings: SettingsDep, voice: bool = 
             model=model,
             session_id=session.session_id,
             voice=settings.harvey_voice,
+            style=HARVEY_DELIVERY,
         )
     )
 
@@ -487,7 +493,10 @@ def say(body: SayRequest, model: ModelDep, settings: SettingsDep) -> Spoken:
     The browser fetches each line once and reuses the clip for the whole
     interview, so a five-question run synthesises two short clips at most."""
     audio = model.speak(
-        text=INTERJECTIONS[body.line], session_id=body.session_id, voice=settings.harvey_voice
+        text=INTERJECTIONS[body.line],
+        session_id=body.session_id,
+        voice=settings.harvey_voice,
+        style=HARVEY_DELIVERY,
     )
     return Spoken(b64=base64.b64encode(audio).decode("ascii"))
 
