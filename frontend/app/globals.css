@@ -330,6 +330,22 @@ button:focus-visible, a:focus-visible, select:focus-visible, summary:focus-visib
 .on-file-actions button:hover { color: var(--foreground); }
 .extracted-text { max-height: 260px; overflow: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--background); padding: 14px; color: var(--muted-foreground); font-size: 12px; line-height: 1.6; white-space: pre-wrap; }
 
+/* Pre-flight (ADR 0028): the room, checked while the questions are planned. */
+.preflight-steps { display: flex; flex-direction: column; gap: 10px; }
+.preflight-steps > li { display: flex; align-items: flex-start; gap: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--background); padding: 14px 16px; }
+.preflight-steps > li[data-state="done"] { border-color: var(--primary); background: var(--accent); }
+.preflight-steps > li[data-state="failed"] { border-color: var(--destructive); }
+.preflight-steps > li > div { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 4px; }
+.preflight-steps strong { color: var(--foreground); font-size: 14px; font-weight: 600; }
+.preflight-steps span { color: var(--muted-foreground); font-size: 12.5px; line-height: 1.55; }
+.preflight-icon { display: grid; flex: none; place-items: center; width: 28px; height: 28px; border-radius: 999px; background: var(--muted); color: var(--foreground); }
+.preflight-icon svg { width: 15px; height: 15px; }
+li[data-state="done"] .preflight-icon { background: var(--primary); color: var(--primary-foreground); }
+li[data-state="failed"] .preflight-icon { background: var(--destructive); color: var(--primary-foreground); }
+.preflight-meter { display: block; height: 4px; max-width: 220px; overflow: hidden; border-radius: 999px; background: var(--muted); }
+.preflight-meter > span { display: block; height: 100%; background: var(--primary); transition: width 80ms linear; }
+.preflight-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
 /* Upload the posting, or fill it in. */
 .mode-switch { display: flex; flex-wrap: wrap; gap: 6px; }
 .mode-switch button { min-height: 40px; border: 1px solid var(--border); border-radius: 9px; padding: 8px 14px; color: var(--muted-foreground); font-size: 13px; }

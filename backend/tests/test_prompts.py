@@ -1,11 +1,13 @@
 import re
 
-from anyview.interview.models import Question
+from anyview.interview.models import Answer, Question
 from anyview.interview.prompts import (
     JOB_PARSE_SYSTEM,
-    ask_user,
+    OPENER,
+    THANKS,
     ideal_user,
     job_parse_user,
+    lead_in,
     plan_user,
     score_user,
     session_system,
@@ -51,13 +53,15 @@ def test_score_prompt_contains_anchors_question_and_answer():
     assert "<answer>\nI did the thing.\n</answer>" in text
 
 
-def test_ask_prompt_first_vs_followup():
-    first = ask_user(Q, index=0, previous_answer=None)
-    later = ask_user(Q, index=2, previous_answer="My earlier answer.")
-    assert "first question" in first and "<previous_answer>" not in first
-    assert "question 3 of 5" in later.lower() and "My earlier answer." in later
-    assert "no feedback" in later
-    assert "word for word" in later and Q.text in later
+def test_lead_ins_follow_how_the_last_turn_ended():
+    assert lead_in(index=0, previous=None, spoken=True) == OPENER
+    thanked = {
+        lead_in(index=i, previous=Answer(question_id=1, text="x"), spoken=True) for i in range(1, 5)
+    }
+    assert thanked <= set(THANKS) and len(thanked) > 1  # not the same words every time
+    cut = Answer(question_id=1, text="x", cut_off=True)
+    assert lead_in(index=1, previous=cut, spoken=True) == ""
+    assert lead_in(index=1, previous=cut, spoken=False) == "Let's move on."
 
 
 def test_ideal_prompt_forbids_invention(setup):

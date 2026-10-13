@@ -24,7 +24,7 @@ writes simple scripts). So:
 |---|---|---|
 | Cloud | GCP | 0001 |
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
-| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for streamed `ask` turns (0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first); Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
+| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028); Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
 | Voice | **Gemini TTS on Vertex** for Donna (prebuilt voice, `DONNA_VOICE`, default `Kore`); answers recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default**; her interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
@@ -201,10 +201,18 @@ retrieval test set.
   ten seconds of dead air makes Donna speak up (the mic stays open), fifteen more of silence takes
   her "shall we move on?" as a yes, and the question's budget ends the turn mid-sentence. Nothing
   about timing is enforced server-side (ADR 0026).
-- Audio is unlocked in the **Start click** (`unlockAudio()`), not when Practice mounts: planning
-  takes ~20 s and a browser's click permission lapses in seconds, which left question one silent.
-- `ask` streams the fast model's one-sentence lead-in, then the planned question **word for word**
-  (ADR 0026). Spoken answers are sent as soon as they are transcribed — no review step.
+- **Pre-flight** (`components/preflight.tsx`, ADR 0028) sits between Start and question one while
+  planning runs: it opens the microphone (so the permission prompt lands there), plays Donna's
+  `hello` line, and prefetches the `time_up`/`stalled` clips. Its **Begin** click is the user gesture
+  that unlocks audio (`unlockAudio()`); a browser's click permission lapses long before planning ends.
+- One mic stream, one `AudioContext`, one `DonnaVoice` for the whole interview (`acquireMicrophone`,
+  `audioContext`, `donnaVoice()` in `lib/voice.ts`). Practice remounts per question, so anything
+  per-mount was wrong: a fresh `AudioContext` per answer read zeros in Safari (no click for it), and
+  a fresh player cut off "let's move on". A new question calls `detach()`, never `stop()`.
+- `ask` is a fixed lead-in chosen by how the last turn ended (`prompts.lead_in`: opener / thanks /
+  nothing after a cut-in) plus the planned question **word for word**. No model call: asked for "one
+  sentence", the fast model repeated the question. `Answer.cut_off` tells it the clock ended the turn.
+- Spoken answers are sent as soon as they are transcribed — no review step (ADR 0026).
 - An answer of `(no answer given)` is what the clock running out on silence (or the give-up after
   the stall) records. It keeps
   `finish()`'s "every question needs an answer" rule intact, and skips the upload and transcription.

@@ -174,6 +174,8 @@ export interface Question {
 export interface Answer {
   question_id: number;
   text: string;
+  /** The clock or Donna ended it, not the candidate: no "thank you" next (ADR 0028). */
+  cut_off?: boolean;
 }
 
 export interface Session {

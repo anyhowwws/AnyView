@@ -60,10 +60,10 @@ def test_ask_streams_tokens_then_done(client, setup):
         assert r.headers["content-type"].startswith("text/event-stream")
         events = _sse_events(r)
     kinds = [e for e, _ in events]
-    assert kinds.count("token") > 1
+    assert kinds.count("token") >= 1
     assert kinds[-1] == "done"
     text = "".join(d["text"] for e, d in events if e == "token")
-    # A lead-in from the model, then the planned question word for word.
+    # A fixed lead-in, then the planned question word for word.
     assert text.endswith(session["questions"][0]["text"])
     assert len(text) > len(session["questions"][0]["text"])
 
@@ -179,17 +179,12 @@ def test_ask_on_finished_session_is_a_409_not_a_stream(client, setup):
     assert r.status_code == 409
 
 
-def test_model_failure_during_ask_is_an_error_event(setup, signed_in):
-    fake = FakeModel(fail="ask")
-    app.dependency_overrides[interview.get_model] = lambda: fake
-    try:
-        client = TestClient(app, headers={"Authorization": "Bearer good"})
-        session = _start(client, setup)
-        with client.stream("POST", "/interview/ask", json=session) as r:
-            events = _sse_events(r)
-        assert events == [("error", {"message": "fake failure", "retryable": True})]
-    finally:
-        app.dependency_overrides.pop(interview.get_model, None)
+def test_asking_makes_no_model_call(client, fake, setup):
+    session = _start(client, setup)
+    before = len(fake.calls)
+    with client.stream("POST", "/interview/ask", json=session) as r:
+        _sse_events(r)
+    assert len(fake.calls) == before
 
 
 def test_model_failure_during_start_is_a_503(setup, signed_in):
