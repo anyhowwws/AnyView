@@ -18,6 +18,7 @@ from anyview.brain.models import (
     StoryDraft,
 )
 from anyview.db.repository import ERASE_ORDER, Conflict, NotFound, Repository, _apply_patch
+from anyview.interview.models import JobFields
 
 UID = "uid-jordan"
 
@@ -491,6 +492,10 @@ def _fill(repo: Repository, uid: str) -> None:
          "output_tokens": 1, "thinking_tokens": 0, "cache_read": 0, "latency_ms": 1},
         uid=uid,
     )  # fmt: skip
+    repo.save_job(
+        uid, job_id=None, company="Initech", role="Architect", seniority="senior",
+        source="manual", job_description=None, fields=JobFields(),
+    )  # fmt: skip
 
 
 def test_erase_user_removes_every_row_and_only_theirs(repo, db):
@@ -609,3 +614,55 @@ def test_a_certification_evidences_a_skill_and_replays(repo, db):
     before = _snapshot(db)
     repo.rebuild(UID)
     assert _snapshot(db) == before
+
+
+# --- saved jobs (ADR 0025) ------------------------------------------------------
+
+JD = "Cloud Architect — Initech\nOwn the platform roadmap and its guardrails."
+
+
+def _save(repo, uid=UID, **over):
+    args = {
+        "job_id": None, "company": "Initech", "role": "Cloud Architect", "seniority": "senior",
+        "source": "upload", "job_description": JD, "fields": JobFields(must_haves="Terraform"),
+    }  # fmt: skip
+    return repo.save_job(uid, **{**args, **over})
+
+
+def test_the_same_posting_saved_twice_is_one_job_with_the_latest_corrections(repo):
+    first = _save(repo)
+    again = _save(repo, seniority="staff")
+    assert again.id == first.id and again.seniority == "staff"
+    assert again.last_used_at >= first.last_used_at
+    assert [j.id for j in repo.saved_jobs(UID)] == [first.id]
+    assert repo.saved_job_with_text(UID, JD).fields.must_haves == "Terraform"
+
+
+def test_a_picked_job_takes_edits_even_when_its_text_changes(repo):
+    job = _save(repo, source="manual", job_description="Architect — Initech\n\nTeam: Platform")
+    edited = _save(repo, job_id=job.id, source="manual", job_description="Architect — Initech")
+    assert edited.id == job.id and edited.job_description == "Architect — Initech"
+    assert len(repo.saved_jobs(UID)) == 1
+
+
+def test_a_job_with_no_description_matches_on_company_role_and_level(repo):
+    a = _save(repo, job_description=None, source="manual")
+    b = _save(repo, job_description=None, source="manual", company="INITECH")
+    c = _save(repo, job_description=None, source="manual", seniority="mid")
+    assert a.id == b.id != c.id
+
+
+def test_saved_jobs_are_private_and_most_recent_first(repo):
+    older = _save(repo)
+    newer = _save(repo, job_description=JD + " Remote.")
+    mine = _save(repo, uid="uid-other")
+    assert [j.id for j in repo.saved_jobs(UID)] == [newer.id, older.id]
+    with pytest.raises(NotFound):
+        repo.delete_saved_job(UID, mine.id)
+    with pytest.raises(NotFound):
+        repo.delete_saved_job(UID, "not-a-uuid")
+    repo.delete_saved_job(UID, older.id)
+    assert [j.id for j in repo.saved_jobs(UID)] == [newer.id]
+    # Someone else's id is not a handle on their row: it saves a new one of mine.
+    assert _save(repo, job_id=mine.id, job_description="x" * 60).id != mine.id
+    assert repo.saved_jobs("uid-other")[0].job_description == JD

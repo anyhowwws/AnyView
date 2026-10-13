@@ -336,3 +336,83 @@ def test_without_a_database_the_resume_must_come_with_the_interview(signed_in, s
     finally:
         app.dependency_overrides.pop(interview.get_model, None)
         app.dependency_overrides.pop(interview.get_repository_optional, None)
+
+
+# --- Saved jobs (ADR 0025) -----------------------------------------------------
+
+JD_LINES = [
+    "Cloud Architect — Initech",
+    "Own the platform roadmap and the guardrails other teams build on.",
+    "Required: Terraform, strong communication with product teams.",
+]
+
+
+def test_starting_saves_the_job_and_practising_it_again_reuses_it(client, store):
+    name = _upload(client, store)
+    job = {"source": "manual", "fields": {"must_haves": "Terraform"}}
+    r = client.post(
+        "/interview/start",
+        json={"session_id": "sess-0001", "setup": _setup(resume_object=name, job=job)},
+    )
+    assert r.status_code == 200, r.text
+    saved = client.get("/interview/jobs").json()
+    assert [(j["company"], j["role"], j["fields"]["must_haves"]) for j in saved] == [
+        ("Initech", "Cloud Architect", "Terraform")
+    ]
+
+    # Picked from the list and corrected: the same entry, updated in place.
+    job = {"id": saved[0]["id"], "source": "manual", "fields": {"must_haves": "Terraform\nGo"}}
+    r = client.post(
+        "/interview/start",
+        json={"session_id": "sess-0002", "setup": _setup(seniority="staff", job=job)},
+    )
+    assert r.status_code == 200, r.text
+    again = client.get("/interview/jobs").json()
+    assert len(again) == 1 and again[0]["seniority"] == "staff"
+    assert again[0]["fields"]["must_haves"] == "Terraform\nGo"
+
+
+def test_an_interview_without_a_job_block_saves_nothing(client, store):
+    name = _upload(client, store)
+    r = client.post(
+        "/interview/start", json={"session_id": "sess-0001", "setup": _setup(resume_object=name)}
+    )
+    assert r.status_code == 200 and client.get("/interview/jobs").json() == []
+
+
+def test_a_posting_already_saved_skips_the_parse_call(client, store):
+    name = _upload(client, store, name=f"uploads/{UID}/jd.docx", lines=JD_LINES)
+    first = client.post("/interview/job/parse", json={"object_name": name}).json()
+    assert first["saved_job"] is None
+    cv = _upload(client, store)
+    job = {"source": "upload", "fields": {"must_haves": "Terraform"}}
+    client.post(
+        "/interview/start",
+        json={
+            "session_id": "sess-0001",
+            "setup": _setup(
+                resume_object=cv, job_description=first["text"], seniority="staff", job=job
+            ),
+        },
+    )
+
+    client.fake.calls.clear()
+    second = client.post("/interview/job/parse", json={"object_name": name}).json()
+    assert second["saved_job"]["seniority"] == "staff"  # last time's correction, not a re-read
+    assert second["parsed"]["must_haves"] == ["Terraform"]
+    assert _call(client, "parse_job") is None
+
+
+def test_deleting_a_saved_job(client, store):
+    name = _upload(client, store)
+    client.post(
+        "/interview/start",
+        json={
+            "session_id": "sess-0001",
+            "setup": _setup(resume_object=name, job={"source": "manual"}),
+        },
+    )
+    job_id = client.get("/interview/jobs").json()[0]["id"]
+    assert client.delete(f"/interview/jobs/{job_id}").status_code == 204
+    assert client.delete(f"/interview/jobs/{job_id}").status_code == 404
+    assert client.get("/interview/jobs").json() == []

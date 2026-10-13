@@ -13,6 +13,7 @@ import type {
   RawDump,
   Report,
   ResumeOnFile,
+  SavedJob,
   Session,
   SetupInput,
 } from "@/lib/types";
@@ -84,6 +85,7 @@ async function request<T>(method: "GET" | "PATCH" | "DELETE", path: string): Pro
     let failure: ApiError;
     try {
       const res = await fetch(`${BASE}${path}`, { method, headers: auth });
+      if (res.status === 204) return undefined as T; // a DELETE with nothing to say
       if (res.ok) return (await res.json()) as T;
       failure = await toApiError(res);
     } catch {
@@ -197,6 +199,12 @@ export const getResumeOnFile = () => request<ResumeOnFile>("GET", "/interview/re
  *  it suggests for the form. Nothing here is used until you confirm it. */
 export const parseJob = (objectName: string) =>
   post<JobDocument>("/interview/job/parse", { object_name: objectName });
+
+/** The jobs you have practised for, most recently used first (ADR 0025). */
+export const getSavedJobs = () => request<SavedJob[]>("GET", "/interview/jobs");
+
+export const deleteSavedJob = (id: string) =>
+  request<void>("DELETE", `/interview/jobs/${encodeURIComponent(id)}`);
 
 interface UploadTicket {
   object_name: string;
