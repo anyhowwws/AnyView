@@ -1,4 +1,4 @@
-"""Turn an uploaded resume, architecture diagram, or spoken answer into text.
+"""Turn an uploaded resume or spoken answer into text.
 
 Two file types, two routes (ADR 0010):
   - DOCX: `python-docx` reads paragraphs and table cells. No model call.
@@ -27,12 +27,9 @@ from anyview.llm.adapter import Model
 
 PDF = "application/pdf"
 DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-PNG = "image/png"
-JPEG = "image/jpeg"
-WEBP = "image/webp"
-# The upload ticket is shared by the resume flow and the Digital Garden. The
-# interview route still accepts only PDFs and DOCX files as a resume source.
-ALLOWED_TYPES = {PDF: ".pdf", DOCX: ".docx", PNG: ".png", JPEG: ".jpg", WEBP: ".webp"}
+# The upload ticket is shared by the resume flow and the Digital Garden; both
+# take the same two document types.
+ALLOWED_TYPES = {PDF: ".pdf", DOCX: ".docx"}
 
 # Spoken answers (ADR 0013). What the browser can actually record depends on
 # the browser: Chrome and Firefox produce WebM/Opus, Safari produces MP4/AAC.
@@ -102,34 +99,6 @@ def pdf_to_text(data: bytes, *, model: Model, session_id: str) -> str:
         )
     if reply.truncated:
         raise ExtractionError("That PDF is too long to read in one go. Please shorten it.")
-    return _tidy(reply.text)
-
-
-DIAGRAM_SYSTEM = """You read architecture diagrams for a job seeker's Digital Garden.
-Return a faithful plain-text inventory of only what is visibly labelled or directly represented:
-systems, components, data flows, cloud services, technologies, responsibilities, and measurable
-outcomes. Preserve labels where possible. State no guesses, no implied technologies, no commentary,
-and no Markdown table."""
-
-
-def diagram_to_text(data: bytes, mime_type: str, *, model: Model, session_id: str) -> str:
-    reply = model.generate(
-        system=DIAGRAM_SYSTEM,
-        user="Read the attached architecture diagram and return its factual contents.",
-        session_id=session_id,
-        call="extract",
-        effort="low",
-        max_tokens=4096,
-        attachment=(data, mime_type),
-    )
-    if reply.refused or not reply.text.strip():
-        raise ExtractionError(
-            "That architecture diagram could not be read. Try a clearer PNG, JPG, or WebP."
-        )
-    if reply.truncated:
-        raise ExtractionError(
-            "That architecture diagram has too much detail to read in one go. Try a focused crop."
-        )
     return _tidy(reply.text)
 
 

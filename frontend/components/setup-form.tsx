@@ -348,13 +348,10 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
         <div>
           <p className="eyebrow">Your next chapter starts here</p>
           <h1>
-            Make your experience
-            <br />
-            speak for itself<span className="text-primary">.</span>
+            Make your experience speak for itself<span className="text-primary">.</span>
           </h1>
           <p className="text-sm text-muted-foreground">
-            Five thoughtful questions. Feedback grounded in your experience.
-            A little more confidence for the real conversation.
+            Five questions, feedback grounded in your experience, and more confidence for the real thing.
           </p>
         </div>
       </header>

@@ -10,7 +10,7 @@ import { BrainGraph } from "@/components/brain/brain-graph";
 import { Discover } from "@/components/brain/discover";
 import { Network, List, Grid2X2, MessageCircle, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { ApiError, getBrain, listProposals } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Brain, Proposal } from "@/lib/types";
@@ -57,8 +57,7 @@ export function BrainScreen() {
     <AuthShell pending={proposals.length}>
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-7">
         <header className="page-heading">
-          <div><p className="eyebrow">A bird’s-eye view of your career</p><h1>Your Digital Garden<span className="text-primary">.</span></h1><p>Capture the work you’ve done, cultivate the stories worth remembering, and see the connections grow.</p></div>
-          <Link href="/practice" className="workspace-link">Put it into practice <ArrowUpRight size={17} aria-hidden /></Link>
+          <div><p className="eyebrow">A bird’s-eye view of your career</p><h1>Your Digital Garden<span className="text-primary">.</span></h1><p>Capture your work, cultivate your stories, and watch the connections grow.</p></div>
         </header>
         <CaptureBox onProposal={(p) => setProposals((prev) => [...prev, p])} />
         {error && (
@@ -97,6 +96,16 @@ export function BrainScreen() {
             <Discover brain={brain} onOpen={(id) => { setFocusId(id); setView("list"); }} />
           </div>
         )}
+        {/* The next step sits where the reader finishes, not back at the top. */}
+        <section className="next-step" aria-labelledby="next-step-heading">
+          <div>
+            <h2 id="next-step-heading" className="text-lg font-semibold">Ready to put it into practice?</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Donna builds your interview from what you’ve confirmed here.</p>
+          </div>
+          <Link href="/practice" className={buttonVariants({ className: "h-11 gap-2 px-5 text-base" })}>
+            Start a practice interview <ArrowUpRight size={17} aria-hidden />
+          </Link>
+        </section>
       </div>
     </AuthShell>
   );
