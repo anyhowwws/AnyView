@@ -2,7 +2,8 @@ import pytest
 
 from anyview.interview import engine
 from anyview.interview.engine import TRANSITIONS, EngineError
-from anyview.interview.models import Answer, Session, State
+from anyview.interview.models import NO_ANSWER, Answer, Session, State
+from anyview.interview.prompts import OPENER
 from anyview.llm.adapter import ModelError
 from anyview.llm.fake import FakeModel
 
@@ -11,7 +12,7 @@ def _walk(setup, fake):
     """Run a whole interview and return (session, report)."""
     session = engine.start(setup, session_id="sess-0001", model=fake)
     for i in range(5):
-        text = "".join(engine.ask(session, model=fake))
+        text = "".join(engine.ask(session))
         assert text
         session = engine.submit_answer(session, Answer(question_id=i + 1, text=f"answer {i + 1}"))
     return session, engine.finish(session, model=fake)
@@ -40,21 +41,45 @@ def test_full_walk_produces_five_questions_and_a_report(setup):
         assert item.ideal.has_material is True
     assert not hasattr(report, "total")
 
-    # 1 plan + 5 ask + 5 score + 5 ideal, all tagged with the session id
+    # 1 plan + 5 score + 5 ideal, all tagged with the session id. Asking is a
+    # fixed lead-in plus the planned question, so it makes no call (ADR 0028).
     calls = [c["call"] for c in fake.calls]
-    assert calls.count("plan") == 1 and calls.count("ask") == 5
+    assert calls.count("plan") == 1 and calls.count("ask") == 0
     assert calls.count("score") == 5 and calls.count("ideal") == 5
     assert {c["session_id"] for c in fake.calls} == {"sess-0001"}
 
 
-def test_ask_uses_previous_answer_after_the_first_question(setup):
-    fake = FakeModel()
-    session = engine.start(setup, session_id="sess-0001", model=fake)
-    list(engine.ask(session, model=fake))
-    assert "first question" in fake.calls[-1]["user"]
-    session = engine.submit_answer(session, Answer(question_id=1, text="my first answer"))
-    list(engine.ask(session, model=fake))
-    assert "my first answer" in fake.calls[-1]["user"]
+def test_ask_opens_with_a_fixed_line_then_the_planned_question(setup):
+    session = engine.start(setup, session_id="sess-0001", model=FakeModel())
+    first = "".join(engine.ask(session, spoken=True))
+    assert first == f"{OPENER} {session.questions[0].text}"
+
+    answered = engine.submit_answer(session, Answer(question_id=1, text="my answer"))
+    said = "".join(engine.ask(answered, spoken=True))
+    assert said.endswith(answered.questions[1].text) and said.split()[0] in {
+        "Thank",
+        "Thanks",
+        "Okay,",
+        "Got",
+    }
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        Answer(question_id=1, text="I was halfway through", cut_off=True),
+        Answer(question_id=1, text=NO_ANSWER),
+    ],
+)
+def test_after_a_cut_in_there_is_no_thank_you(setup, answer):
+    session = engine.start(setup, session_id="sess-0001", model=FakeModel())
+    session = engine.submit_answer(session, answer)
+    # Spoken, her "let's move on" interjection already said it.
+    assert "".join(engine.ask(session, spoken=True)) == session.questions[1].text
+    # On screen, the words are needed.
+    assert (
+        "".join(engine.ask(session, spoken=False)) == f"Let's move on. {session.questions[1].text}"
+    )
 
 
 def test_answer_for_wrong_question_is_rejected(setup):
@@ -73,7 +98,7 @@ def test_finish_before_wrap_is_rejected(setup):
 def test_ask_after_wrap_is_rejected(setup):
     session, _ = _walk(setup, FakeModel())
     with pytest.raises(EngineError):
-        list(engine.ask(session, model=FakeModel()))
+        list(engine.ask(session))
 
 
 def test_malformed_plan_is_a_502(setup):
@@ -102,7 +127,8 @@ def test_session_round_trips_through_json(setup):
 
 
 def test_finish_scores_answers_concurrently(setup):
-    """Ten model calls that each take 0.2s must not take 2s end to end."""
+    """Ten model calls that each take 0.2s must not take 2s end to end — nor
+    0.4s, which is what running each answer's score and ideal in turn costs."""
     import time
 
     class SlowFake(FakeModel):
@@ -118,4 +144,26 @@ def test_finish_scores_answers_concurrently(setup):
     report = engine.finish(session, model=fake)
     elapsed = time.monotonic() - started
     assert [item.question.id for item in report.items] == [1, 2, 3, 4, 5]
-    assert elapsed < 1.0, f"took {elapsed:.2f}s — scoring is not concurrent"
+    assert elapsed < 0.35, f"took {elapsed:.2f}s — scoring is not concurrent"
+
+
+def test_score_as_ready_yields_each_answer_as_it_finishes(setup):
+    """Question 1 is slow on purpose: the other four must come out first, each
+    tagged with its own position so the caller can put it back in place."""
+    import time
+
+    class Q1IsSlow(FakeModel):
+        def generate(self, **kwargs):
+            if "answer one" in kwargs["user"]:
+                time.sleep(0.3)
+            return super().generate(**kwargs)
+
+    fake = Q1IsSlow()
+    session = engine.start(setup, session_id="sess-0001", model=fake)
+    for i, text in enumerate(["answer one", "b", "c", "d", "e"]):
+        session = engine.submit_answer(session, Answer(question_id=i + 1, text=text))
+    header = engine.begin_scoring(session)
+    assert header.items == []
+    order = [(i, item.question.id) for i, item in engine.score_as_ready(session, model=fake)]
+    assert order[-1] == (0, 1)
+    assert sorted(order) == [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]

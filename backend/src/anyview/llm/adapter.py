@@ -124,7 +124,19 @@ class Model(Protocol):
         max_tokens: int = 1024,
     ) -> Iterator[str]: ...
 
-    def speak(self, *, text: str, session_id: str, voice: str) -> bytes: ...
+    def speak(
+        self, *, text: str, session_id: str, voice: str, style: str | None = None
+    ) -> bytes: ...
+
+
+def spoken_prompt(text: str, style: str | None) -> str:
+    """The prompt a TTS model speaks. A style is plain-language direction put in
+    front of the words, ending in a colon: "<how to say it>: <what to say>".
+    Gemini TTS follows it as delivery rather than reading it out; a blank line
+    in its place left the delivery nearly unchanged when measured (ADR 0029)."""
+    if not style or not style.strip():
+        return text
+    return f"{style.strip().rstrip('.:')}: {text}"
 
 
 def _log_usage(*, session_id: str, call: str, model: str, usage: Usage, latency_ms: int) -> None:
@@ -243,7 +255,7 @@ class VertexGemini:
 
     Three models: `model` for judgement calls (plan, score, ideal),
     `fast_model` for streamed conversational turns, where time-to-first-token
-    matters more than depth, and `tts_model` for Donna's voice. The Pro model
+    matters more than depth, and `tts_model` for Harvey's voice. The Pro model
     spent ~450 thinking tokens and 5 s on a two-sentence greeting; Flash thinks
     near-zero at `low`.
     """
@@ -394,19 +406,22 @@ class VertexGemini:
         if candidates and _stop_reason(candidates[0].finish_reason) == "refusal":
             raise ModelError("The model declined to answer this turn.")
 
-    def speak(self, *, text: str, session_id: str, voice: str = "Kore") -> bytes:
+    def speak(
+        self, *, text: str, session_id: str, voice: str = "Alnilam", style: str | None = None
+    ) -> bytes:
         """One line of dialogue as a WAV file, spoken by a prebuilt Vertex voice.
 
         A TTS model takes no system instruction and does no thinking, so this
         builds its own config rather than reusing `_config`. `response_modalities`
         is what asks for audio instead of text; `voice` names one of Vertex's
-        prebuilt speakers (Donna's default is set by DONNA_VOICE).
+        prebuilt speakers (Harvey's default is set by HARVEY_VOICE). `style` directs
+        the delivery: see `spoken_prompt`.
         """
         started = time.monotonic()
         try:
             response = self._client.models.generate_content(
                 model=self.tts_model,
-                contents=text,
+                contents=spoken_prompt(text, style),
                 config=types.GenerateContentConfig(
                     response_modalities=["AUDIO"],
                     speech_config=types.SpeechConfig(
@@ -433,5 +448,5 @@ class VertexGemini:
         blob = _audio_part(response)
         if blob is None:
             log.warning("tts returned no audio for %d characters", len(text))
-            raise ModelError("Donna's voice is unavailable right now.", retryable=True)
+            raise ModelError("Harvey's voice is unavailable right now.", retryable=True)
         return wav(blob.data, rate=_rate_from(blob.mime_type))

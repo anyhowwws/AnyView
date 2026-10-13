@@ -44,6 +44,7 @@ from anyview.brain.models import (
     Skill,
     Story,
 )
+from anyview.interview.models import JobFields, SavedJob
 
 TABLE: dict[EntityKind, str] = {
     "role": "roles",
@@ -73,6 +74,7 @@ ERASE_ORDER = (
     "proposals",
     "raw_dumps",
     "usage_events",
+    "saved_jobs",
     "users",
 )
 
@@ -91,6 +93,16 @@ def _q(sql: str) -> sa.TextClause:
 
 def _json(value: Any) -> str:
     return json.dumps(value, default=str)
+
+
+def _is_uuid(value: str) -> bool:
+    """True for a well-formed id. Checked before a query so a mangled id from the
+    browser is "not found" rather than a Postgres cast error."""
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
 
 
 def text_sha256(text: str) -> str:
@@ -224,6 +236,138 @@ class Repository:
             ).rowcount
         if not updated:
             raise NotFound("dump")
+
+    # --- saved jobs (ADR 0025) ------------------------------------------------
+
+    _JOB_COLUMNS = (
+        "id, company, role, seniority, source, job_description, fields, created_at, last_used_at"
+    )
+
+    @staticmethod
+    def _saved_job(row: Any) -> SavedJob:
+        return SavedJob(
+            id=str(row[0]),
+            company=row[1],
+            role=row[2],
+            seniority=row[3],
+            source=row[4],
+            job_description=row[5],
+            fields=JobFields.model_validate(row[6] or {}),
+            created_at=row[7],
+            last_used_at=row[8],
+        )
+
+    def saved_jobs(self, uid: str) -> list[SavedJob]:
+        """This user's saved jobs, the one practised most recently first."""
+        with self.engine.begin() as c:
+            rows = c.execute(
+                _q(
+                    f"SELECT {self._JOB_COLUMNS} FROM saved_jobs "
+                    "WHERE user_id = :uid ORDER BY last_used_at DESC"
+                ),
+                {"uid": uid},
+            ).all()
+        return [self._saved_job(r) for r in rows]
+
+    def saved_job_with_text(self, uid: str, text: str) -> SavedJob | None:
+        """The saved job holding exactly this job description, if there is one."""
+        with self.engine.begin() as c:
+            row = c.execute(
+                _q(
+                    f"SELECT {self._JOB_COLUMNS} FROM saved_jobs "
+                    "WHERE user_id = :uid AND text_sha256 = :sha AND job_description = :text "
+                    "ORDER BY last_used_at DESC LIMIT 1"
+                ),
+                {"uid": uid, "sha": text_sha256(text), "text": text},
+            ).one_or_none()
+        return None if row is None else self._saved_job(row)
+
+    def save_job(
+        self,
+        uid: str,
+        *,
+        job_id: str | None,
+        company: str,
+        role: str,
+        seniority: str,
+        source: str,
+        job_description: str | None,
+        fields: JobFields,
+    ) -> SavedJob:
+        """Remember the job an interview was started for, and mark it used now.
+
+        Which row it lands in, in order: the saved job the user picked
+        (`job_id`, scoped to their own rows); else one already holding this
+        exact job description; else one with the same company, role and
+        seniority and no description; else a new row. So practising the same
+        posting twice never makes two entries, and corrections write back."""
+        values = {
+            "uid": uid,
+            "company": company,
+            "role": role,
+            "seniority": seniority,
+            "source": source,
+            "jd": job_description,
+            "fields": fields.model_dump_json(),
+            "sha": text_sha256(job_description) if job_description else None,
+        }
+        with self.engine.begin() as c:
+            target = None
+            if job_id and _is_uuid(job_id):
+                target = c.execute(
+                    _q("SELECT id FROM saved_jobs WHERE id = CAST(:id AS uuid) AND user_id = :uid"),
+                    {"id": job_id, "uid": uid},
+                ).scalar_one_or_none()
+            if target is None and job_description:
+                target = c.execute(
+                    _q(
+                        "SELECT id FROM saved_jobs WHERE user_id = :uid "
+                        "AND text_sha256 = :sha AND job_description = :jd LIMIT 1"
+                    ),
+                    values,
+                ).scalar_one_or_none()
+            if target is None and not job_description:
+                target = c.execute(
+                    _q(
+                        "SELECT id FROM saved_jobs WHERE user_id = :uid "
+                        "AND job_description IS NULL AND lower(company) = lower(:company) "
+                        "AND lower(role) = lower(:role) AND seniority = :seniority LIMIT 1"
+                    ),
+                    values,
+                ).scalar_one_or_none()
+
+            if target is None:
+                row = c.execute(
+                    _q(
+                        "INSERT INTO saved_jobs (id, user_id, company, role, seniority, source, "
+                        "job_description, fields, text_sha256) VALUES (:id, :uid, :company, "
+                        ":role, :seniority, :source, :jd, CAST(:fields AS jsonb), :sha) "
+                        f"RETURNING {self._JOB_COLUMNS}"
+                    ),
+                    {**values, "id": str(uuid.uuid4())},
+                ).one()
+            else:
+                row = c.execute(
+                    _q(
+                        "UPDATE saved_jobs SET company = :company, role = :role, "
+                        "seniority = :seniority, source = :source, job_description = :jd, "
+                        "fields = CAST(:fields AS jsonb), text_sha256 = :sha, last_used_at = now() "
+                        f"WHERE id = :id RETURNING {self._JOB_COLUMNS}"
+                    ),
+                    {**values, "id": target},
+                ).one()
+        return self._saved_job(row)
+
+    def delete_saved_job(self, uid: str, job_id: str) -> None:
+        if not _is_uuid(job_id):
+            raise NotFound("saved job")
+        with self.engine.begin() as c:
+            deleted = c.execute(
+                _q("DELETE FROM saved_jobs WHERE id = CAST(:id AS uuid) AND user_id = :uid"),
+                {"id": job_id, "uid": uid},
+            ).rowcount
+        if not deleted:
+            raise NotFound("saved job")
 
     def dump(self, uid: str, dump_id: str) -> RawDump:
         with self.engine.begin() as c:

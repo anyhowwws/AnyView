@@ -140,8 +140,9 @@ jobs:
           echo "changes=$([ "$code" -eq 2 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           terraform show -no-color tfplan > plan.txt
 
-      # What a reviewer reads: on a PR in the comment, on main in the run summary
-      # above the approval button.
+      # What a reviewer reads: on a PR in the comment, on main in the run summary.
+      # There is no approval step between a merge and the apply (ADR 0024), so the
+      # PR comment is the only place the plan is looked at before it runs.
       - name: Show the plan
         env:
           GH_TOKEN: ${{ github.token }}

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DEAD_AIR_MS,
+  GIVE_UP_AFTER_STALL_MS,
   LISTENING,
   SILENCE_MS,
   SPEECH_MS,
@@ -78,8 +79,20 @@ test("an ended turn stays ended", () => {
 
 test("timed, ten seconds of dead air stalls but does not end the turn", () => {
   const state = speak(held(DEAD_AIR_MS + 200, QUIET), TIMED);
-  assert.equal(state.stalled, true, "Donna should have something to say");
+  assert.equal(state.stalled, true, "Harvey should have something to say");
   assert.equal(state.ended, null, "but the microphone stays open");
+});
+
+test("timed, silence after her 'shall we move on?' is taken as a yes", () => {
+  const before = speak(held(DEAD_AIR_MS + GIVE_UP_AFTER_STALL_MS - 200, QUIET), TIMED);
+  assert.equal(before.ended, null, "still waiting just before the give-up point");
+  const after = speak(held(DEAD_AIR_MS + GIVE_UP_AFTER_STALL_MS + 100, QUIET), TIMED);
+  assert.equal(after.ended, "no-speech");
+  assert.ok(TIMED.giveUpMs! < TIMED.limitMs, "well before the question's own clock");
+});
+
+test("untimed never gives up on silence early: a dead microphone is a different problem", () => {
+  assert.equal(UNTIMED.giveUpMs, null);
 });
 
 test("timed, a stalled turn recovers when they finally speak", () => {
@@ -113,7 +126,7 @@ test("no question may outrun the recording cap", () => {
 
 test("the clock beats a pause: ending on time wins over ending on silence", () => {
   // Quiet for a while *and* past the limit — the reason must be the clock, so
-  // Donna says the right line.
+  // Harvey says the right line.
   const short = timedLimits(45);
   let state = speak(held(2000, LOUD), short);
   state = hearing(state, {

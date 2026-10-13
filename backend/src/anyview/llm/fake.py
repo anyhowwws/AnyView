@@ -17,7 +17,16 @@ import time
 from collections.abc import Iterator
 from typing import Any
 
-from anyview.llm.adapter import PCM_SAMPLE_RATE, Effort, ModelError, Reply, Usage, _log_usage, wav
+from anyview.llm.adapter import (
+    PCM_SAMPLE_RATE,
+    Effort,
+    ModelError,
+    Reply,
+    Usage,
+    _log_usage,
+    spoken_prompt,
+    wav,
+)
 
 _FAKE_USAGE = Usage(input_tokens=100, output_tokens=50, thinking_tokens=20, cache_read=80)
 
@@ -87,14 +96,16 @@ class FakeModel:
         for i, word in enumerate(text.split(" ")):
             yield word if i == 0 else " " + word
 
-    def speak(self, *, text: str, session_id: str, voice: str = "Kore") -> bytes:
+    def speak(
+        self, *, text: str, session_id: str, voice: str = "Alnilam", style: str | None = None
+    ) -> bytes:
         """Silence, one real WAV file, lasting about as long as the words would.
 
         A browser decodes it like any other clip, so the whole voice path —
-        queueing, playback, "Donna has finished, your turn" — can be walked
+        queueing, playback, "Harvey has finished, your turn" — can be walked
         through locally with nothing but a microphone.
         """
-        self._record("speak", session_id, voice, text)
+        self._record("speak", session_id, voice, spoken_prompt(text, style))
         seconds = min(len(text) / SPOKEN_CHARS_PER_SECOND, 30)
         return wav(bytes(2 * int(PCM_SAMPLE_RATE * seconds)))
 
@@ -240,7 +251,7 @@ DEFAULTS: dict[str, Any] = {
         "redesign [S1] is your clearest ownership story. [P1, S1] both sit under your Acme "
         "role. Nothing in your garden mentions Bedrock [P9]."
     ),
-    "ask": "Thanks for that. Next: tell me about a time you led a project end to end.",
+    "ask": "Thanks for that.",
     "score": {
         "dimensions": [
             {

@@ -1,7 +1,7 @@
 """Interview routes. The browser owns the session and posts it back each turn.
 
 Setup describes a situation, not a set of sources (ADR 0014): the resume is a
-property of the user, the job is a document or a filled-in form, and difficulty
+property of the user, the job is a document, a link or a filled-in form, and difficulty
 decides what the interviewer is allowed to know.
 """
 
@@ -11,6 +11,7 @@ import base64
 import datetime as dt
 import logging
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated, Any, Literal
 
@@ -22,6 +23,7 @@ from anyview.api.sse import stream_response, tokens
 from anyview.api.uploads import audio_prefix, get_store, object_prefix
 from anyview.brain.extract import ExtractionFailed, drop_unchanged, propose
 from anyview.config import Settings
+from anyview.db.repository import NotFound
 from anyview.interview import engine
 from anyview.interview.models import (
     JOB_SCHEMA,
@@ -29,21 +31,31 @@ from anyview.interview.models import (
     JobDocument,
     JobParse,
     Report,
+    SavedJob,
     Session,
+    SessionId,
     Setup,
     SetupInput,
     State,
 )
-from anyview.interview.prompts import INTERJECTIONS, JOB_PARSE_SYSTEM, job_parse_user
+from anyview.interview.prompts import (
+    HARVEY_DELIVERY,
+    INTERJECTIONS,
+    JOB_PARSE_SYSTEM,
+    job_parse_user,
+)
 from anyview.interview.voice import voiced
 from anyview.llm.adapter import Model
 from anyview.uploads.extract import (
     EXTENSION_TYPES,
+    PDF,
     ExtractionError,
     audio_to_text,
     docx_to_text,
     pdf_to_text,
 )
+from anyview.uploads.link import Page, page_to_text
+from anyview.uploads.link import fetch as fetch_page
 from anyview.uploads.store import UploadStore
 
 log = logging.getLogger(__name__)
@@ -74,15 +86,25 @@ RepoDep = Annotated[Any, Depends(get_repository_optional)]
 
 
 class StartRequest(BaseModel):
-    session_id: str
+    session_id: SessionId
     setup: SetupInput
 
 
 def _truncate(text: str, limit: int, what: str) -> str:
+    """Cut `text` to at most `limit` characters, note included, at a line break
+    if there is one, else a space. The result has to pass the same limit on
+    `Setup`; it used to overshoot by the length of the note, and by nearly the
+    whole text when there was no line break (rfind's -1 is truthy)."""
     if len(text) <= limit:
         return text
-    cut = text.rfind("\n", 0, limit) or limit
-    return f"{text[:cut].rstrip()}\n\n[{what} continues past this point and was cut to fit.]"
+    note = f"\n\n[{what} continues past this point and was cut to fit.]"
+    room = limit - len(note)
+    cut = text.rfind("\n", 0, room)
+    if cut <= 0:
+        cut = text.rfind(" ", 0, room)
+    if cut <= 0:
+        cut = room
+    return text[:cut].rstrip() + note
 
 
 def _extract(
@@ -118,7 +140,7 @@ def _resume_on_file(repo: Any, user_uid: str) -> str:
     dump = repo.active_resume(user_uid)
     if dump is None:
         raise HTTPException(
-            422, "Donna needs your resume first — upload the one an interviewer would receive."
+            422, "Harvey needs your resume first — upload the one an interviewer would receive."
         )
     return dump.text
 
@@ -226,7 +248,9 @@ def start(
     setup = resolve_setup(body, user_uid=user.uid, store=store, model=model, repo=repo)
 
     if not (setup.resume_object and repo is not None):
-        return engine.start(setup, session_id=body.session_id, model=model)
+        session = engine.start(setup, session_id=body.session_id, model=model)
+        _save_job(repo, user, body.setup)
+        return session
 
     # The same text feeds two independent model calls — plan the interview and
     # propose what the resume adds to the garden — so run them side by side
@@ -242,7 +266,32 @@ def start(
         except ExtractionFailed as exc:
             # The interview is what the user asked for; the garden entry is a bonus.
             log.warning("filing the resume failed for %s: %s", body.session_id, exc.user_message)
+    _save_job(repo, user, body.setup)
     return session
+
+
+def _save_job(repo: Any, user: CurrentUser, given: SetupInput) -> None:
+    """Remember the job this interview was planned for (ADR 0025).
+
+    Only once planning has succeeded, so a failed start leaves nothing behind.
+    Best effort: the interview is what the user asked for, and a job that fails
+    to save is one they type again next time, not a reason to refuse it."""
+    if repo is None or given.job is None:
+        return
+    try:
+        repo.ensure_user(user.uid, user.email)
+        repo.save_job(
+            user.uid,
+            job_id=given.job.id,
+            company=given.company,
+            role=given.role,
+            seniority=given.seniority,
+            source=given.job.source,
+            job_description=given.job_description,
+            fields=given.job.fields,
+        )
+    except Exception:  # noqa: BLE001 — logged, and never worth failing the interview over
+        log.exception("saving the job failed for %s", user.uid)
 
 
 # --- The resume on file (ADR 0014) ------------------------------------------
@@ -282,23 +331,72 @@ class JobUploadRequest(BaseModel):
     object_name: str = Field(max_length=200)
 
 
+class JobLinkRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2000)
+
+
+def get_page_fetcher() -> Callable[[str], Page]:  # overridden in tests; never touch the web there
+    return fetch_page
+
+
+FetcherDep = Annotated[Callable[[str], Page], Depends(get_page_fetcher)]
+
+
 @router.post("/job/parse", response_model=JobDocument)
 def parse_job(
-    body: JobUploadRequest, user: CurrentUser, model: ModelDep, store: StoreDep
+    body: JobUploadRequest, user: CurrentUser, model: ModelDep, store: StoreDep, repo: RepoDep
 ) -> JobDocument:
     """An uploaded job description, read and turned into the fields the setup
     form asks for. Everything it returns is a suggestion the user confirms
-    before it reaches a prompt."""
+    before it reaches a prompt.
+
+    A posting already saved comes back as that saved job instead, with the
+    corrections the user made last time and no parse call (ADR 0025)."""
     session_id = f"job-{uuid.uuid4().hex[:8]}"
-    text = _truncate(
-        _extract(
-            body.object_name, user_uid=user.uid, store=store, model=model, session_id=session_id
-        ),
-        MAX_JD_CHARS,
-        "The job description",
+    text = _extract(
+        body.object_name, user_uid=user.uid, store=store, model=model, session_id=session_id
     )
+    return _read_posting(text, user=user, model=model, repo=repo, session_id=session_id)
+
+
+@router.post("/job/parse-link", response_model=JobDocument)
+def parse_job_link(
+    body: JobLinkRequest, user: CurrentUser, model: ModelDep, repo: RepoDep, fetch: FetcherDep
+) -> JobDocument:
+    """A job posting from a link the user pasted (ADR 0027): fetched once,
+    turned into text, then exactly what an uploaded posting goes through.
+    `uploads/link.py` decides which links may be fetched at all."""
+    session_id = f"job-{uuid.uuid4().hex[:8]}"
+    try:
+        page = fetch(body.url)
+        if page.content_type == PDF:
+            text = pdf_to_text(page.body, model=model, session_id=session_id)
+        elif page.content_type == "text/plain":
+            text = page.body.decode(page.charset or "utf-8", errors="replace")
+        else:
+            text = page_to_text(page.body.decode(page.charset or "utf-8", errors="replace"))
+    except ExtractionError as exc:
+        raise HTTPException(422, exc.user_message) from exc
+    if len(text.strip()) < 50:
+        raise HTTPException(
+            422,
+            "That page has almost no text until a browser runs it. "
+            "Save the posting as a PDF and upload that instead.",
+        )
+    return _read_posting(text, user=user, model=model, repo=repo, session_id=session_id)
+
+
+def _read_posting(
+    text: str, *, user: CurrentUser, model: Model, repo: Any, session_id: str
+) -> JobDocument:
+    """A posting's text, matched against saved jobs, else parsed into fields."""
+    text = _truncate(text, MAX_JD_CHARS, "The job description")
     if len(text.strip()) < 50:
         raise HTTPException(422, "There's almost no text in that file. Is it the right one?")
+
+    saved = repo.saved_job_with_text(user.uid, text) if repo is not None else None
+    if saved is not None:
+        return JobDocument(text=text, parsed=_parse_from_saved(saved), saved_job=saved)
 
     # Extraction, not judgement: the fields are filled in from what the posting
     # says, and the user corrects anything the model read wrong.
@@ -312,7 +410,7 @@ def parse_job(
         max_tokens=2048,
     )
     if reply.refused or reply.truncated or reply.data is None:
-        raise HTTPException(502, "Donna couldn't read that job description. Please try again.")
+        raise HTTPException(502, "Harvey couldn't read that job description. Please try again.")
     try:
         parsed = JobParse.model_validate(reply.data)
     except ValidationError as exc:
@@ -321,12 +419,48 @@ def parse_job(
     return JobDocument(text=text, parsed=parsed)
 
 
+def _lines(value: str) -> list[str]:
+    return [line.strip() for line in value.splitlines() if line.strip()]
+
+
+def _parse_from_saved(job: SavedJob) -> JobParse:
+    """A saved job, in the shape a fresh parse would have, so the form treats
+    both the same way."""
+    return JobParse(
+        company=job.company,
+        role=job.role,
+        seniority=job.seniority,
+        responsibilities=_lines(job.fields.responsibilities),
+        must_haves=_lines(job.fields.must_haves),
+        nice_to_haves=_lines(job.fields.nice_to_haves),
+    )
+
+
+@router.get("/jobs", response_model=list[SavedJob])
+def saved_jobs(user: CurrentUser, repo: RepoDep) -> list[SavedJob]:
+    """The jobs this user has practised for, most recent first. Empty with no
+    database: then nothing is remembered and the form shows no list."""
+    if repo is None:
+        return []
+    return repo.saved_jobs(user.uid)
+
+
+@router.delete("/jobs/{job_id}", status_code=204)
+def delete_saved_job(job_id: str, user: CurrentUser, repo: RepoDep) -> None:
+    if repo is None:
+        raise HTTPException(404, "There are no saved jobs without a database.")
+    try:
+        repo.delete_saved_job(user.uid, job_id)
+    except NotFound as exc:
+        raise HTTPException(404, "That saved job wasn't found.") from exc
+
+
 @router.post("/ask")
 def ask(session: Session, model: ModelDep, settings: SettingsDep, voice: bool = False):
     # Validate state before opening the stream so a bad session is a plain 409,
     # not an error frame inside a 200.
     engine.require_state(session, State.ASK)
-    words = engine.ask(session, model=model)
+    words = engine.ask(session, spoken=voice)
     if not voice:
         return stream_response(tokens(words))
     # Voice mode: the same words, plus a spoken clip per sentence (ADR 0013).
@@ -335,16 +469,17 @@ def ask(session: Session, model: ModelDep, settings: SettingsDep, voice: bool = 
             words,
             model=model,
             session_id=session.session_id,
-            voice=settings.donna_voice,
+            voice=settings.harvey_voice,
+            style=HARVEY_DELIVERY,
         )
     )
 
 
 class SayRequest(BaseModel):
-    session_id: str
+    session_id: SessionId
     # A key, never free text: this route must not become a way to have the TTS
     # model read out anything a caller likes.
-    line: Literal["time_up", "stalled"]
+    line: Literal["time_up", "stalled", "hello"]
 
 
 class Spoken(BaseModel):
@@ -353,18 +488,21 @@ class Spoken(BaseModel):
 
 @router.post("/say", response_model=Spoken)
 def say(body: SayRequest, model: ModelDep, settings: SettingsDep) -> Spoken:
-    """One of Donna's fixed interjections, spoken (ADR 0016).
+    """One of Harvey's fixed interjections, spoken (ADR 0016).
 
     The browser fetches each line once and reuses the clip for the whole
     interview, so a five-question run synthesises two short clips at most."""
     audio = model.speak(
-        text=INTERJECTIONS[body.line], session_id=body.session_id, voice=settings.donna_voice
+        text=INTERJECTIONS[body.line],
+        session_id=body.session_id,
+        voice=settings.harvey_voice,
+        style=HARVEY_DELIVERY,
     )
     return Spoken(b64=base64.b64encode(audio).decode("ascii"))
 
 
 class TranscribeRequest(BaseModel):
-    session_id: str
+    session_id: SessionId
     object_name: str
 
 
@@ -402,16 +540,41 @@ def answer(body: AnswerRequest) -> Session:
     return engine.submit_answer(body.session, body.answer)
 
 
-@router.post("/report", response_model=Report)
-def report(session: Session, user: CurrentUser, model: ModelDep, repo: RepoDep) -> Report:
+def _for_report(session: Session, repo: Any, uid: str) -> Session:
     """The report is coaching, not simulation, so the ideal answers read the
     garden at every difficulty (ADR 0014). At `panel` the session already
     carries it; below that it is attached here, where it can reach the report
     without ever having reached the questions."""
     if session.setup.garden is None:
-        garden = _garden(repo, user.uid)
+        garden = _garden(repo, uid)
         if garden:
             session = session.model_copy(
                 update={"setup": session.setup.model_copy(update={"garden": garden})}
             )
-    return engine.finish(session, model=model)
+    return session
+
+
+@router.post("/report", response_model=Report)
+def report(session: Session, user: CurrentUser, model: ModelDep, repo: RepoDep) -> Report:
+    return engine.finish(_for_report(session, repo, user.uid), model=model)
+
+
+@router.post("/report/stream")
+def stream_report(session: Session, user: CurrentUser, model: ModelDep, repo: RepoDep):
+    """`POST /report`, streamed, so the report fills in while it is written:
+
+        event: report   data: <Report with items: []>     (at once: the header)
+        event: item     data: {"index": 2, "item": <QuestionReport>}   (×5, as each finishes)
+        event: done     data: {}
+
+    Items arrive in finishing order; `index` is the question's position. The
+    session is checked before the stream opens, so a bad one is a plain 409."""
+    session = _for_report(session, repo, user.uid)
+    header = engine.begin_scoring(session)
+
+    def frames():
+        yield ("report", header.model_dump(mode="json"))
+        for index, item in engine.score_as_ready(session, model=model):
+            yield ("item", {"index": index, "item": item.model_dump(mode="json")})
+
+    return stream_response(frames())

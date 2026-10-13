@@ -1,4 +1,4 @@
-"""Donna's side of voice mode: spoken audio interleaved with the text she types.
+"""Harvey's side of voice mode: spoken audio interleaved with the text he types.
 
 The `ask` stream already yields text deltas. Waiting for the whole answer
 before synthesising would put a two-second silence at the top of every
@@ -73,8 +73,15 @@ def _audio_frame(seq: int, audio: bytes) -> Frame:
     return ("audio", {"seq": seq, "b64": base64.b64encode(audio).decode("ascii")})
 
 
-def voiced(chunks: Iterator[str], *, model: Model, session_id: str, voice: str) -> Iterator[Frame]:
-    """Wrap a text stream so it also carries Donna's voice.
+def voiced(
+    chunks: Iterator[str],
+    *,
+    model: Model,
+    session_id: str,
+    voice: str,
+    style: str | None = None,
+) -> Iterator[Frame]:
+    """Wrap a text stream so it also carries Harvey's voice.
 
     Yields the same token frames as the silent path, plus one audio frame per
     sentence. If synthesis fails, the text keeps streaming and a single
@@ -94,7 +101,9 @@ def voiced(chunks: Iterator[str], *, model: Model, session_id: str, voice: str) 
             pending.append(
                 (
                     spoken,
-                    pool.submit(model.speak, text=sentence, session_id=session_id, voice=voice),
+                    pool.submit(
+                        model.speak, text=sentence, session_id=session_id, voice=voice, style=style
+                    ),
                 )
             )
             spoken += 1

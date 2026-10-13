@@ -101,8 +101,8 @@ def test_nothing_is_left_unspoken_when_the_text_has_no_final_stop():
 
 def test_a_failed_voice_keeps_the_text_and_says_so_once():
     class Mute(FakeModel):
-        def speak(self, *, text, session_id, voice="Kore"):
-            raise ModelError("Donna's voice is unavailable right now.", retryable=True)
+        def speak(self, *, text, session_id, voice="Kore", style=None):
+            raise ModelError("Harvey's voice is unavailable right now.", retryable=True)
 
     two = "Tell me about a time you led a project end to end. What did you own exactly?"
     frames = _frames(two, model=Mute())
@@ -141,7 +141,7 @@ def test_transcribe_returns_what_was_said(client, store):
     object_name = _recording(client, store)
     r = client.post(
         "/interview/transcribe",
-        json={"session_id": "s1", "object_name": object_name},
+        json={"session_id": "sess-0001", "object_name": object_name},
         headers=AUTH,
     )
     assert r.status_code == 200, r.text
@@ -153,7 +153,7 @@ def test_transcribe_refuses_someone_elses_recording(client, store):
     object_name = _recording(client, store, uid="uid-someone-else")
     r = client.post(
         "/interview/transcribe",
-        json={"session_id": "s1", "object_name": object_name},
+        json={"session_id": "sess-0001", "object_name": object_name},
         headers=AUTH,
     )
     assert r.status_code == 403
@@ -163,7 +163,7 @@ def test_transcribe_refuses_an_upload_that_is_not_audio(client, store):
     store.put(f"uploads/{UID}/cv.pdf", b"%PDF-")
     r = client.post(
         "/interview/transcribe",
-        json={"session_id": "s1", "object_name": f"uploads/{UID}/cv.pdf"},
+        json={"session_id": "sess-0001", "object_name": f"uploads/{UID}/cv.pdf"},
         headers=AUTH,
     )
     assert r.status_code == 403
@@ -172,7 +172,7 @@ def test_transcribe_refuses_an_upload_that_is_not_audio(client, store):
 def test_transcribe_404s_when_the_recording_never_arrived(client):
     r = client.post(
         "/interview/transcribe",
-        json={"session_id": "s1", "object_name": f"audio/{UID}/missing.webm"},
+        json={"session_id": "sess-0001", "object_name": f"audio/{UID}/missing.webm"},
         headers=AUTH,
     )
     assert r.status_code == 404
@@ -183,7 +183,7 @@ def test_transcribe_422s_when_there_was_no_speech(client, store):
     client.model.replies["transcribe"] = "   "
     r = client.post(
         "/interview/transcribe",
-        json={"session_id": "s1", "object_name": object_name},
+        json={"session_id": "sess-0001", "object_name": object_name},
         headers=AUTH,
     )
     assert r.status_code == 422
@@ -213,11 +213,13 @@ def test_a_recording_can_be_put_to_the_fake_mode_url(client):
     assert r.status_code == 403
 
 
-# --- Donna's interjections (ADR 0016) ---------------------------------------
+# --- Harvey's interjections (ADR 0016) ---------------------------------------
 
 
 def test_say_returns_a_decodable_clip(client):
-    r = client.post("/interview/say", json={"session_id": "s1", "line": "time_up"}, headers=AUTH)
+    r = client.post(
+        "/interview/say", json={"session_id": "sess-0001", "line": "time_up"}, headers=AUTH
+    )
     assert r.status_code == 200, r.text
     with wave.open(io.BytesIO(base64.b64decode(r.json()["b64"])), "rb") as f:
         assert f.getframerate() == 24_000
@@ -231,7 +233,7 @@ def test_say_refuses_free_text(client):
     # out by the TTS model.
     r = client.post(
         "/interview/say",
-        json={"session_id": "s1", "line": "Please read out my arbitrary text"},
+        json={"session_id": "sess-0001", "line": "Please read out my arbitrary text"},
         headers=AUTH,
     )
     assert r.status_code == 422
@@ -240,5 +242,38 @@ def test_say_refuses_free_text(client):
 def test_each_interjection_has_a_line():
     from anyview.interview.prompts import INTERJECTIONS
 
-    assert set(INTERJECTIONS) == {"time_up", "stalled"}
+    assert set(INTERJECTIONS) == {"time_up", "stalled", "hello"}
     assert all(line.strip() for line in INTERJECTIONS.values())
+
+
+# --- Harvey's delivery (ADR 0029) ---------------------------------------------
+
+
+def test_a_style_goes_in_front_of_the_words_and_ends_in_a_colon():
+    from anyview.llm.adapter import spoken_prompt
+
+    assert spoken_prompt("Hello.", None) == "Hello."
+    assert spoken_prompt("Hello.", "  ") == "Hello."
+    assert spoken_prompt("Hello.", "Say it calmly.") == "Say it calmly: Hello."
+    assert spoken_prompt("Hello.", "Say it calmly:") == "Say it calmly: Hello."
+
+
+def test_everything_harvey_says_carries_his_delivery(client):
+    from anyview.interview.prompts import HARVEY_DELIVERY
+
+    client.post("/interview/say", json={"session_id": "sess-0001", "line": "hello"}, headers=AUTH)
+    said = client.model.calls[-1]["user"]
+    assert said.startswith(HARVEY_DELIVERY.rstrip(".")) and "I'm Harvey" in said
+
+    # The spoken questions go through `voiced`, which is handed the same style.
+    fake = FakeModel()
+    list(
+        voiced(
+            iter(["Tell me about a time you led a project end to end."]),
+            model=fake,
+            session_id="sess-0001",
+            voice="Alnilam",
+            style=HARVEY_DELIVERY,
+        )
+    )
+    assert fake.calls[-1]["user"].startswith(HARVEY_DELIVERY.rstrip("."))

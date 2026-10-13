@@ -9,9 +9,11 @@ import type {
   JobDocument,
   Patch,
   Proposal,
+  QuestionReport,
   RawDump,
   Report,
   ResumeOnFile,
+  SavedJob,
   Session,
   SetupInput,
 } from "@/lib/types";
@@ -83,6 +85,7 @@ async function request<T>(method: "GET" | "PATCH" | "DELETE", path: string): Pro
     let failure: ApiError;
     try {
       const res = await fetch(`${BASE}${path}`, { method, headers: auth });
+      if (res.status === 204) return undefined as T; // a DELETE with nothing to say
       if (res.ok) return (await res.json()) as T;
       failure = await toApiError(res);
     } catch {
@@ -197,6 +200,16 @@ export const getResumeOnFile = () => request<ResumeOnFile>("GET", "/interview/re
 export const parseJob = (objectName: string) =>
   post<JobDocument>("/interview/job/parse", { object_name: objectName });
 
+/** The same, for a posting at a link: the API fetches the page (ADR 0027). */
+export const parseJobLink = (url: string) =>
+  post<JobDocument>("/interview/job/parse-link", { url });
+
+/** The jobs you have practised for, most recently used first (ADR 0025). */
+export const getSavedJobs = () => request<SavedJob[]>("GET", "/interview/jobs");
+
+export const deleteSavedJob = (id: string) =>
+  request<void>("DELETE", `/interview/jobs/${encodeURIComponent(id)}`);
+
 interface UploadTicket {
   object_name: string;
   upload_url: string;
@@ -246,16 +259,16 @@ export async function uploadAnswerAudio(blob: Blob, contentType: string): Promis
   return putTicket(ticket, blob, contentType);
 }
 
-/** Donna's fixed interjections, fetched once and reused for the whole run: the
+/** Harvey's fixed interjections, fetched once and reused for the whole run: the
  *  same "let's move on" is needed up to five times in an interview and the
  *  words never change. The line is a key, not text — the server owns the
- *  words. Her voice failing here must not stop the interview, so a failure is
+ *  words. A failing voice here must not stop the interview, so a failure is
  *  silence rather than an error. */
 const clips = new Map<string, string>();
 
 export async function interjection(
   sessionId: string,
-  line: "time_up" | "stalled",
+  line: "time_up" | "stalled" | "hello",
 ): Promise<string | null> {
   const cached = clips.get(line);
   if (cached !== undefined) return cached;
@@ -288,6 +301,54 @@ export function getReport(session: Session): Promise<Report> {
   return post<Report>("/interview/report", session);
 }
 
+export interface ReportHandlers {
+  /** The report's header (company, room, garden_used), sent at once with no items. */
+  onHeader?: (header: Report) => void;
+  /** One scored question, in finishing order; `index` is its position. */
+  onItem: (index: number, item: QuestionReport) => void;
+}
+
+/** `getReport`, streamed: each question arrives as soon as it is scored, so the
+ *  report fills in while you read it. Resolves with the whole report in
+ *  question order. */
+export async function streamReport(session: Session, handlers: ReportHandlers): Promise<Report> {
+  const auth = await authHeaders();
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/interview/report/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...auth },
+      body: JSON.stringify(session),
+    });
+  } catch {
+    throw new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
+  }
+  if (!res.ok) throw await toApiError(res);
+  if (!res.body) throw new ApiError("Empty response from the API.", 502, true);
+
+  let header: Report | null = null;
+  const items: (QuestionReport | null)[] = session.questions.map(() => null);
+  for await (const { event, data } of readSse(res.body)) {
+    if (event === "report") {
+      header = data as Report;
+      handlers.onHeader?.(header);
+    } else if (event === "item") {
+      const { index, item } = data as { index: number; item: QuestionReport };
+      items[index] = item;
+      handlers.onItem(index, item);
+    } else if (event === "error") {
+      const { message, retryable } = data as { message: string; retryable: boolean };
+      throw new ApiError(message, 502, retryable);
+    } else if (event === "done") {
+      if (header && items.every((item) => item !== null)) {
+        return { ...header, items: items as QuestionReport[] };
+      }
+      break;
+    }
+  }
+  throw new ApiError("The connection closed before scoring finished. Please try again.", 502, true);
+}
+
 export interface AskHandlers {
   onToken: (text: string) => void;
   /** Voice mode only: one base64 WAV clip per sentence, in speaking order. */
@@ -299,7 +360,7 @@ export interface AskHandlers {
 /** Streams the interviewer's words for the current question. Calls onToken per
  *  delta; resolves when the server sends `done`; rejects with ApiError on an
  *  `error` event or a non-200 status. With `voice`, the same stream also
- *  carries Donna's spoken audio (ADR 0013). */
+ *  carries Harvey's spoken audio (ADR 0013). */
 export async function askQuestion(
   session: Session,
   handlers: AskHandlers,

@@ -19,8 +19,15 @@ asking call, so pasted text cannot grade itself.
 
 from __future__ import annotations
 
-from anyview.interview.models import QUESTION_COUNT, Difficulty, Question, Setup
-from anyview.interview.rubric import INTERVIEWER_PERSONA, render_anchors
+from anyview.interview.models import (
+    NO_ANSWER,
+    QUESTION_COUNT,
+    Answer,
+    Difficulty,
+    Question,
+    Setup,
+)
+from anyview.interview.rubric import render_anchors
 
 # What the room knows, and therefore how far past the resume it can push.
 DIFFICULTY_RULES: dict[Difficulty, str] = {
@@ -140,29 +147,6 @@ reach a result. This is the clock the candidate is held to, so be realistic rath
 generous."""
 
 
-def ask_user(question: Question, *, index: int, previous_answer: str | None) -> str:
-    if previous_answer is None:
-        lead_in = "This is the first question. Greet the candidate in one short sentence."
-    else:
-        lead_in = (
-            "The candidate just gave the answer below. Acknowledge it in one short, neutral "
-            "sentence — no feedback, no evaluation, no praise beyond a simple thanks — then "
-            "move on.\n\n<previous_answer>\n" + previous_answer.strip() + "\n</previous_answer>"
-        )
-    return f"""{INTERVIEWER_PERSONA}
-
-{lead_in}
-
-Then ask question {index + 1} of {QUESTION_COUNT}. Ask it in your own words but keep its
-meaning exactly:
-
-<question>
-{question.text}
-</question>
-
-Reply with only what Donna would say aloud. Two or three sentences at most."""
-
-
 def score_user(question: Question, answer: str) -> str:
     return f"""Task: score one answer against the rubric below. You are a strict, fair assessor.
 
@@ -249,14 +233,54 @@ def job_parse_user(text: str) -> str:
     return f"<job_description>\n{text.strip()}\n</job_description>\n\nExtract the fields."
 
 
-# --- What Donna says when she has to step in (ADR 0016) ---------------------
+# --- What Harvey says when he has to step in (ADR 0016) ---------------------
 # Fixed lines, not generated: an interruption has to land in the moment, and a
 # model call would arrive after it stopped being an interruption. The browser
 # asks for each one once per session and reuses the clip. Keeping them here
-# keeps everything Donna says in one file.
+# keeps everything Harvey says in one file.
+# How Harvey opens each question, chosen by how the last turn ended (ADR 0028).
+# Fixed lines, not a model call: the fast model asked for "one sentence" kept
+# asking the question itself, and then it was said twice. These cost nothing,
+# arrive at once, and can never contradict what just happened.
+# Just the greeting: the planned opener usually starts "to kick things off".
+OPENER = "Hi, thanks for making the time today."
+THANKS = ("Thank you.", "Thanks for that.", "Okay, thank you.", "Got it, thanks.")
+# After a cut-in Harvey has already said "let's move on" out loud, so a spoken
+# question opens straight away; on screen, with no voice, it needs the words.
+MOVING_ON_SILENT = "Let's move on."
+
+
+def lead_in(*, index: int, previous: Answer | None, spoken: bool) -> str:
+    """What Harvey says before question `index` (0-based)."""
+    if previous is None:
+        return OPENER
+    if previous.cut_off or previous.text.strip() == NO_ANSWER:
+        return "" if spoken else MOVING_ON_SILENT
+    return THANKS[index % len(THANKS)]
+
+
+# How Harvey sounds, as direction for the TTS model (ADR 0029). Applied to every line
+# he speaks: questions, thanks, interjections. Chosen by ear and by stopwatch: the
+# owner's first version asked for deliberate pauses and ran ~30% slower than plain
+# speech; this one runs at plain speech's pace (7.5 s against 7.2 s for a sample
+# question) and was not read aloud when transcribed. Keep it free of pause or
+# slow-down wording.
+HARVEY_DELIVERY = (
+    "Speak as a sharp New York closer who has never lost and knows it, "
+    "in a natural conversational voice. "
+    "Voice: smooth, low-to-mid baritone, relaxed and effortlessly confident, "
+    "with a hint of a smirk. "
+    "Pacing: brisk and clipped, the speed of someone with somewhere better to be. "
+    "No dramatic pauses and no drawn-out words. "
+    "Delivery: dry, understated, slightly smug. Drop the ends of sentences with finality. "
+    "Never sound nervous, hesitant, or over-excited."
+)
+
 INTERJECTIONS: dict[str, str] = {
     # The clock on this question ran out while they were still talking.
     "time_up": "Sorry to cut in — in the interest of time, let's move on.",
     # Ten seconds of nothing. Real interviewers do not sit through much more.
     "stalled": "Take a moment if you need it. Or shall we move on to the next one?",
+    # The speaker check before the interview starts (ADR 0028).
+    "hello": "Hi, I'm Harvey. If you can hear me clearly, you're all set.",
 }

@@ -24,14 +24,14 @@ writes simple scripts). So:
 |---|---|---|
 | Cloud | GCP | 0001 |
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
-| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for streamed `ask` turns (0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first); Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
+| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028); Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
-| Voice | **Gemini TTS on Vertex** for Donna (prebuilt voice, `DONNA_VOICE`, default `Kore`); answers recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default**; her interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016 |
+| Voice | **Gemini TTS on Vertex** for Harvey, the interviewer (prebuilt voice, `HARVEY_VOICE`, default `Alnilam`, delivered with the style direction in `prompts.HARVEY_DELIVERY`; Donna, the Digital Garden's assistant, has no voice yet); answers recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default**; Harvey's interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
 | Frontend | Next.js App Router, TS, Tailwind v4, shadcn/ui, Framer Motion; static export → Firebase Hosting (static files only) | brief |
-| Files | Cloud Storage bucket `<project>-uploads`, `uploads/<uid>/…`, V4 signed PUT URLs (never transit the API); PDF read by the model, DOCX by `python-docx`. Resumes **and** job descriptions take the same path | 0010, 0014 |
+| Files | Cloud Storage bucket `<project>-uploads`, `uploads/<uid>/…`, V4 signed PUT URLs (never transit the API); PDF read by the model, DOCX by `python-docx`. Resumes **and** job descriptions take the same path; a job can also be a link the API fetches | 0010, 0014, 0027 |
 | Async | Cloud Tasks | brief |
 | Auth | Identity Platform: Google sign-in only, email allow-list (`ALLOWED_EMAILS`), Firebase ID token verified by `google-auth` on every `/interview/*` route | 0009 |
 | Secrets | Secret Manager, Terraform provisions the *parameter*, never the value | brief |
@@ -40,6 +40,13 @@ writes simple scripts). So:
 
 Out of scope (brief): LangChain/orchestration libs, any vector DB, chunking raw
 docs, Firestore, scraping Glassdoor/Blind, GKE/HA/multi-region, API keys.
+
+## Two personas
+
+**Donna** is the Digital Garden's assistant: Discover, the review queue, resume and dump extraction.
+**Harvey** is the interviewer: Practice, the pre-flight, the interjections and everything spoken in an
+interview (ADR 0029). Donna's voice is not decided yet. Don't mix them up in copy, prompts or code:
+`DonnaVoice`/`DONNA_VOICE` no longer exist, and `askDonna`/`role: "donna"` are the garden's.
 
 ## Layout
 
@@ -63,11 +70,13 @@ Backend modules:
   one while the next arrives; emits `audio` / `voice_off` frames beside the token frames.
 - `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; Phase 0 has `max_probes = 0`.
   `prompts.py` also owns **difficulty** (ADR 0014): `recruiter_screen` / `hiring_manager` / `panel` decide what the interviewer knows, and the garden reaches `session_system` at `panel` only.
-  It also owns `INTERJECTIONS` — the fixed lines Donna says when she has to cut in (ADR 0016) — and
+  It also owns `INTERJECTIONS` — the fixed lines Harvey says when he has to cut in (ADR 0016) — and
   tells the model to open with "tell me about yourself" and to set each question's `seconds`.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
   `account.py` serves `POST /account/erase` (ADR 0018): deletes the user's files, then every row, via `Repository.erase_user`.
-  `interview.py` also serves `GET /interview/resume` (the resume on file), `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields) and `POST /interview/say` (one of Donna's fixed interjections, by key — never free text).
+  `interview.py` also serves `GET /interview/resume` (the resume on file), `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields, or the saved job when that posting is already saved), `POST /interview/job/parse-link` (the same from a pasted URL, ADR 0027), `GET`/`DELETE /interview/jobs` (saved jobs, ADR 0025) and `POST /interview/say` (one of Harvey's fixed interjections, by key — never free text).
+- `anyview/uploads/link.py` — fetches a job posting from a pasted link (ADR 0027): every hop checked for public
+  addresses and fetched from the checked IP (SSRF, DNS rebinding); JSON-LD `JobPosting` preferred, else text from `<h1>`.
 - `anyview/uploads/{store,extract}.py` — the upload store (GCS or in-memory), resume → text
   extraction, and recorded answer → transcript (`audio_to_text`).
 - `anyview/db/{connection,migrate,repository}.py` — engine (connector + IAM auth, or DATABASE_URL), numbered SQL migrations run at startup, and **the only file that runs SQL**: app-meaningful methods over an event log + projection (ADR 0011).
@@ -160,8 +169,11 @@ terraform plan                                                   # terraform.tfv
   pipeline on a document you know the answer for; keep real resumes out of the repo.
 - Each question carries its own `seconds` (ADR 0016), chosen by the model when it plans and
   clamped by `engine.start` into 45–300. The clock only runs when `setup.time_bounded`.
-- `finish()` scores the five answers concurrently (thread pool; the SDK client is
-  thread-safe). Keep new per-answer work inside `_score_one` so it stays parallel.
+- Scoring is concurrent twice over: the five answers in a thread pool, and each answer's `score`
+  and `ideal` calls side by side inside `_score_one` (the SDK client is thread-safe). Keep new
+  per-answer work inside `_score_one` so it stays parallel. `POST /interview/report/stream` sends
+  the header, then one `item` frame per answer in finishing order (`score_as_ready`); the report
+  screen counts them under a loader and shows the whole report, in question order, once all are in. `/interview/report` (`finish()`) is the same, collected.
 - Scoring prompts use explicit rubric anchors. Per-dimension scores only; never
   a blended number.
 - If the brain lacks material, the model says so. It never invents.
@@ -193,9 +205,23 @@ retrieval test set.
   confirm what the project actually has before the first real run. A failure there is not fatal:
   the stream sends one `voice_off` frame and the interview carries on as text.
 - The clock is enforced in the browser, by the same `AnalyserNode` that drives the level meter:
-  ten seconds of dead air makes Donna speak up (the mic stays open), and the question's budget
-  ends the turn mid-sentence. Nothing about timing is enforced server-side.
-- An answer of `(no answer given)` is what the clock running out on silence records. It keeps
+  ten seconds of dead air makes Harvey speak up (the mic stays open), fifteen more of silence takes
+  "shall we move on?" as a yes, and the question's budget ends the turn mid-sentence. Nothing
+  about timing is enforced server-side (ADR 0026).
+- **Pre-flight** (`components/preflight.tsx`, ADR 0028) sits between Start and question one while
+  planning runs: it opens the microphone (so the permission prompt lands there), plays Harvey's
+  `hello` line, and prefetches the `time_up`/`stalled` clips. Its **Begin** click is the user gesture
+  that unlocks audio (`unlockAudio()`); a browser's click permission lapses long before planning ends.
+- One mic stream, one `AudioContext`, one `HarveyVoice` for the whole interview (`acquireMicrophone`,
+  `audioContext`, `harveyVoice()` in `lib/voice.ts`). Practice remounts per question, so anything
+  per-mount was wrong: a fresh `AudioContext` per answer read zeros in Safari (no click for it), and
+  a fresh player cut off "let's move on". A new question calls `detach()`, never `stop()`.
+- `ask` is a fixed lead-in chosen by how the last turn ended (`prompts.lead_in`: opener / thanks /
+  nothing after a cut-in) plus the planned question **word for word**. No model call: asked for "one
+  sentence", the fast model repeated the question. `Answer.cut_off` tells it the clock ended the turn.
+- Spoken answers are sent as soon as they are transcribed — no review step (ADR 0026).
+- An answer of `(no answer given)` is what the clock running out on silence (or the give-up after
+  the stall) records. It keeps
   `finish()`'s "every question needs an answer" rule intact, and skips the upload and transcription.
 - The rubric's four dimensions are applied to the opener too, so question one ("tell me about
   yourself") scores harsher than it deserves — STAR does not fit a background walkthrough.
@@ -233,6 +259,9 @@ retrieval test set.
 - Hosting cache headers (`firebase.json`): everything outside `/_next/` is `no-cache` (revalidated each load),
   `/_next/static/**` is `immutable` for a year (hashed names). Firebase's default is `max-age=3600` on
   everything, which kept the old page in browsers for up to an hour after a deploy.
+- The static export writes each route as a flat file (`out/practice.html`). `cleanUrls: true` in
+  `firebase.json` is what maps `/practice` to it; without it a refresh or a pasted link falls
+  through the `**` rewrite to `index.html` (the garden) while the URL still says `/practice`.
 - Don't run `next build` while `next dev` is up — both use `frontend/.next/` and the
   dev server then throws `__webpack_modules__[moduleId] is not a function`. Stop
   dev, build, restart dev (or `rm -rf frontend/.next`).
@@ -255,6 +284,9 @@ retrieval test set.
   `ideal_user`'s user turn — after the cache breakpoint, where it cannot reach
   the questions. Putting it in `session_system` instead would leak it to the
   interviewer.
+- Saved jobs (ADR 0025) are a plain table, **not** event-sourced: a job is a practice setting, not a
+  fact about the candidate. `/interview/start` saves `setup.job` after planning succeeds (best effort),
+  matching by picked id → exact JD text → company/role/seniority, so one posting stays one entry.
 - A role that vanishes from a re-uploaded resume is **not** retired. Absence is
   not evidence; trimming a CV for one application is the normal reason. Retiring
   stays a manual act in `/brain`.

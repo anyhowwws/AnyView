@@ -8,30 +8,30 @@ import { Textarea } from "@/components/ui/textarea";
 import { NO_ANSWER, VoiceAnswer } from "@/components/voice-answer";
 import { ApiError, askQuestion, interjection } from "@/lib/api";
 import { loadVoicePreference, saveVoicePreference } from "@/lib/store";
-import { DonnaVoice, microphoneSupported, type ListenEnd } from "@/lib/voice";
+import { harveyVoice, microphoneSupported, type HarveyVoice, type ListenEnd } from "@/lib/voice";
 import type { Session } from "@/lib/types";
 
 interface Props {
   session: Session;
   spoken: string | undefined; // already-streamed text for this question (after a reload)
   onSpoken: (questionId: number, text: string) => void;
-  onAnswer: (text: string) => Promise<boolean>;
+  /** `cutOff`: the clock or Harvey ended the answer, so the next question
+   *  opens without thanking them for it (ADR 0028). */
+  onAnswer: (text: string, cutOff: boolean) => Promise<boolean>;
   onEnd: () => void;
   busy: boolean;
   error: string | null;
 }
 
-/** How long a transcript sits on screen before it is sent, so a misheard word
- *  can be caught. Short enough that the conversation keeps its rhythm. */
-const REVIEW_SECONDS = 4;
-
-/** The candidate's turn, once Donna has finished speaking. `typing` is both the
- *  silent path and the escape hatch from any voice state. */
-type Turn = "typing" | "listening" | "reviewing";
+/** The candidate's turn, once Harvey has finished speaking. `typing` is both the
+ *  silent path and the escape hatch from any voice state. `sending` is a spoken
+ *  answer on its way: it goes straight in, as it would in a real interview,
+ *  and is shown only if sending it fails. */
+type Turn = "typing" | "listening" | "sending";
 
 /** The Practice surface: one question centred, streaming text, a typing
  *  indicator, a thin progress rail. Speaking is the default — the question is
- *  spoken and the microphone opens when she stops (ADR 0013) — and when the
+ *  spoken and the microphone opens when Harvey stops (ADR 0013) — and when the
  *  interview is time-bounded each question carries its own clock (ADR 0016). */
 export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, error }: Props) {
   const question = session.questions[session.current];
@@ -52,12 +52,14 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   // stream and pay for the same question twice.
   const wantsVoice = useRef(false);
   const [turn, setTurn] = useState<Turn>("typing");
-  const [countdown, setCountdown] = useState<number | null>(null);
+  // Set when switching to speaking: ask this question again, aloud, even though
+  // its text is already here.
+  const reask = useRef(false);
   const [remaining, setRemaining] = useState<number | null>(null);
-  // One player for the whole practice run; it holds the AudioContext, which a
-  // browser only lets us open in response to a click.
-  const donna = useRef<DonnaVoice | null>(null);
-  if (donna.current === null && typeof window !== "undefined") donna.current = new DonnaVoice();
+  // One player for the whole interview, shared across these per-question
+  // mounts, so a clip from the last question plays out under the next (ADR 0028).
+  const harvey = useRef<HarveyVoice | null>(null);
+  if (harvey.current === null && typeof window !== "undefined") harvey.current = harveyVoice();
 
   useEffect(() => {
     // Speaking is the default, so this normally just unlocks audio. Getting
@@ -66,13 +68,13 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
       setVoiceReady(true);
       return;
     }
-    donna.current
+    harvey.current
       ?.enable()
       .then(() => {
         wantsVoice.current = true;
         setVoiceOn(true);
       })
-      .catch(() => setVoiceNote("Switch to speaking to hear Donna ask the question."))
+      .catch(() => setVoiceNote("Switch to speaking to hear Harvey ask the question."))
       .finally(() => setVoiceReady(true));
   }, []);
 
@@ -83,15 +85,16 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     // a paid model call for a request the client immediately abandons. The
     // cleanup also aborts an in-flight stream when the question changes.
     if (!voiceReady) return; // wait for the preference, so we ask only once
-    const voice = donna.current;
+    const voice = harvey.current;
     const speaking = wantsVoice.current && voice !== null && voice.ready;
 
-    if (spoken !== undefined) {
+    if (spoken !== undefined && !reask.current) {
       // Re-entering a question we already have the text for: nothing to stream,
       // so it is the candidate's turn straight away.
       if (wantsVoice.current) setTurn("listening");
       return;
     }
+    reask.current = false;
 
     const controller = new AbortController();
     let collected = "";
@@ -100,13 +103,12 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     setStreamError(null);
     setTurn("typing");
 
-    // Her voice arriving is what hands the turn over; without it, the end of
+    // The voice arriving is what hands the turn over; without it, the end of
     // the text does.
     let audioExpected = speaking;
-    if (voice) {
-      voice.stop();
-      voice.onFinished = () => setTurn("listening");
-    }
+    // Not stop(): whatever Harvey is still saying ("let's move on") plays to the
+    // end, and this question's clips queue behind it.
+    if (voice) voice.onFinished = () => setTurn("listening");
 
     const timer = setTimeout(() => {
       askQuestion(
@@ -141,18 +143,18 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     return () => {
       clearTimeout(timer);
       controller.abort();
-      voice?.stop();
+      voice?.detach();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [question.id, attempt, spoken, voiceReady]);
 
   // --- The clock (ADR 0016) -------------------------------------------------
   // It starts when the candidate's turn does, which is when the question has
-  // finished arriving. Reviewing a transcript is not answering, so it stops —
+  // finished arriving. Sending a spoken answer is not answering, so it stops —
   // and neither is deciding whether to walk out, or the answer would be sent
   // from under the confirmation.
   const answering =
-    timed && !streaming && !streamError && turn !== "reviewing" && !busy && !ending;
+    timed && !streaming && !streamError && turn !== "sending" && !busy && !ending;
 
   // A pause holds the remainder rather than resetting it: opening the "end
   // interview" confirmation and thinking better of it must not hand out a
@@ -182,41 +184,34 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answering, question.id]);
 
+  // Once per question. Without this a failed send looped: `busy` pauses the
+  // clock, the pause holds 0 s, resuming sets `remaining` to 0 again, and that
+  // fired the send again — thousands of requests a minute while the API was down.
+  const timedOut = useRef(false);
+
   useEffect(() => {
     // Only the typed path is enforced here. When the microphone is open the
     // recorder owns the cut-off, because it has to stop the recording at the
     // same instant.
-    if (remaining !== 0 || turn === "listening" || !answering) return;
+    if (remaining !== 0 || turn === "listening" || !answering || timedOut.current) return;
+    timedOut.current = true;
+    const text = answer.trim() || NO_ANSWER;
+    setAnswer(text); // so a failed send can be sent again by hand
     void interject("time_up");
-    void submit(answer.trim() || NO_ANSWER);
+    void submit(text, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remaining]);
-
-  // A transcript is sent on its own after a beat, so a spoken interview needs
-  // no clicking. Any edit, or "Send now", takes over from the timer.
-  useEffect(() => {
-    if (countdown === null) return;
-    if (countdown === 0) {
-      setCountdown(null);
-      void submit();
-      return;
-    }
-    const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countdown]);
 
   async function interject(line: "time_up" | "stalled") {
     if (!wantsVoice.current) return;
     const clip = await interjection(session.session_id, line);
-    if (clip) donna.current?.play(clip);
+    if (clip) harvey.current?.play(clip);
   }
 
-  function submit(override?: string) {
+  function submit(override?: string, cutOff = false) {
     const trimmed = (override ?? answer).trim();
     if (!trimmed || busy) return;
-    setCountdown(null);
-    return onAnswer(trimmed).then((saved) => {
+    return onAnswer(trimmed, cutOff).then((saved) => {
       if (!saved) return;
       setAnswer("");
       setTurn(voiceOn ? "listening" : "typing");
@@ -226,7 +221,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   function chooseVoice(on: boolean) {
     if (on === voiceOn) return;
     if (!on) {
-      donna.current?.stop();
+      harvey.current?.stop();
       wantsVoice.current = false;
       setVoiceOn(false);
       setTurn("typing");
@@ -238,32 +233,30 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
       return;
     }
     // This click is the user gesture that lets the page play audio at all.
-    donna.current
+    harvey.current
       ?.enable()
       .then(() => {
         wantsVoice.current = true;
         setVoiceOn(true);
         saveVoicePreference(true);
         setVoiceNote(null);
-        // This question is already streaming or streamed, so she stays silent
-        // for it — re-asking would pay for the same question twice. The
-        // microphone opens as soon as the words are on screen.
-        if (!streaming) setTurn("listening");
+        // Ask this question again, aloud. It costs one more short call, and
+        // opening the microphone on a question Harvey never said left people
+        // waiting for Harvey to speak — until Harvey asked whether to move on.
+        harvey.current?.stop();
+        reask.current = true;
+        setAttempt((n) => n + 1);
       })
       .catch(() => setVoiceNote("This browser is blocking audio playback on the page."));
   }
 
+  /** Every spoken answer goes straight in. If the clock or the silence ended
+   *  it, Harvey has already said "let's move on", so the next question won't
+   *  thank them for it. */
   function onTranscript(spokenText: string, reason: ListenEnd | "manual") {
     setAnswer(spokenText);
-    if (reason === "limit") {
-      // She has already moved on out loud; holding the transcript for review
-      // would contradict her.
-      setTurn("reviewing");
-      void submit(spokenText);
-      return;
-    }
-    setTurn("reviewing");
-    setCountdown(REVIEW_SECONDS);
+    setTurn("sending");
+    void submit(spokenText, reason === "limit" || reason === "no-speech");
   }
 
   const canAnswer = !streaming && !streamError && answer.trim().length > 0 && !busy;
@@ -339,7 +332,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
               variant="destructive"
               className="h-10"
               onClick={() => {
-                donna.current?.stop();
+                harvey.current?.stop();
                 onEnd();
               }}
             >
@@ -359,7 +352,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           className="min-h-40 space-y-4"
         >
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Donna · {question.competency}
+            Harvey · {question.competency}
           </p>
           <p className="text-xl leading-relaxed sm:text-2xl" aria-hidden={streaming}>
             {text}
@@ -367,12 +360,19 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           </p>
           {/* One announcement per question for screen readers, not one per token. */}
           <p className="sr-only" role="status">
-            {streaming ? "Donna is speaking." : text}
+            {streaming ? "Harvey is speaking." : text}
           </p>
           {streamError && (
             <div className="flex flex-wrap items-center gap-3 text-sm text-destructive" role="alert">
               <span>{streamError}</span>
-              <Button variant="outline" className="h-10" onClick={() => setAttempt((n) => n + 1)}>
+              <Button
+              variant="outline"
+              className="h-10"
+              onClick={() => {
+                harvey.current?.stop();
+                setAttempt((n) => n + 1);
+              }}
+            >
                 Try again
               </Button>
             </div>
@@ -398,6 +398,11 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           }}
           onTypeInstead={() => setTurn("typing")}
         />
+      ) : voiceOn && turn === "sending" && !error ? (
+        <p className="flex items-center gap-3 text-sm text-muted-foreground" role="status">
+          <span className="size-2 animate-pulse rounded-full bg-primary" aria-hidden />
+          Got it.
+        </p>
       ) : (
         <form
           className="flex flex-col gap-3"
@@ -411,7 +416,6 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
             value={answer}
             onChange={(e) => {
               setAnswer(e.target.value);
-              setCountdown(null); // an edit means they want to look it over
             }}
             placeholder={streaming ? "Listening…" : "Your answer"}
             rows={6}
@@ -426,31 +430,15 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           )}
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs text-muted-foreground">
-              {turn === "reviewing"
-                ? "Heard that — edit anything Donna got wrong."
+              {turn === "sending"
+                ? "Your spoken answer didn't send. Check it, then send it again."
                 : `${answer.length.toLocaleString()} / 4,000`}
             </span>
             <div className="flex items-center gap-2">
-              {voiceOn && turn === "reviewing" && (
-                <Button
-                  variant="ghost"
-                  className="h-11"
-                  onClick={() => {
-                    setCountdown(null);
-                    setAnswer("");
-                    setTurn("listening");
-                  }}
-                  type="button"
-                >
-                  Say it again
-                </Button>
-              )}
               <Button type="submit" disabled={!canAnswer} className="h-11 px-5 text-base">
                 {busy
                   ? "Sending…"
-                  : countdown !== null
-                    ? `Sending in ${countdown}…`
-                    : session.current + 1 === total
+                  : session.current + 1 === total
                       ? "Finish"
                       : "Next question"}
               </Button>
@@ -464,7 +452,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
 
 function TypingDots() {
   return (
-    <span className="ml-1 inline-flex gap-0.5 align-middle" aria-label="Donna is typing">
+    <span className="ml-1 inline-flex gap-0.5 align-middle" aria-label="Harvey is typing">
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}

@@ -60,10 +60,12 @@ def test_ask_streams_tokens_then_done(client, setup):
         assert r.headers["content-type"].startswith("text/event-stream")
         events = _sse_events(r)
     kinds = [e for e, _ in events]
-    assert kinds.count("token") > 1
+    assert kinds.count("token") >= 1
     assert kinds[-1] == "done"
     text = "".join(d["text"] for e, d in events if e == "token")
-    assert "tell me about a time" in text.lower()
+    # A fixed lead-in, then the planned question word for word.
+    assert text.endswith(session["questions"][0]["text"])
+    assert len(text) > len(session["questions"][0]["text"])
 
 
 def test_full_journey_to_report(client, setup):
@@ -86,6 +88,33 @@ def test_full_journey_to_report(client, setup):
     assert all(len(item["dimensions"]) == 4 for item in report["items"])
     assert "total" not in report
     assert report["items"][0]["ideal"]["has_material"] is True
+
+
+def test_streamed_report_sends_the_header_then_each_item(client, setup):
+    session = _start(client, setup)
+    for i in range(5):
+        r = client.post(
+            "/interview/answer",
+            json={"session": session, "answer": {"question_id": i + 1, "text": f"answer {i + 1}"}},
+        )
+        session = r.json()
+
+    with client.stream("POST", "/interview/report/stream", json=session) as r:
+        assert r.status_code == 200
+        events = _sse_events(r)
+    kinds = [e for e, _ in events]
+    assert kinds == ["report"] + ["item"] * 5 + ["done"]
+    assert events[0][1]["items"] == [] and "total" not in events[0][1]
+    items = {d["index"]: d["item"] for e, d in events if e == "item"}
+    assert sorted(items) == [0, 1, 2, 3, 4]
+    assert all(items[i]["question"]["id"] == i + 1 for i in items)
+    assert all(len(item["dimensions"]) == 4 for item in items.values())
+
+
+def test_streamed_report_before_wrap_is_a_409_not_a_stream(client, setup):
+    session = _start(client, setup)
+    r = client.post("/interview/report/stream", json=session)
+    assert r.status_code == 409
 
 
 # --- Failure paths -------------------------------------------------------------
@@ -113,6 +142,20 @@ def test_oversize_resume_is_a_422(client, setup):
     assert "at most 15000 characters" in r.json()["detail"]
 
 
+@pytest.mark.parametrize("session_id", ["s1", "x" * 65])
+def test_a_malformed_session_id_is_a_422_on_every_route_that_takes_one(client, setup, session_id):
+    """It used to pass the request model and fail inside Session, as a 500."""
+    bodies = {
+        "/interview/start": {"session_id": session_id, "setup": setup.model_dump()},
+        "/interview/say": {"session_id": session_id, "line": "stalled"},
+        "/interview/transcribe": {"session_id": session_id, "object_name": "audio/x/a.webm"},
+    }
+    for route, body in bodies.items():
+        r = client.post(route, json=body)
+        assert r.status_code == 422, (route, r.status_code, r.text)
+        assert r.json()["errors"][0]["loc"] == ["body", "session_id"], route
+
+
 def test_answer_to_wrong_question_is_a_409(client, setup):
     session = _start(client, setup)
     r = client.post(
@@ -136,17 +179,12 @@ def test_ask_on_finished_session_is_a_409_not_a_stream(client, setup):
     assert r.status_code == 409
 
 
-def test_model_failure_during_ask_is_an_error_event(setup, signed_in):
-    fake = FakeModel(fail="ask")
-    app.dependency_overrides[interview.get_model] = lambda: fake
-    try:
-        client = TestClient(app, headers={"Authorization": "Bearer good"})
-        session = _start(client, setup)
-        with client.stream("POST", "/interview/ask", json=session) as r:
-            events = _sse_events(r)
-        assert events == [("error", {"message": "fake failure", "retryable": True})]
-    finally:
-        app.dependency_overrides.pop(interview.get_model, None)
+def test_asking_makes_no_model_call(client, fake, setup):
+    session = _start(client, setup)
+    before = len(fake.calls)
+    with client.stream("POST", "/interview/ask", json=session) as r:
+        _sse_events(r)
+    assert len(fake.calls) == before
 
 
 def test_model_failure_during_start_is_a_503(setup, signed_in):
@@ -179,3 +217,28 @@ def test_cors_allows_configured_origin_only(client):
             headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": method},
         )
         assert method in pre.headers.get("access-control-allow-methods", ""), method
+
+
+# --- Cutting long text to fit (Setup's limits) ---------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "word " * 3_000,  # no line breaks at all: rfind's -1 used to keep it all
+        "line of text\n" * 1_000,  # line breaks all the way through
+        "x" * 9_000,  # no break of any kind
+    ],
+)
+def test_truncated_text_fits_the_limit_note_included(text):
+    from anyview.api.interview import MAX_JD_CHARS, _truncate
+
+    cut = _truncate(text, MAX_JD_CHARS, "The job description")
+    assert len(cut) <= MAX_JD_CHARS
+    assert cut.endswith("was cut to fit.]")
+
+
+def test_short_text_is_untouched():
+    from anyview.api.interview import _truncate
+
+    assert _truncate("short", 100, "x") == "short"

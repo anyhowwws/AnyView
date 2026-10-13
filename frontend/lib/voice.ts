@@ -1,4 +1,4 @@
-// Voice mode (ADR 0013): Donna's speech out, the candidate's speech in.
+// Voice mode (ADR 0013): Harvey's speech out, the candidate's speech in.
 // Time-bounded interviews (ADR 0016) add a clock to the listening rules.
 //
 // Out: the /interview/ask stream carries a WAV clip per sentence. They must be
@@ -24,9 +24,12 @@ export const SPEECH_MS = 250;
 /** How long a pause has to run before the turn is over. Long enough to think
  *  mid-answer, short enough that the conversation doesn't stall. */
 export const SILENCE_MS = 2500;
-/** Dead air that an interviewer would notice. In a timed interview Donna says
+/** Dead air that an interviewer would notice. In a timed interview Harvey says
  *  something; in an untimed one it is how we spot a dead microphone. */
 export const DEAD_AIR_MS = 10_000;
+/** After Harvey has asked "shall we move on?", how much more silence counts as a
+ *  yes. Without it a timed question sat in silence until its whole clock ran out. */
+export const GIVE_UP_AFTER_STALL_MS = 15_000;
 export const UNTIMED_DEAD_AIR_MS = 30_000;
 /** A hard cap, well inside the 10 MB upload limit at 32 kbps. A timed question
  *  replaces this with its own, shorter clock. */
@@ -35,13 +38,16 @@ export const MAX_ANSWER_MS = 4 * 60_000;
 export type ListenEnd = "silence" | "limit" | "no-speech";
 
 /** What ends a turn, and when. A timed question passes its own `limitMs` and
- *  leaves `endOnDeadAir` off, because dead air is Donna's cue to speak, not to
+ *  leaves `endOnDeadAir` off, because dead air is Harvey's cue to speak, not to
  *  give up (ADR 0016). */
 export interface ListenLimits {
   silenceMs: number;
   deadAirMs: number;
   limitMs: number;
   endOnDeadAir: boolean;
+  /** Timed only: silence from the start this long, with nothing said, ends the
+   *  turn as no answer. Null leaves it to `endOnDeadAir`. */
+  giveUpMs: number | null;
 }
 
 export const UNTIMED: ListenLimits = {
@@ -49,6 +55,7 @@ export const UNTIMED: ListenLimits = {
   deadAirMs: UNTIMED_DEAD_AIR_MS,
   limitMs: MAX_ANSWER_MS,
   endOnDeadAir: true,
+  giveUpMs: null,
 };
 
 export function timedLimits(seconds: number): ListenLimits {
@@ -57,6 +64,7 @@ export function timedLimits(seconds: number): ListenLimits {
     deadAirMs: DEAD_AIR_MS,
     limitMs: Math.min(seconds * 1000, MAX_ANSWER_MS),
     endOnDeadAir: false,
+    giveUpMs: DEAD_AIR_MS + GIVE_UP_AFTER_STALL_MS,
   };
 }
 
@@ -65,7 +73,7 @@ export interface ListenState {
   loudSince: number | null;
   quietSince: number | null;
   /** Dead air has gone on long enough to be awkward. Not an ending: it is what
-   *  makes Donna ask whether to move on. */
+   *  makes Harvey ask whether to move on. */
   stalled: boolean;
   ended: ListenEnd | null;
 }
@@ -123,14 +131,17 @@ export function hearing(
     }
   } else if (at - startedAt >= limits.deadAirMs) {
     // Nothing said yet. Untimed, that means a dead microphone; timed, it is
-    // just a silence long enough for Donna to fill.
+    // just a silence long enough for Harvey to fill.
     if (limits.endOnDeadAir) return { ...next, ended: "no-speech" };
+    if (limits.giveUpMs !== null && at - startedAt >= limits.giveUpMs) {
+      return { ...next, stalled: true, ended: "no-speech" };
+    }
     next = { ...next, stalled: true };
   }
   return next;
 }
 
-// --- Donna speaking ---------------------------------------------------------
+// --- Harvey speaking ---------------------------------------------------------
 
 function decodeBase64(b64: string): ArrayBuffer {
   const binary = atob(b64);
@@ -153,7 +164,23 @@ function audioContext(): AudioContext {
   return shared;
 }
 
-export class DonnaVoice {
+/** Call from a click handler. A browser lets a page start audio only in
+ *  response to a click, and that permission fades within seconds — far less
+ *  than planning an interview takes. The pre-flight's "Speak to me" and "Begin"
+ *  clicks call this (ADR 0028). The same context drives the microphone's level
+ *  meter, so this also keeps Safari from reading the microphone as silence: a
+ *  context it never saw a click for stays suspended, and a suspended analyser
+ *  reads zeros. */
+export function unlockAudio(): void {
+  try {
+    const ctx = audioContext();
+    if (ctx.state === "suspended") void ctx.resume();
+  } catch {
+    // No Web Audio: Practice falls back to text and says so.
+  }
+}
+
+export class HarveyVoice {
   private ctx: AudioContext | null = null;
   private playing = new Set<AudioBufferSourceNode>();
   /** Decoding is async, so clips are chained rather than raced: clip two must
@@ -170,7 +197,7 @@ export class DonnaVoice {
 
   /** Needs user activation: a browser will not start audio on a page nobody
    *  has clicked. Rejects if the context stays suspended, so the caller can
-   *  ask for a click rather than leaving Donna silently mute. */
+   *  ask for a click rather than leaving Harvey silently mute. */
   async enable(): Promise<void> {
     this.ctx = audioContext();
     if (this.ctx.state === "suspended") await this.ctx.resume();
@@ -215,7 +242,15 @@ export class DonnaVoice {
     }
   }
 
-  /** Cut her off — a new question, or the listener leaving. */
+  /** Stop listening for this question's end, but let whatever is playing
+   *  finish. A new question calls this: "let's move on" must be heard to
+   *  the end, and the next question's clips queue up behind it. */
+  detach(): void {
+    this.onFinished = null;
+    this.complete = false;
+  }
+
+  /** Cut Harvey off — the candidate switched modes or left the interview. */
   stop(): void {
     for (const source of this.playing) {
       source.onended = null;
@@ -232,7 +267,71 @@ export class DonnaVoice {
   }
 }
 
+/** One player for the whole interview (ADR 0028). Practice remounts on every
+ *  question, and a player per mount knew nothing of the clip still playing:
+ *  the next question cut off "let's move on" and could talk over it. */
+let harvey: HarveyVoice | null = null;
+
+export function harveyVoice(): HarveyVoice {
+  harvey ??= new HarveyVoice();
+  return harvey;
+}
+
 // --- The candidate speaking -------------------------------------------------
+
+/** One microphone stream for the whole interview, opened by the pre-flight
+ *  (ADR 0028). Asking per question put Safari's permission prompt in the middle
+ *  of question one and repeated the hardware start-up every turn. */
+let mic: MediaStream | null = null;
+
+export async function acquireMicrophone(): Promise<MediaStream> {
+  if (mic?.getAudioTracks().some((t) => t.readyState === "live")) return mic;
+  mic = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  return mic;
+}
+
+/** Turn the microphone off: the interview is over, or was abandoned. */
+export function releaseMicrophone(): void {
+  mic?.getTracks().forEach((t) => t.stop());
+  mic = null;
+}
+
+/** A level reading on the shared context. `disconnect` leaves the stream and
+ *  the context running for the next turn. */
+function tap(stream: MediaStream) {
+  const ctx = audioContext();
+  if (ctx.state === "suspended") void ctx.resume();
+  const source = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  source.connect(analyser);
+  const samples = new Float32Array(analyser.fftSize);
+  return {
+    /** RMS amplitude, 0..1. */
+    level(): number {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const s of samples) sum += s * s;
+      return Math.sqrt(sum / samples.length);
+    },
+    disconnect: () => source.disconnect(),
+  };
+}
+
+/** The pre-flight's meter: report the microphone level until stopped. */
+export async function watchLevel(onLevel: (level: number) => void): Promise<() => void> {
+  const meter = tap(await acquireMicrophone());
+  let frame = requestAnimationFrame(function tick() {
+    onLevel(meter.level());
+    frame = requestAnimationFrame(tick);
+  });
+  return () => {
+    cancelAnimationFrame(frame);
+    meter.disconnect();
+  };
+}
 
 /** The recording formats a browser might give us, best first. Chrome and
  *  Firefox produce WebM/Opus; Safari produces MP4/AAC. The base type is what
@@ -279,7 +378,7 @@ export interface ListenOptions {
   onEnd: (recording: Recording, reason: ListenEnd | "manual") => void;
   onError: (message: string) => void;
   /** Dead air went on long enough to be awkward. Fires at most once, and the
-   *  microphone stays open — this is Donna's cue to speak, not the end of the
+   *  microphone stays open — this is Harvey's cue to speak, not the end of the
    *  turn (ADR 0016). */
   onStall?: () => void;
   limits?: ListenLimits;
@@ -303,9 +402,7 @@ export async function listen({
 
   let stream: MediaStream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    stream = await acquireMicrophone();
   } catch {
     onError("The microphone is blocked. Allow it in your browser, or type your answer.");
     return { stop: () => {}, cancel: () => {} };
@@ -315,11 +412,7 @@ export async function listen({
   const chunks: Blob[] = [];
   recorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
 
-  const ctx = new AudioContext();
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 1024;
-  ctx.createMediaStreamSource(stream).connect(analyser);
-  const samples = new Float32Array(analyser.fftSize);
+  const meter = tap(stream);
 
   const startedAt = performance.now();
   let state = LISTENING;
@@ -330,9 +423,9 @@ export async function listen({
   let cancelled = false;
 
   function teardown() {
+    // The stream stays open for the next question; releaseMicrophone() ends it.
     cancelAnimationFrame(frame);
-    stream.getTracks().forEach((t) => t.stop());
-    void ctx.close();
+    meter.disconnect();
   }
 
   function finish(reason: ListenEnd | "manual") {
@@ -354,10 +447,7 @@ export async function listen({
   }
 
   function tick() {
-    analyser.getFloatTimeDomainData(samples);
-    let sum = 0;
-    for (const s of samples) sum += s * s;
-    const level = Math.sqrt(sum / samples.length);
+    const level = meter.level();
     onLevel(level);
 
     const at = performance.now();

@@ -23,7 +23,7 @@ interface Props {
   seconds: number | null;
   onTranscript: (text: string, reason: ListenEnd | "manual") => void;
   onError: (message: string) => void;
-  /** Donna needs to say something: the clock ran out, or the silence got long. */
+  /** Harvey needs to say something: the clock ran out, or the silence got long. */
   onInterject: (line: "time_up" | "stalled") => void;
   /** The candidate gave up on the microphone for this question. */
   onTypeInstead: () => void;
@@ -55,8 +55,9 @@ export function VoiceAnswer({
     ) {
       if (reason === "no-speech" || !heardSpeech) {
         // Nothing was ever said. Untimed that is a broken microphone worth
-        // mentioning; timed, the clock simply ran out and Donna moves on.
-        if (reason === "limit") onTranscript(NO_ANSWER, reason);
+        // mentioning; timed, either the clock ran out or the silence outlasted
+        // Harvey's "shall we move on?", and Harvey moves on.
+        if (seconds !== null) onTranscript(NO_ANSWER, reason);
         else onError("We didn't hear anything. Check your microphone, or type your answer.");
         return;
       }
@@ -82,9 +83,11 @@ export function VoiceAnswer({
       },
       onEnd: (recording, reason) => {
         if (!live) return;
-        // Her cutting in should land while the recording is still being sent,
+        // Harvey cutting in should land while the recording is still being sent,
         // not after, so this goes first.
-        if (reason === "limit") onInterject("time_up");
+        if (reason === "limit" || (reason === "no-speech" && seconds !== null)) {
+          onInterject("time_up");
+        }
         void send(recording.blob, recording.contentType, recording.heardSpeech, reason);
       },
       onError: (message) => live && onError(message),
@@ -134,8 +137,8 @@ export function VoiceAnswer({
           </p>
           <p className="text-xs text-muted-foreground">
             {seconds === null
-              ? "Stop talking for a couple of seconds and Donna takes it from there."
-              : "Stop talking and she moves on — or she will when the time is up."}
+              ? "Stop talking for a couple of seconds and Harvey takes it from there."
+              : "Stop talking and Harvey moves on — or will when the time is up."}
           </p>
         </div>
       </div>
