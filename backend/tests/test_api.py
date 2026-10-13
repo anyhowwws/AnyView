@@ -63,7 +63,9 @@ def test_ask_streams_tokens_then_done(client, setup):
     assert kinds.count("token") > 1
     assert kinds[-1] == "done"
     text = "".join(d["text"] for e, d in events if e == "token")
-    assert "tell me about a time" in text.lower()
+    # A lead-in from the model, then the planned question word for word.
+    assert text.endswith(session["questions"][0]["text"])
+    assert len(text) > len(session["questions"][0]["text"])
 
 
 def test_full_journey_to_report(client, setup):

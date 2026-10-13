@@ -348,7 +348,7 @@ def parse_job(
 def parse_job_link(
     body: JobLinkRequest, user: CurrentUser, model: ModelDep, repo: RepoDep, fetch: FetcherDep
 ) -> JobDocument:
-    """A job posting from a link the user pasted (ADR 0026): fetched once,
+    """A job posting from a link the user pasted (ADR 0027): fetched once,
     turned into text, then exactly what an uploaded posting goes through.
     `uploads/link.py` decides which links may be fetched at all."""
     session_id = f"job-{uuid.uuid4().hex[:8]}"

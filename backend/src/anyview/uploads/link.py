@@ -1,4 +1,4 @@
-"""A job posting fetched from a link the user pasted (ADR 0026).
+"""A job posting fetched from a link the user pasted (ADR 0027).
 
 The API fetches one page, on request, for a signed-in user, and turns it into
 the same plain text an uploaded posting becomes. From there it goes down the

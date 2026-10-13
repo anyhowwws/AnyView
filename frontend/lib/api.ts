@@ -200,7 +200,7 @@ export const getResumeOnFile = () => request<ResumeOnFile>("GET", "/interview/re
 export const parseJob = (objectName: string) =>
   post<JobDocument>("/interview/job/parse", { object_name: objectName });
 
-/** The same, for a posting at a link: the API fetches the page (ADR 0026). */
+/** The same, for a posting at a link: the API fetches the page (ADR 0027). */
 export const parseJobLink = (url: string) =>
   post<JobDocument>("/interview/job/parse-link", { url });
 

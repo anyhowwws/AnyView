@@ -1,4 +1,4 @@
-# 0026 — A job posting can come from a link, fetched by the API
+# 0027 — A job posting can come from a link, fetched by the API
 
 - **Status:** Accepted
 - **Date:** 2026-10-14

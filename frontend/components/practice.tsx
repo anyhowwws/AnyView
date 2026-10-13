@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { NO_ANSWER, VoiceAnswer } from "@/components/voice-answer";
 import { ApiError, askQuestion, interjection } from "@/lib/api";
 import { loadVoicePreference, saveVoicePreference } from "@/lib/store";
-import { DonnaVoice, microphoneSupported, type ListenEnd } from "@/lib/voice";
+import { DonnaVoice, microphoneSupported } from "@/lib/voice";
 import type { Session } from "@/lib/types";
 
 interface Props {
@@ -21,13 +21,11 @@ interface Props {
   error: string | null;
 }
 
-/** How long a transcript sits on screen before it is sent, so a misheard word
- *  can be caught. Short enough that the conversation keeps its rhythm. */
-const REVIEW_SECONDS = 4;
-
 /** The candidate's turn, once Donna has finished speaking. `typing` is both the
- *  silent path and the escape hatch from any voice state. */
-type Turn = "typing" | "listening" | "reviewing";
+ *  silent path and the escape hatch from any voice state. `sending` is a spoken
+ *  answer on its way: it goes straight in, as it would in a real interview,
+ *  and is shown only if sending it fails. */
+type Turn = "typing" | "listening" | "sending";
 
 /** The Practice surface: one question centred, streaming text, a typing
  *  indicator, a thin progress rail. Speaking is the default — the question is
@@ -52,7 +50,9 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   // stream and pay for the same question twice.
   const wantsVoice = useRef(false);
   const [turn, setTurn] = useState<Turn>("typing");
-  const [countdown, setCountdown] = useState<number | null>(null);
+  // Set when switching to speaking: ask this question again, aloud, even though
+  // its text is already here.
+  const reask = useRef(false);
   const [remaining, setRemaining] = useState<number | null>(null);
   // One player for the whole practice run; it holds the AudioContext, which a
   // browser only lets us open in response to a click.
@@ -86,12 +86,13 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     const voice = donna.current;
     const speaking = wantsVoice.current && voice !== null && voice.ready;
 
-    if (spoken !== undefined) {
+    if (spoken !== undefined && !reask.current) {
       // Re-entering a question we already have the text for: nothing to stream,
       // so it is the candidate's turn straight away.
       if (wantsVoice.current) setTurn("listening");
       return;
     }
+    reask.current = false;
 
     const controller = new AbortController();
     let collected = "";
@@ -148,11 +149,11 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
 
   // --- The clock (ADR 0016) -------------------------------------------------
   // It starts when the candidate's turn does, which is when the question has
-  // finished arriving. Reviewing a transcript is not answering, so it stops —
+  // finished arriving. Sending a spoken answer is not answering, so it stops —
   // and neither is deciding whether to walk out, or the answer would be sent
   // from under the confirmation.
   const answering =
-    timed && !streaming && !streamError && turn !== "reviewing" && !busy && !ending;
+    timed && !streaming && !streamError && turn !== "sending" && !busy && !ending;
 
   // A pause holds the remainder rather than resetting it: opening the "end
   // interview" confirmation and thinking better of it must not hand out a
@@ -192,20 +193,6 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remaining]);
 
-  // A transcript is sent on its own after a beat, so a spoken interview needs
-  // no clicking. Any edit, or "Send now", takes over from the timer.
-  useEffect(() => {
-    if (countdown === null) return;
-    if (countdown === 0) {
-      setCountdown(null);
-      void submit();
-      return;
-    }
-    const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [countdown]);
-
   async function interject(line: "time_up" | "stalled") {
     if (!wantsVoice.current) return;
     const clip = await interjection(session.session_id, line);
@@ -215,7 +202,6 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   function submit(override?: string) {
     const trimmed = (override ?? answer).trim();
     if (!trimmed || busy) return;
-    setCountdown(null);
     return onAnswer(trimmed).then((saved) => {
       if (!saved) return;
       setAnswer("");
@@ -245,25 +231,20 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
         setVoiceOn(true);
         saveVoicePreference(true);
         setVoiceNote(null);
-        // This question is already streaming or streamed, so she stays silent
-        // for it — re-asking would pay for the same question twice. The
-        // microphone opens as soon as the words are on screen.
-        if (!streaming) setTurn("listening");
+        // Ask this question again, aloud. It costs one more short call, and
+        // opening the microphone on a question she never said left people
+        // waiting for her to speak — until she asked whether to move on.
+        reask.current = true;
+        setAttempt((n) => n + 1);
       })
       .catch(() => setVoiceNote("This browser is blocking audio playback on the page."));
   }
 
-  function onTranscript(spokenText: string, reason: ListenEnd | "manual") {
+  /** Every spoken answer goes straight in, however the turn ended. */
+  function onTranscript(spokenText: string) {
     setAnswer(spokenText);
-    if (reason === "limit") {
-      // She has already moved on out loud; holding the transcript for review
-      // would contradict her.
-      setTurn("reviewing");
-      void submit(spokenText);
-      return;
-    }
-    setTurn("reviewing");
-    setCountdown(REVIEW_SECONDS);
+    setTurn("sending");
+    void submit(spokenText);
   }
 
   const canAnswer = !streaming && !streamError && answer.trim().length > 0 && !busy;
@@ -398,6 +379,11 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           }}
           onTypeInstead={() => setTurn("typing")}
         />
+      ) : voiceOn && turn === "sending" && !error ? (
+        <p className="flex items-center gap-3 text-sm text-muted-foreground" role="status">
+          <span className="size-2 animate-pulse rounded-full bg-primary" aria-hidden />
+          Got it.
+        </p>
       ) : (
         <form
           className="flex flex-col gap-3"
@@ -411,7 +397,6 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
             value={answer}
             onChange={(e) => {
               setAnswer(e.target.value);
-              setCountdown(null); // an edit means they want to look it over
             }}
             placeholder={streaming ? "Listening…" : "Your answer"}
             rows={6}
@@ -426,31 +411,15 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           )}
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs text-muted-foreground">
-              {turn === "reviewing"
-                ? "Heard that — edit anything Donna got wrong."
+              {turn === "sending"
+                ? "Your spoken answer didn't send. Check it, then send it again."
                 : `${answer.length.toLocaleString()} / 4,000`}
             </span>
             <div className="flex items-center gap-2">
-              {voiceOn && turn === "reviewing" && (
-                <Button
-                  variant="ghost"
-                  className="h-11"
-                  onClick={() => {
-                    setCountdown(null);
-                    setAnswer("");
-                    setTurn("listening");
-                  }}
-                  type="button"
-                >
-                  Say it again
-                </Button>
-              )}
               <Button type="submit" disabled={!canAnswer} className="h-11 px-5 text-base">
                 {busy
                   ? "Sending…"
-                  : countdown !== null
-                    ? `Sending in ${countdown}…`
-                    : session.current + 1 === total
+                  : session.current + 1 === total
                       ? "Finish"
                       : "Next question"}
               </Button>

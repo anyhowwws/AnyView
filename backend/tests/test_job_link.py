@@ -1,4 +1,4 @@
-"""A job posting from a pasted link (ADR 0026). No network: DNS is a dict and
+"""A job posting from a pasted link (ADR 0027). No network: DNS is a dict and
 HTTP is an `httpx.MockTransport`, a fake server that answers in-process."""
 
 import json
