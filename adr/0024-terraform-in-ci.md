@@ -46,6 +46,10 @@ move the apply identity's trust to that subject).
   between.
 - **`deploy-api` waits for the apply** (or for it to be skipped), so a release never
   runs ahead of the infrastructure it needs.
+  `deploy-web` needs its own `!failure() && needs.deploy-api.result == 'success'` for the same
+  reason: GitHub's default condition also counts skipped *ancestors*, so a skipped apply would
+  otherwise skip the frontend deploy too (found on the first merge to main; fixed in the
+  follow-up).
 - `-lock=false` on plans: they change nothing, two PRs can plan at once, and the
   plan identity needs no write access to the state.
 - Inputs come from `TF_VAR_*` set from repository variables, replacing the

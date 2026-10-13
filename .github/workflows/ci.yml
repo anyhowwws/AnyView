@@ -265,6 +265,11 @@ jobs:
             --quiet
 
   deploy-web:
+    # `needs` alone is not enough: the default condition (success()) also looks at
+    # *skipped ancestors*, and terraform-apply is skipped on every run with no
+    # infrastructure change, which would skip this job too. Require deploy-api's
+    # own result instead (it is "skipped" on pull requests, so this stays off there).
+    if: ${{ !failure() && !cancelled() && needs.deploy-api.result == 'success' }}
     needs: deploy-api
     runs-on: ubuntu-latest
     defaults:
