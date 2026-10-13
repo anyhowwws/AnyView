@@ -245,6 +245,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
 
   function clearJob() {
     setJobText(null);
+    setShowPosting(false);
     setJobValues(EMPTY_JOB);
     setJobError(null);
     setJobUrl("");
@@ -287,15 +288,36 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
     </fieldset>
   );
 
-  /** What Donna read out of a posting, shown as chips. The posting itself
-   *  is what the prompt carries; these are for checking her reading. */
-  const receipt = (intro: string) => (
-    <div className="parsed-receipt">
-      <p>{intro}</p>
-      <Chips label="Must-haves" items={lines(jobValues.must_haves)} />
-      <Chips label="Nice-to-haves" items={lines(jobValues.nice_to_haves)} />
-      <Chips label="The role owns" items={lines(jobValues.responsibilities)} />
-    </div>
+  /** How Donna read an uploaded posting, shown for checking — not for editing.
+   *  She plans from the full posting text, so changing a chip would change
+   *  nothing; the company, role and seniority fields below are what reach her. */
+  const postingReceipt = () => (
+    <>
+      <div className="parsed-receipt">
+        <p>
+          This is how Donna read the posting. She plans the questions from the whole
+          posting, not from this summary. If she got the company, role or seniority wrong,
+          fix it below — that is saved with this job when you start.
+        </p>
+        <Chips label="Must-haves" items={lines(jobValues.must_haves)} />
+        <Chips label="Nice-to-haves" items={lines(jobValues.nice_to_haves)} />
+        <Chips label="The role owns" items={lines(jobValues.responsibilities)} />
+      </div>
+      {jobText && (
+        <button
+          type="button"
+          className="self-start text-xs text-muted-foreground underline underline-offset-4"
+          onClick={() => setShowPosting((v) => !v)}
+        >
+          {showPosting ? "Hide the posting" : "View the posting"}
+        </button>
+      )}
+      {showPosting && jobText && (
+        <pre className="extracted-text" tabIndex={0}>
+          {jobText}
+        </pre>
+      )}
+    </>
   );
 
   return (
@@ -515,24 +537,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
             </div>
             {picked?.source === "upload" ? (
               <>
-                {receipt(
-                  "From the posting you uploaded. Correct the company, role or seniority " +
-                    "below and it is saved to this job when you start.",
-                )}
-                {jobText && (
-                  <button
-                    type="button"
-                    className="self-start text-xs text-muted-foreground underline underline-offset-4"
-                    onClick={() => setShowPosting((v) => !v)}
-                  >
-                    {showPosting ? "Hide the posting" : "View the posting"}
-                  </button>
-                )}
-                {showPosting && jobText && (
-                  <pre className="extracted-text" tabIndex={0}>
-                    {jobText}
-                  </pre>
-                )}
+                {postingReceipt()}
               </>
             ) : (
               picked && manualFields("This job, in your words — changes are saved when you start")
@@ -617,11 +622,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
                 {jobError}
               </p>
             )}
-            {jobText &&
-              receipt(
-                "Donna read this out of the posting. Correct anything below that isn’t " +
-                  "right — the fields are yours, not hers. It is saved for next time when you start.",
-              )}
+            {jobText && postingReceipt()}
           </>
         ) : (
           manualFields("The posting, in your words")
