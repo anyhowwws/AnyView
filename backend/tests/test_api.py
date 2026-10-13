@@ -140,6 +140,20 @@ def test_oversize_resume_is_a_422(client, setup):
     assert "at most 15000 characters" in r.json()["detail"]
 
 
+@pytest.mark.parametrize("session_id", ["s1", "x" * 65])
+def test_a_malformed_session_id_is_a_422_on_every_route_that_takes_one(client, setup, session_id):
+    """It used to pass the request model and fail inside Session, as a 500."""
+    bodies = {
+        "/interview/start": {"session_id": session_id, "setup": setup.model_dump()},
+        "/interview/say": {"session_id": session_id, "line": "stalled"},
+        "/interview/transcribe": {"session_id": session_id, "object_name": "audio/x/a.webm"},
+    }
+    for route, body in bodies.items():
+        r = client.post(route, json=body)
+        assert r.status_code == 422, (route, r.status_code, r.text)
+        assert r.json()["errors"][0]["loc"] == ["body", "session_id"], route
+
+
 def test_answer_to_wrong_question_is_a_409(client, setup):
     session = _start(client, setup)
     r = client.post(

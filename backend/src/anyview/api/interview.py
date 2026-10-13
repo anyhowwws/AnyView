@@ -32,6 +32,7 @@ from anyview.interview.models import (
     Report,
     SavedJob,
     Session,
+    SessionId,
     Setup,
     SetupInput,
     State,
@@ -76,7 +77,7 @@ RepoDep = Annotated[Any, Depends(get_repository_optional)]
 
 
 class StartRequest(BaseModel):
-    session_id: str
+    session_id: SessionId
     setup: SetupInput
 
 
@@ -413,7 +414,7 @@ def ask(session: Session, model: ModelDep, settings: SettingsDep, voice: bool = 
 
 
 class SayRequest(BaseModel):
-    session_id: str
+    session_id: SessionId
     # A key, never free text: this route must not become a way to have the TTS
     # model read out anything a caller likes.
     line: Literal["time_up", "stalled"]
@@ -436,7 +437,7 @@ def say(body: SayRequest, model: ModelDep, settings: SettingsDep) -> Spoken:
 
 
 class TranscribeRequest(BaseModel):
-    session_id: str
+    session_id: SessionId
     object_name: str
 
 
