@@ -8,7 +8,7 @@ limits are the input-size caps (a cost guard as much as a validation one).
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Literal, get_args
+from typing import Annotated, Literal, get_args
 
 from pydantic import BaseModel, Field
 
@@ -22,6 +22,11 @@ DEFAULT_ANSWER_SECONDS = 120
 MIN_ANSWER_SECONDS = 45
 MAX_ANSWER_SECONDS = 300
 DEAD_AIR_SECONDS = 10
+
+# The browser's id for one interview. It names the usage rows and log lines of
+# every call made for it, so it is bounded wherever it comes in, not only
+# once it reaches a Session.
+SessionId = Annotated[str, Field(min_length=8, max_length=64)]
 
 Seniority = Literal["junior", "mid", "senior", "staff", "principal"]
 SENIORITIES: tuple[str, ...] = get_args(Seniority)
@@ -139,7 +144,7 @@ class Answer(BaseModel):
 
 
 class Session(BaseModel):
-    session_id: str = Field(min_length=8, max_length=64)
+    session_id: SessionId
     setup: Setup
     state: State = State.INTAKE
     questions: list[Question] = []
