@@ -74,6 +74,10 @@ resource "google_billing_account_iam_member" "tf_plan_budget" {
   billing_account_id = var.billing_account_id
   role               = "roles/billing.viewer"
   member             = google_service_account.tf_plan.member
+
+  # Setting a billing account's IAM policy goes through the Cloud Billing API,
+  # which has to be enabled on the project first.
+  depends_on = [google_project_service.enabled["cloudbilling.googleapis.com"]]
 }
 
 resource "google_service_account_iam_member" "tf_plan_impersonate" {
@@ -107,6 +111,8 @@ resource "google_billing_account_iam_member" "tf_apply_budget" {
   billing_account_id = var.billing_account_id
   role               = "roles/billing.costsManager"
   member             = google_service_account.tf_apply.member
+
+  depends_on = [google_project_service.enabled["cloudbilling.googleapis.com"]]
 }
 
 # One exact subject, not a repository-wide set: only a job running on `main` gets
