@@ -53,6 +53,7 @@ variable "github_repo" {
 variable "billing_account_id" {
   description = "Billing account the budget alert attaches to. Find with: gcloud billing accounts list"
   type        = string
+  sensitive   = true
 }
 
 variable "budget_amount" {
@@ -93,6 +94,7 @@ variable "allowed_emails" {
   description = "Google account emails allowed past sign-in (ADR 0009). Empty means nobody can start an interview."
   type        = list(string)
   default     = []
+  sensitive   = true
 }
 
 variable "local_signers" {
