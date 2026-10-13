@@ -200,6 +200,10 @@ export const getResumeOnFile = () => request<ResumeOnFile>("GET", "/interview/re
 export const parseJob = (objectName: string) =>
   post<JobDocument>("/interview/job/parse", { object_name: objectName });
 
+/** The same, for a posting at a link: the API fetches the page (ADR 0027). */
+export const parseJobLink = (url: string) =>
+  post<JobDocument>("/interview/job/parse-link", { url });
+
 /** The jobs you have practised for, most recently used first (ADR 0025). */
 export const getSavedJobs = () => request<SavedJob[]>("GET", "/interview/jobs");
 

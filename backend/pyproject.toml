@@ -21,14 +21,16 @@ dependencies = [
   "psycopg[binary]>=3.2,<4",
   # Used only as the connection pool around the connector and to run text() SQL. No ORM (ADR 0011).
   "sqlalchemy>=2.0,<3",
+  # Fetches a job posting from a link the user pastes (ADR 0027). Already here for tests; promoted because
+  # it can connect to an address we checked while keeping the real hostname for TLS (`sni_hostname`).
+  "httpx>=0.27,<1",
 ]
 
 [project.optional-dependencies]
 dev = [
   # Test runner.
   "pytest>=8",
-  # Lets FastAPI's TestClient drive the app in-process without a server.
-  "httpx>=0.27",
+  # (httpx, which FastAPI's TestClient needs, is a runtime dependency above.)
   # Lint + format in one tool, replaces flake8/isort/black.
   "ruff>=0.6",
 ]

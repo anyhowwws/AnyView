@@ -1,7 +1,7 @@
 """Interview routes. The browser owns the session and posts it back each turn.
 
 Setup describes a situation, not a set of sources (ADR 0014): the resume is a
-property of the user, the job is a document or a filled-in form, and difficulty
+property of the user, the job is a document, a link or a filled-in form, and difficulty
 decides what the interviewer is allowed to know.
 """
 
@@ -11,6 +11,7 @@ import base64
 import datetime as dt
 import logging
 import uuid
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Annotated, Any, Literal
 
@@ -42,11 +43,14 @@ from anyview.interview.voice import voiced
 from anyview.llm.adapter import Model
 from anyview.uploads.extract import (
     EXTENSION_TYPES,
+    PDF,
     ExtractionError,
     audio_to_text,
     docx_to_text,
     pdf_to_text,
 )
+from anyview.uploads.link import Page, page_to_text
+from anyview.uploads.link import fetch as fetch_page
 from anyview.uploads.store import UploadStore
 
 log = logging.getLogger(__name__)
@@ -312,6 +316,17 @@ class JobUploadRequest(BaseModel):
     object_name: str = Field(max_length=200)
 
 
+class JobLinkRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2000)
+
+
+def get_page_fetcher() -> Callable[[str], Page]:  # overridden in tests; never touch the web there
+    return fetch_page
+
+
+FetcherDep = Annotated[Callable[[str], Page], Depends(get_page_fetcher)]
+
+
 @router.post("/job/parse", response_model=JobDocument)
 def parse_job(
     body: JobUploadRequest, user: CurrentUser, model: ModelDep, store: StoreDep, repo: RepoDep
@@ -323,13 +338,44 @@ def parse_job(
     A posting already saved comes back as that saved job instead, with the
     corrections the user made last time and no parse call (ADR 0025)."""
     session_id = f"job-{uuid.uuid4().hex[:8]}"
-    text = _truncate(
-        _extract(
-            body.object_name, user_uid=user.uid, store=store, model=model, session_id=session_id
-        ),
-        MAX_JD_CHARS,
-        "The job description",
+    text = _extract(
+        body.object_name, user_uid=user.uid, store=store, model=model, session_id=session_id
     )
+    return _read_posting(text, user=user, model=model, repo=repo, session_id=session_id)
+
+
+@router.post("/job/parse-link", response_model=JobDocument)
+def parse_job_link(
+    body: JobLinkRequest, user: CurrentUser, model: ModelDep, repo: RepoDep, fetch: FetcherDep
+) -> JobDocument:
+    """A job posting from a link the user pasted (ADR 0027): fetched once,
+    turned into text, then exactly what an uploaded posting goes through.
+    `uploads/link.py` decides which links may be fetched at all."""
+    session_id = f"job-{uuid.uuid4().hex[:8]}"
+    try:
+        page = fetch(body.url)
+        if page.content_type == PDF:
+            text = pdf_to_text(page.body, model=model, session_id=session_id)
+        elif page.content_type == "text/plain":
+            text = page.body.decode(page.charset or "utf-8", errors="replace")
+        else:
+            text = page_to_text(page.body.decode(page.charset or "utf-8", errors="replace"))
+    except ExtractionError as exc:
+        raise HTTPException(422, exc.user_message) from exc
+    if len(text.strip()) < 50:
+        raise HTTPException(
+            422,
+            "That page has almost no text until a browser runs it. "
+            "Save the posting as a PDF and upload that instead.",
+        )
+    return _read_posting(text, user=user, model=model, repo=repo, session_id=session_id)
+
+
+def _read_posting(
+    text: str, *, user: CurrentUser, model: Model, repo: Any, session_id: str
+) -> JobDocument:
+    """A posting's text, matched against saved jobs, else parsed into fields."""
+    text = _truncate(text, MAX_JD_CHARS, "The job description")
     if len(text.strip()) < 50:
         raise HTTPException(422, "There's almost no text in that file. Is it the right one?")
 
