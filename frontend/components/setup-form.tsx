@@ -20,6 +20,7 @@ import {
   getResumeOnFile,
   getSavedJobs,
   parseJob,
+  parseJobLink,
   uploadResume,
 } from "@/lib/api";
 import {
@@ -37,6 +38,7 @@ import {
   type Difficulty,
   type JobSource,
   type ResumeOnFile,
+  type JobDocument,
   type SavedJob,
   type Seniority,
   type SetupInput,
@@ -90,6 +92,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
   const [jobValues, setJobValues] = useState<JobValues>(EMPTY_JOB);
   const [jobBusy, setJobBusy] = useState(false);
   const [jobError, setJobError] = useState<string | null>(null);
+  const [jobUrl, setJobUrl] = useState("");
   const [company, setCompany] = useState("");
   const [role, setRole] = useState("");
   const [seniority, setSeniority] = useState<Seniority | null>(null);
@@ -200,11 +203,23 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
   async function readJob(list: FileList | null) {
     const { file: f, error: e } = pickDocument(list);
     setJobError(e);
-    setJobNote(null);
     if (!f) return;
+    await readPosting(async () => parseJob(await uploadResume(f)));
+  }
+
+  /** The same, from a link: the API fetches the page and reads it. */
+  async function readJobLink() {
+    const url = jobUrl.trim();
+    if (!url) return;
+    setJobError(null);
+    await readPosting(() => parseJobLink(url));
+  }
+
+  async function readPosting(read: () => Promise<JobDocument>) {
+    setJobNote(null);
     setJobBusy(true);
     try {
-      const document = await parseJob(await uploadResume(f));
+      const document = await read();
       if (document.saved_job) {
         // Practised before: switch to it, corrections and all.
         const known = document.saved_job;
@@ -230,6 +245,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
     setJobText(null);
     setJobValues(EMPTY_JOB);
     setJobError(null);
+    setJobUrl("");
     if (jobInput.current) jobInput.current.value = "";
   }
 
@@ -561,6 +577,36 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
                 </button>
               )}
             </div>
+            {!jobText && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  type="url"
+                  inputMode="url"
+                  className="h-10 min-w-0 flex-1"
+                  value={jobUrl}
+                  disabled={jobBusy}
+                  placeholder="…or paste a link to the posting"
+                  aria-label="Link to the job posting"
+                  onChange={(e) => setJobUrl(e.target.value)}
+                  onKeyDown={(e) => {
+                    // Enter reads the link; it must not submit the whole setup form.
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void readJobLink();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-10"
+                  disabled={jobBusy || !jobUrl.trim()}
+                  onClick={() => void readJobLink()}
+                >
+                  Read link
+                </Button>
+              </div>
+            )}
             {jobError && (
               <p role="alert" className="text-xs text-destructive">
                 {jobError}

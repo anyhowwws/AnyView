@@ -31,7 +31,7 @@ writes simple scripts). So:
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
 | Frontend | Next.js App Router, TS, Tailwind v4, shadcn/ui, Framer Motion; static export → Firebase Hosting (static files only) | brief |
-| Files | Cloud Storage bucket `<project>-uploads`, `uploads/<uid>/…`, V4 signed PUT URLs (never transit the API); PDF read by the model, DOCX by `python-docx`. Resumes **and** job descriptions take the same path | 0010, 0014 |
+| Files | Cloud Storage bucket `<project>-uploads`, `uploads/<uid>/…`, V4 signed PUT URLs (never transit the API); PDF read by the model, DOCX by `python-docx`. Resumes **and** job descriptions take the same path; a job can also be a link the API fetches | 0010, 0014, 0026 |
 | Async | Cloud Tasks | brief |
 | Auth | Identity Platform: Google sign-in only, email allow-list (`ALLOWED_EMAILS`), Firebase ID token verified by `google-auth` on every `/interview/*` route | 0009 |
 | Secrets | Secret Manager, Terraform provisions the *parameter*, never the value | brief |
@@ -67,7 +67,9 @@ Backend modules:
   tells the model to open with "tell me about yourself" and to set each question's `seconds`.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
   `account.py` serves `POST /account/erase` (ADR 0018): deletes the user's files, then every row, via `Repository.erase_user`.
-  `interview.py` also serves `GET /interview/resume` (the resume on file), `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields, or the saved job when that posting is already saved), `GET`/`DELETE /interview/jobs` (saved jobs, ADR 0025) and `POST /interview/say` (one of Donna's fixed interjections, by key — never free text).
+  `interview.py` also serves `GET /interview/resume` (the resume on file), `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields, or the saved job when that posting is already saved), `POST /interview/job/parse-link` (the same from a pasted URL, ADR 0026), `GET`/`DELETE /interview/jobs` (saved jobs, ADR 0025) and `POST /interview/say` (one of Donna's fixed interjections, by key — never free text).
+- `anyview/uploads/link.py` — fetches a job posting from a pasted link (ADR 0026): every hop checked for public
+  addresses and fetched from the checked IP (SSRF, DNS rebinding); JSON-LD `JobPosting` preferred, else text from `<h1>`.
 - `anyview/uploads/{store,extract}.py` — the upload store (GCS or in-memory), resume → text
   extraction, and recorded answer → transcript (`audio_to_text`).
 - `anyview/db/{connection,migrate,repository}.py` — engine (connector + IAM auth, or DATABASE_URL), numbered SQL migrations run at startup, and **the only file that runs SQL**: app-meaningful methods over an event log + projection (ADR 0011).
