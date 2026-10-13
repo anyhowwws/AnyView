@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { interjection } from "@/lib/api";
 import { loadVoicePreference, saveVoicePreference } from "@/lib/store";
 import {
-  donnaVoice,
+  harveyVoice,
   microphoneSupported,
   releaseMicrophone,
   unlockAudio,
@@ -31,7 +31,7 @@ interface Props {
 
 /** Between "Start interview" and question one (ADR 0028). Planning takes about
  *  twenty seconds; this spends them getting the room ready — microphone allowed
- *  and heard, Donna's voice heard — so nothing interrupts question one. The
+ *  and heard, Harvey's voice heard — so nothing interrupts question one. The
  *  Begin click is also the user gesture the browser wants before audio plays. */
 export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
   const [voice, setVoice] = useState(() => loadVoicePreference() && microphoneSupported());
@@ -42,7 +42,7 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
 
   useEffect(() => {
     if (!voice) return;
-    // Fetch her cut-in lines now, so "let's move on" is ready the first time it
+    // Fetch the cut-in lines now, so "let's move on" is ready the first time it
     // is needed and is never queued behind the question that follows it.
     void interjection(sessionId, "time_up");
     void interjection(sessionId, "stalled");
@@ -66,10 +66,10 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
     };
   }, [voice, sessionId]);
 
-  async function playDonna() {
+  async function speakToMe() {
     unlockAudio(); // this click is what lets the page play sound
     setSpeaker("loading");
-    const player = donnaVoice();
+    const player = harveyVoice();
     try {
       await player.enable();
     } catch {
@@ -99,11 +99,11 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
   return (
     <div className="setup-workspace mx-auto flex w-full max-w-2xl flex-col gap-6">
       <header className="flex flex-col gap-2">
-        <p className="eyebrow">Before Donna walks in</p>
+        <p className="eyebrow">Before the interview starts</p>
         <h1 className="text-2xl font-semibold tracking-tight">Let&rsquo;s get the room ready.</h1>
         <p className="text-sm text-muted-foreground">
           {voice
-            ? "This is a spoken interview. Check you can hear Donna and she can hear you while she reads your resume."
+            ? "This is a spoken interview. Check you can hear Harvey, and that Harvey can hear you, while the interviewer reads your resume."
             : "You'll answer by typing. The interviewer is reviewing your profile."}
         </p>
       </header>
@@ -116,7 +116,7 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
               <strong>Microphone</strong>
               {mic === "asking" && <span>Allow the microphone when your browser asks.</span>}
               {mic === "on" && <span>Allowed. Say a few words to check the level.</span>}
-              {mic === "heard" && <span>Allowed, and Donna can hear you.</span>}
+              {mic === "heard" && <span>Allowed, and Harvey can hear you.</span>}
               {mic === "blocked" && (
                 <span>
                   Blocked. Allow it in your browser&rsquo;s site settings and reload, or answer by
@@ -140,23 +140,23 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
             />
             <div>
               <strong>Speaker</strong>
-              {speaker === "idle" && <span>Turn your sound on, then check if you can hear Donna.</span>}
-              {speaker === "loading" && <span>Getting Donna&rsquo;s voice…</span>}
+              {speaker === "idle" && <span>Turn your sound on, then check if you can hear Harvey.</span>}
+              {speaker === "loading" && <span>Getting Harvey&rsquo;s voice…</span>}
               {speaker === "playing" && <span>Listen…</span>}
-              {speaker === "asked" && <span>Did you hear her?</span>}
-              {speaker === "ok" && <span>You can hear Donna.</span>}
+              {speaker === "asked" && <span>Did you hear Harvey?</span>}
+              {speaker === "ok" && <span>You can hear Harvey.</span>}
               {speaker === "failed" && (
-                <span>Donna&rsquo;s voice isn&rsquo;t available right now. Questions will show as text.</span>
+                <span>Harvey&rsquo;s voice isn&rsquo;t available right now. Questions will show as text.</span>
               )}
               <span className="preflight-actions">
                 {(speaker === "idle" || speaker === "asked") && (
-                  <Button type="button" variant="outline" className="h-9" onClick={() => void playDonna()}>
+                  <Button type="button" variant="outline" className="h-9" onClick={() => void speakToMe()}>
                     {speaker === "idle" ? "Speak to me" : "Speak again"}
                   </Button>
                 )}
                 {speaker === "asked" && (
                   <Button type="button" className="h-9" onClick={() => setSpeaker("ok")}>
-                    Yes, I heard her
+                    Yes, I heard Harvey
                   </Button>
                 )}
               </span>

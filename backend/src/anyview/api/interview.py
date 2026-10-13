@@ -135,7 +135,7 @@ def _resume_on_file(repo: Any, user_uid: str) -> str:
     dump = repo.active_resume(user_uid)
     if dump is None:
         raise HTTPException(
-            422, "Donna needs your resume first — upload the one an interviewer would receive."
+            422, "Harvey needs your resume first — upload the one an interviewer would receive."
         )
     return dump.text
 
@@ -405,7 +405,7 @@ def _read_posting(
         max_tokens=2048,
     )
     if reply.refused or reply.truncated or reply.data is None:
-        raise HTTPException(502, "Donna couldn't read that job description. Please try again.")
+        raise HTTPException(502, "Harvey couldn't read that job description. Please try again.")
     try:
         parsed = JobParse.model_validate(reply.data)
     except ValidationError as exc:
@@ -464,7 +464,7 @@ def ask(session: Session, model: ModelDep, settings: SettingsDep, voice: bool = 
             words,
             model=model,
             session_id=session.session_id,
-            voice=settings.donna_voice,
+            voice=settings.harvey_voice,
         )
     )
 
@@ -482,12 +482,12 @@ class Spoken(BaseModel):
 
 @router.post("/say", response_model=Spoken)
 def say(body: SayRequest, model: ModelDep, settings: SettingsDep) -> Spoken:
-    """One of Donna's fixed interjections, spoken (ADR 0016).
+    """One of Harvey's fixed interjections, spoken (ADR 0016).
 
     The browser fetches each line once and reuses the clip for the whole
     interview, so a five-question run synthesises two short clips at most."""
     audio = model.speak(
-        text=INTERJECTIONS[body.line], session_id=body.session_id, voice=settings.donna_voice
+        text=INTERJECTIONS[body.line], session_id=body.session_id, voice=settings.harvey_voice
     )
     return Spoken(b64=base64.b64encode(audio).decode("ascii"))
 

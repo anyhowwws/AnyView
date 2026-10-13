@@ -102,7 +102,7 @@ def test_nothing_is_left_unspoken_when_the_text_has_no_final_stop():
 def test_a_failed_voice_keeps_the_text_and_says_so_once():
     class Mute(FakeModel):
         def speak(self, *, text, session_id, voice="Kore"):
-            raise ModelError("Donna's voice is unavailable right now.", retryable=True)
+            raise ModelError("Harvey's voice is unavailable right now.", retryable=True)
 
     two = "Tell me about a time you led a project end to end. What did you own exactly?"
     frames = _frames(two, model=Mute())
@@ -213,7 +213,7 @@ def test_a_recording_can_be_put_to_the_fake_mode_url(client):
     assert r.status_code == 403
 
 
-# --- Donna's interjections (ADR 0016) ---------------------------------------
+# --- Harvey's interjections (ADR 0016) ---------------------------------------
 
 
 def test_say_returns_a_decodable_clip(client):

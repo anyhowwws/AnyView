@@ -1,4 +1,4 @@
-// Voice mode (ADR 0013): Donna's speech out, the candidate's speech in.
+// Voice mode (ADR 0013): Harvey's speech out, the candidate's speech in.
 // Time-bounded interviews (ADR 0016) add a clock to the listening rules.
 //
 // Out: the /interview/ask stream carries a WAV clip per sentence. They must be
@@ -24,10 +24,10 @@ export const SPEECH_MS = 250;
 /** How long a pause has to run before the turn is over. Long enough to think
  *  mid-answer, short enough that the conversation doesn't stall. */
 export const SILENCE_MS = 2500;
-/** Dead air that an interviewer would notice. In a timed interview Donna says
+/** Dead air that an interviewer would notice. In a timed interview Harvey says
  *  something; in an untimed one it is how we spot a dead microphone. */
 export const DEAD_AIR_MS = 10_000;
-/** After she has asked "shall we move on?", how much more silence counts as a
+/** After Harvey has asked "shall we move on?", how much more silence counts as a
  *  yes. Without it a timed question sat in silence until its whole clock ran out. */
 export const GIVE_UP_AFTER_STALL_MS = 15_000;
 export const UNTIMED_DEAD_AIR_MS = 30_000;
@@ -38,7 +38,7 @@ export const MAX_ANSWER_MS = 4 * 60_000;
 export type ListenEnd = "silence" | "limit" | "no-speech";
 
 /** What ends a turn, and when. A timed question passes its own `limitMs` and
- *  leaves `endOnDeadAir` off, because dead air is Donna's cue to speak, not to
+ *  leaves `endOnDeadAir` off, because dead air is Harvey's cue to speak, not to
  *  give up (ADR 0016). */
 export interface ListenLimits {
   silenceMs: number;
@@ -73,7 +73,7 @@ export interface ListenState {
   loudSince: number | null;
   quietSince: number | null;
   /** Dead air has gone on long enough to be awkward. Not an ending: it is what
-   *  makes Donna ask whether to move on. */
+   *  makes Harvey ask whether to move on. */
   stalled: boolean;
   ended: ListenEnd | null;
 }
@@ -131,7 +131,7 @@ export function hearing(
     }
   } else if (at - startedAt >= limits.deadAirMs) {
     // Nothing said yet. Untimed, that means a dead microphone; timed, it is
-    // just a silence long enough for Donna to fill.
+    // just a silence long enough for Harvey to fill.
     if (limits.endOnDeadAir) return { ...next, ended: "no-speech" };
     if (limits.giveUpMs !== null && at - startedAt >= limits.giveUpMs) {
       return { ...next, stalled: true, ended: "no-speech" };
@@ -141,7 +141,7 @@ export function hearing(
   return next;
 }
 
-// --- Donna speaking ---------------------------------------------------------
+// --- Harvey speaking ---------------------------------------------------------
 
 function decodeBase64(b64: string): ArrayBuffer {
   const binary = atob(b64);
@@ -166,7 +166,7 @@ function audioContext(): AudioContext {
 
 /** Call from a click handler. A browser lets a page start audio only in
  *  response to a click, and that permission fades within seconds — far less
- *  than planning an interview takes. The pre-flight's "Play Donna" and "Begin"
+ *  than planning an interview takes. The pre-flight's "Speak to me" and "Begin"
  *  clicks call this (ADR 0028). The same context drives the microphone's level
  *  meter, so this also keeps Safari from reading the microphone as silence: a
  *  context it never saw a click for stays suspended, and a suspended analyser
@@ -180,7 +180,7 @@ export function unlockAudio(): void {
   }
 }
 
-export class DonnaVoice {
+export class HarveyVoice {
   private ctx: AudioContext | null = null;
   private playing = new Set<AudioBufferSourceNode>();
   /** Decoding is async, so clips are chained rather than raced: clip two must
@@ -197,7 +197,7 @@ export class DonnaVoice {
 
   /** Needs user activation: a browser will not start audio on a page nobody
    *  has clicked. Rejects if the context stays suspended, so the caller can
-   *  ask for a click rather than leaving Donna silently mute. */
+   *  ask for a click rather than leaving Harvey silently mute. */
   async enable(): Promise<void> {
     this.ctx = audioContext();
     if (this.ctx.state === "suspended") await this.ctx.resume();
@@ -243,14 +243,14 @@ export class DonnaVoice {
   }
 
   /** Stop listening for this question's end, but let whatever is playing
-   *  finish. A new question calls this: her "let's move on" must be heard to
+   *  finish. A new question calls this: "let's move on" must be heard to
    *  the end, and the next question's clips queue up behind it. */
   detach(): void {
     this.onFinished = null;
     this.complete = false;
   }
 
-  /** Cut her off — the candidate switched modes or left the interview. */
+  /** Cut Harvey off — the candidate switched modes or left the interview. */
   stop(): void {
     for (const source of this.playing) {
       source.onended = null;
@@ -269,12 +269,12 @@ export class DonnaVoice {
 
 /** One player for the whole interview (ADR 0028). Practice remounts on every
  *  question, and a player per mount knew nothing of the clip still playing:
- *  the next question cut off her "let's move on" and could talk over it. */
-let donna: DonnaVoice | null = null;
+ *  the next question cut off "let's move on" and could talk over it. */
+let harvey: HarveyVoice | null = null;
 
-export function donnaVoice(): DonnaVoice {
-  donna ??= new DonnaVoice();
-  return donna;
+export function harveyVoice(): HarveyVoice {
+  harvey ??= new HarveyVoice();
+  return harvey;
 }
 
 // --- The candidate speaking -------------------------------------------------
@@ -378,7 +378,7 @@ export interface ListenOptions {
   onEnd: (recording: Recording, reason: ListenEnd | "manual") => void;
   onError: (message: string) => void;
   /** Dead air went on long enough to be awkward. Fires at most once, and the
-   *  microphone stays open — this is Donna's cue to speak, not the end of the
+   *  microphone stays open — this is Harvey's cue to speak, not the end of the
    *  turn (ADR 0016). */
   onStall?: () => void;
   limits?: ListenLimits;

@@ -52,8 +52,8 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.tts_model_id
       }
       env {
-        name  = "DONNA_VOICE"
-        value = var.donna_voice
+        name  = "HARVEY_VOICE"
+        value = var.harvey_voice
       }
       env {
         name  = "CORS_ORIGINS"

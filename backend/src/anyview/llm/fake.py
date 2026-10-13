@@ -87,11 +87,11 @@ class FakeModel:
         for i, word in enumerate(text.split(" ")):
             yield word if i == 0 else " " + word
 
-    def speak(self, *, text: str, session_id: str, voice: str = "Kore") -> bytes:
+    def speak(self, *, text: str, session_id: str, voice: str = "Orus") -> bytes:
         """Silence, one real WAV file, lasting about as long as the words would.
 
         A browser decodes it like any other clip, so the whole voice path —
-        queueing, playback, "Donna has finished, your turn" — can be walked
+        queueing, playback, "Harvey has finished, your turn" — can be walked
         through locally with nothing but a microphone.
         """
         self._record("speak", session_id, voice, text)

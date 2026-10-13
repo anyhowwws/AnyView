@@ -188,8 +188,8 @@ NO_ANSWER = "(no answer given)"
 class Answer(BaseModel):
     question_id: int = Field(ge=1, le=QUESTION_COUNT)
     text: str = Field(min_length=1, max_length=4_000)
-    # The clock or Donna ended this answer, not the candidate. The next question
-    # then opens without a "thank you" for an answer she had to cut short (ADR 0028).
+    # The clock or Harvey ended this answer, not the candidate. The next question
+    # then opens without a "thank you" for an answer that had to be cut short (ADR 0028).
     cut_off: bool = False
 
 

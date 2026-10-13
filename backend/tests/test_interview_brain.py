@@ -68,7 +68,7 @@ def test_nothing_on_file_says_so(client):
     assert client.get("/interview/resume").json()["dump_id"] is None
     r = client.post("/interview/start", json={"session_id": "sess-0001", "setup": _setup()})
     assert r.status_code == 422
-    assert "Donna needs your resume first" in r.json()["detail"]
+    assert "Harvey needs your resume first" in r.json()["detail"]
 
 
 def test_an_upload_becomes_the_resume_on_file(client, store):

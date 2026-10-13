@@ -40,7 +40,7 @@ export const PACES: { value: boolean; label: string; blurb: string }[] = [
     value: true,
     label: "Interview pace",
     blurb:
-      "Every question has a time limit. Donna moves on when it runs out, mid-sentence if she has to — the way an interviewer working to a schedule does.",
+      "Every question has a time limit. Harvey moves on when it runs out, mid-sentence if need be — the way an interviewer working to a schedule does.",
   },
   {
     value: false,
@@ -133,7 +133,7 @@ export interface ResumeOnFile {
   characters: number;
 }
 
-/** What Donna read out of an uploaded job description. Every field is a
+/** What Harvey read out of an uploaded job description. Every field is a
  *  suggestion that pre-fills the form for you to confirm. */
 export interface JobParse {
   company: string | null;
@@ -174,7 +174,7 @@ export interface Question {
 export interface Answer {
   question_id: number;
   text: string;
-  /** The clock or Donna ended it, not the candidate: no "thank you" next (ADR 0028). */
+  /** The clock or Harvey ended it, not the candidate: no "thank you" next (ADR 0028). */
   cut_off?: boolean;
 }
 
