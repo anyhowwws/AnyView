@@ -27,13 +27,19 @@ read your resume", "Donna moves on when the clock runs out", "Ask Donna about yo
   An unknown voice name fails every spoken question, and the app then falls back to text, so a
   wrong name would have looked like "voice is broken". Orus was the first stand-in, until Alnilam was picked.
 
-- **Harvey has a delivery.** `prompts.HARVEY_DELIVERY` — "confident, effortlessly smug,
-  fast-talking, like an elite closer who always wins" — is direction for the TTS model, put in
-  front of every line he speaks as `"<style>: <line>"` (`adapter.spoken_prompt`). It is a code
+- **Harvey has a delivery.** `prompts.HARVEY_DELIVERY` is direction for the TTS model, put in
+  front of every line he speaks as `"<style>: <line>"` (`adapter.spoken_prompt`): a sharp New
+  York closer, smooth low-to-mid baritone, dry and slightly smug, brisk and clipped. It is a code
   constant, not an environment variable: it is part of who Harvey is, and changing it is a
-  reviewed change. Measured on this project: the instruction is not read aloud (the audio is
-  about as long as the line alone), and the colon form ran about 10% faster than a blank line
-  between style and words, which barely changed the delivery.
+  reviewed change.
+- **The delivery was tuned by stopwatch as well as by ear.** The first version asked for
+  "short, deliberate pauses" and ran about 30% slower than plain speech (9.6 s against 7.2 s
+  for a sample question), which the owner heard as too slow. Dropping the pause and
+  relaxed-pace wording gave 7.5 s. A "noticeably faster" variant ran 6.6 s and was passed over
+  as likely to feel rushed over five questions. The direction is not read aloud, which was
+  checked by transcribing the clips. One styled "let's move on" once came back with its line
+  said twice (9.5 s); three repeats were all normal, so it is a rare quirk and no guard is
+  added. A TTS quota exists (requests per minute per model): generate audition clips slowly.
 
 ## Consequences
 

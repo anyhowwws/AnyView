@@ -260,12 +260,20 @@ def lead_in(*, index: int, previous: Answer | None, spoken: bool) -> str:
 
 
 # How Harvey sounds, as direction for the TTS model (ADR 0029). Applied to every line
-# he speaks: questions, thanks, interjections. Fast-talking is deliberate; the
-# interview clock is real and an elite closer does not dawdle.
+# he speaks: questions, thanks, interjections. Chosen by ear and by stopwatch: the
+# owner's first version asked for deliberate pauses and ran ~30% slower than plain
+# speech; this one runs at plain speech's pace (7.5 s against 7.2 s for a sample
+# question) and was not read aloud when transcribed. Keep it free of pause or
+# slow-down wording.
 HARVEY_DELIVERY = (
-    "You are Harvey, an interviewer running a behavioural screening interview. "
-    "Say this in a confident, effortlessly smug, fast-talking tone, "
-    "like an elite closer who always wins."
+    "Speak as a sharp New York closer who has never lost and knows it, "
+    "in a natural conversational voice. "
+    "Voice: smooth, low-to-mid baritone, relaxed and effortlessly confident, "
+    "with a hint of a smirk. "
+    "Pacing: brisk and clipped, the speed of someone with somewhere better to be. "
+    "No dramatic pauses and no drawn-out words. "
+    "Delivery: dry, understated, slightly smug. Drop the ends of sentences with finality. "
+    "Never sound nervous, hesitant, or over-excited."
 )
 
 INTERJECTIONS: dict[str, str] = {
