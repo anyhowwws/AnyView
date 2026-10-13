@@ -259,10 +259,10 @@ export async function uploadAnswerAudio(blob: Blob, contentType: string): Promis
   return putTicket(ticket, blob, contentType);
 }
 
-/** Donna's fixed interjections, fetched once and reused for the whole run: the
+/** Harvey's fixed interjections, fetched once and reused for the whole run: the
  *  same "let's move on" is needed up to five times in an interview and the
  *  words never change. The line is a key, not text — the server owns the
- *  words. Her voice failing here must not stop the interview, so a failure is
+ *  words. A failing voice here must not stop the interview, so a failure is
  *  silence rather than an error. */
 const clips = new Map<string, string>();
 
@@ -360,7 +360,7 @@ export interface AskHandlers {
 /** Streams the interviewer's words for the current question. Calls onToken per
  *  delta; resolves when the server sends `done`; rejects with ApiError on an
  *  `error` event or a non-200 status. With `voice`, the same stream also
- *  carries Donna's spoken audio (ADR 0013). */
+ *  carries Harvey's spoken audio (ADR 0013). */
 export async function askQuestion(
   session: Session,
   handlers: AskHandlers,

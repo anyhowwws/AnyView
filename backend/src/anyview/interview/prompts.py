@@ -233,25 +233,25 @@ def job_parse_user(text: str) -> str:
     return f"<job_description>\n{text.strip()}\n</job_description>\n\nExtract the fields."
 
 
-# --- What Donna says when she has to step in (ADR 0016) ---------------------
+# --- What Harvey says when he has to step in (ADR 0016) ---------------------
 # Fixed lines, not generated: an interruption has to land in the moment, and a
 # model call would arrive after it stopped being an interruption. The browser
 # asks for each one once per session and reuses the clip. Keeping them here
-# keeps everything Donna says in one file.
-# How Donna opens each question, chosen by how the last turn ended (ADR 0028).
+# keeps everything Harvey says in one file.
+# How Harvey opens each question, chosen by how the last turn ended (ADR 0028).
 # Fixed lines, not a model call: the fast model asked for "one sentence" kept
 # asking the question itself, and then it was said twice. These cost nothing,
 # arrive at once, and can never contradict what just happened.
 # Just the greeting: the planned opener usually starts "to kick things off".
 OPENER = "Hi, thanks for making the time today."
 THANKS = ("Thank you.", "Thanks for that.", "Okay, thank you.", "Got it, thanks.")
-# After a cut-in she has already said "let's move on" out loud, so a spoken
+# After a cut-in Harvey has already said "let's move on" out loud, so a spoken
 # question opens straight away; on screen, with no voice, it needs the words.
 MOVING_ON_SILENT = "Let's move on."
 
 
 def lead_in(*, index: int, previous: Answer | None, spoken: bool) -> str:
-    """What Donna says before question `index` (0-based)."""
+    """What Harvey says before question `index` (0-based)."""
     if previous is None:
         return OPENER
     if previous.cut_off or previous.text.strip() == NO_ANSWER:
@@ -265,5 +265,5 @@ INTERJECTIONS: dict[str, str] = {
     # Ten seconds of nothing. Real interviewers do not sit through much more.
     "stalled": "Take a moment if you need it. Or shall we move on to the next one?",
     # The speaker check before the interview starts (ADR 0028).
-    "hello": "Hi, I'm Donna. If you can hear me clearly, you're all set.",
+    "hello": "Hi, I'm Harvey. If you can hear me clearly, you're all set.",
 }

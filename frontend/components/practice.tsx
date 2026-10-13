@@ -8,14 +8,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { NO_ANSWER, VoiceAnswer } from "@/components/voice-answer";
 import { ApiError, askQuestion, interjection } from "@/lib/api";
 import { loadVoicePreference, saveVoicePreference } from "@/lib/store";
-import { donnaVoice, microphoneSupported, type DonnaVoice, type ListenEnd } from "@/lib/voice";
+import { harveyVoice, microphoneSupported, type HarveyVoice, type ListenEnd } from "@/lib/voice";
 import type { Session } from "@/lib/types";
 
 interface Props {
   session: Session;
   spoken: string | undefined; // already-streamed text for this question (after a reload)
   onSpoken: (questionId: number, text: string) => void;
-  /** `cutOff`: the clock or Donna ended the answer, so the next question
+  /** `cutOff`: the clock or Harvey ended the answer, so the next question
    *  opens without thanking them for it (ADR 0028). */
   onAnswer: (text: string, cutOff: boolean) => Promise<boolean>;
   onEnd: () => void;
@@ -23,7 +23,7 @@ interface Props {
   error: string | null;
 }
 
-/** The candidate's turn, once Donna has finished speaking. `typing` is both the
+/** The candidate's turn, once Harvey has finished speaking. `typing` is both the
  *  silent path and the escape hatch from any voice state. `sending` is a spoken
  *  answer on its way: it goes straight in, as it would in a real interview,
  *  and is shown only if sending it fails. */
@@ -31,7 +31,7 @@ type Turn = "typing" | "listening" | "sending";
 
 /** The Practice surface: one question centred, streaming text, a typing
  *  indicator, a thin progress rail. Speaking is the default — the question is
- *  spoken and the microphone opens when she stops (ADR 0013) — and when the
+ *  spoken and the microphone opens when Harvey stops (ADR 0013) — and when the
  *  interview is time-bounded each question carries its own clock (ADR 0016). */
 export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, error }: Props) {
   const question = session.questions[session.current];
@@ -58,8 +58,8 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   const [remaining, setRemaining] = useState<number | null>(null);
   // One player for the whole interview, shared across these per-question
   // mounts, so a clip from the last question plays out under the next (ADR 0028).
-  const donna = useRef<DonnaVoice | null>(null);
-  if (donna.current === null && typeof window !== "undefined") donna.current = donnaVoice();
+  const harvey = useRef<HarveyVoice | null>(null);
+  if (harvey.current === null && typeof window !== "undefined") harvey.current = harveyVoice();
 
   useEffect(() => {
     // Speaking is the default, so this normally just unlocks audio. Getting
@@ -68,13 +68,13 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
       setVoiceReady(true);
       return;
     }
-    donna.current
+    harvey.current
       ?.enable()
       .then(() => {
         wantsVoice.current = true;
         setVoiceOn(true);
       })
-      .catch(() => setVoiceNote("Switch to speaking to hear Donna ask the question."))
+      .catch(() => setVoiceNote("Switch to speaking to hear Harvey ask the question."))
       .finally(() => setVoiceReady(true));
   }, []);
 
@@ -85,7 +85,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     // a paid model call for a request the client immediately abandons. The
     // cleanup also aborts an in-flight stream when the question changes.
     if (!voiceReady) return; // wait for the preference, so we ask only once
-    const voice = donna.current;
+    const voice = harvey.current;
     const speaking = wantsVoice.current && voice !== null && voice.ready;
 
     if (spoken !== undefined && !reask.current) {
@@ -103,10 +103,10 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     setStreamError(null);
     setTurn("typing");
 
-    // Her voice arriving is what hands the turn over; without it, the end of
+    // The voice arriving is what hands the turn over; without it, the end of
     // the text does.
     let audioExpected = speaking;
-    // Not stop(): whatever she is still saying ("let's move on") plays to the
+    // Not stop(): whatever Harvey is still saying ("let's move on") plays to the
     // end, and this question's clips queue behind it.
     if (voice) voice.onFinished = () => setTurn("listening");
 
@@ -205,7 +205,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   async function interject(line: "time_up" | "stalled") {
     if (!wantsVoice.current) return;
     const clip = await interjection(session.session_id, line);
-    if (clip) donna.current?.play(clip);
+    if (clip) harvey.current?.play(clip);
   }
 
   function submit(override?: string, cutOff = false) {
@@ -221,7 +221,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   function chooseVoice(on: boolean) {
     if (on === voiceOn) return;
     if (!on) {
-      donna.current?.stop();
+      harvey.current?.stop();
       wantsVoice.current = false;
       setVoiceOn(false);
       setTurn("typing");
@@ -233,7 +233,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
       return;
     }
     // This click is the user gesture that lets the page play audio at all.
-    donna.current
+    harvey.current
       ?.enable()
       .then(() => {
         wantsVoice.current = true;
@@ -241,9 +241,9 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
         saveVoicePreference(true);
         setVoiceNote(null);
         // Ask this question again, aloud. It costs one more short call, and
-        // opening the microphone on a question she never said left people
-        // waiting for her to speak — until she asked whether to move on.
-        donna.current?.stop();
+        // opening the microphone on a question Harvey never said left people
+        // waiting for Harvey to speak — until Harvey asked whether to move on.
+        harvey.current?.stop();
         reask.current = true;
         setAttempt((n) => n + 1);
       })
@@ -251,7 +251,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   }
 
   /** Every spoken answer goes straight in. If the clock or the silence ended
-   *  it, she has already said "let's move on", so the next question won't
+   *  it, Harvey has already said "let's move on", so the next question won't
    *  thank them for it. */
   function onTranscript(spokenText: string, reason: ListenEnd | "manual") {
     setAnswer(spokenText);
@@ -332,7 +332,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
               variant="destructive"
               className="h-10"
               onClick={() => {
-                donna.current?.stop();
+                harvey.current?.stop();
                 onEnd();
               }}
             >
@@ -352,7 +352,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           className="min-h-40 space-y-4"
         >
           <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Donna · {question.competency}
+            Harvey · {question.competency}
           </p>
           <p className="text-xl leading-relaxed sm:text-2xl" aria-hidden={streaming}>
             {text}
@@ -360,7 +360,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           </p>
           {/* One announcement per question for screen readers, not one per token. */}
           <p className="sr-only" role="status">
-            {streaming ? "Donna is speaking." : text}
+            {streaming ? "Harvey is speaking." : text}
           </p>
           {streamError && (
             <div className="flex flex-wrap items-center gap-3 text-sm text-destructive" role="alert">
@@ -369,7 +369,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
               variant="outline"
               className="h-10"
               onClick={() => {
-                donna.current?.stop();
+                harvey.current?.stop();
                 setAttempt((n) => n + 1);
               }}
             >
@@ -452,7 +452,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
 
 function TypingDots() {
   return (
-    <span className="ml-1 inline-flex gap-0.5 align-middle" aria-label="Donna is typing">
+    <span className="ml-1 inline-flex gap-0.5 align-middle" aria-label="Harvey is typing">
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}

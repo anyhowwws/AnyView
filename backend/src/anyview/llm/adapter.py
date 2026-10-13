@@ -243,7 +243,7 @@ class VertexGemini:
 
     Three models: `model` for judgement calls (plan, score, ideal),
     `fast_model` for streamed conversational turns, where time-to-first-token
-    matters more than depth, and `tts_model` for Donna's voice. The Pro model
+    matters more than depth, and `tts_model` for Harvey's voice. The Pro model
     spent ~450 thinking tokens and 5 s on a two-sentence greeting; Flash thinks
     near-zero at `low`.
     """
@@ -394,13 +394,13 @@ class VertexGemini:
         if candidates and _stop_reason(candidates[0].finish_reason) == "refusal":
             raise ModelError("The model declined to answer this turn.")
 
-    def speak(self, *, text: str, session_id: str, voice: str = "Kore") -> bytes:
+    def speak(self, *, text: str, session_id: str, voice: str = "Orus") -> bytes:
         """One line of dialogue as a WAV file, spoken by a prebuilt Vertex voice.
 
         A TTS model takes no system instruction and does no thinking, so this
         builds its own config rather than reusing `_config`. `response_modalities`
         is what asks for audio instead of text; `voice` names one of Vertex's
-        prebuilt speakers (Donna's default is set by DONNA_VOICE).
+        prebuilt speakers (Harvey's default is set by HARVEY_VOICE).
         """
         started = time.monotonic()
         try:
@@ -433,5 +433,5 @@ class VertexGemini:
         blob = _audio_part(response)
         if blob is None:
             log.warning("tts returned no audio for %d characters", len(text))
-            raise ModelError("Donna's voice is unavailable right now.", retryable=True)
+            raise ModelError("Harvey's voice is unavailable right now.", retryable=True)
         return wav(blob.data, rate=_rate_from(blob.mime_type))

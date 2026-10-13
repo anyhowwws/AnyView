@@ -20,7 +20,7 @@ export function SignIn({ configured }: Props) {
         <h1 className="py-4 text-4xl font-semibold tracking-tight">Good stories.<br />Better conversations.</h1>
         <p className="text-sm text-muted-foreground">
           Get a bird’s-eye view of your career in your Digital Garden. Connect your experience,
-          then practice interviews with Donna and get feedback on every answer.
+          then practice interviews with Harvey and get feedback on every answer.
         </p>
       </header>
 

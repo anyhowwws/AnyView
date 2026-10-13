@@ -262,7 +262,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
       <legend>{legend}</legend>
       <p>
         Only the company, role and seniority are required. The rest sharpens the
-        questions, and at harder levels it is what Donna pushes on.
+        questions, and at harder levels it is what Harvey pushes on.
       </p>
       <div className="formatted-capture-grid">
         {JOB_FIELDS.map((field) => (
@@ -288,15 +288,15 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
     </fieldset>
   );
 
-  /** How Donna read an uploaded posting, shown for checking — not for editing.
-   *  She plans from the full posting text, so changing a chip would change
-   *  nothing; the company, role and seniority fields below are what reach her. */
+  /** How Harvey read an uploaded posting, shown for checking — not for editing.
+   *  Harvey plans from the full posting text, so changing a chip would change
+   *  nothing; the company, role and seniority fields below are what reach Harvey. */
   const postingReceipt = () => (
     <>
       <div className="parsed-receipt">
         <p>
-          This is how Donna read the posting. She plans the questions from the whole
-          posting, not from this summary. If she got the company, role or seniority wrong,
+          This is how Harvey read the posting. Harvey plans the questions from the whole
+          posting, not from this summary. If Harvey got the company, role or seniority wrong,
           fix it below — that is saved with this job when you start.
         </p>
         <Chips label="Must-haves" items={lines(jobValues.must_haves)} />
@@ -398,7 +398,7 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
               </div>
               <div className="on-file-actions">
                 <button type="button" onClick={() => void showExtractedText()}>
-                  {extracted === null ? "View what Donna read" : "Reload"}
+                  {extracted === null ? "View what was read" : "Reload"}
                 </button>
                 <button type="button" onClick={() => setReplacing(true)}>
                   Replace
@@ -694,8 +694,8 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
         </div>
 
         <p className="setup-note">
-          And the clock. Each question carries its own limit — Donna decides how long a
-          strong answer to that question needs when she plans the interview.
+          And the clock. Each question carries its own limit — Harvey decides how long a
+          strong answer to that question needs when planning the interview.
         </p>
         <div className="pace-grid" role="radiogroup" aria-label="Should the clock run?">
           {PACES.map((pace) => (

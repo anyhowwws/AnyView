@@ -79,7 +79,7 @@ test("an ended turn stays ended", () => {
 
 test("timed, ten seconds of dead air stalls but does not end the turn", () => {
   const state = speak(held(DEAD_AIR_MS + 200, QUIET), TIMED);
-  assert.equal(state.stalled, true, "Donna should have something to say");
+  assert.equal(state.stalled, true, "Harvey should have something to say");
   assert.equal(state.ended, null, "but the microphone stays open");
 });
 
@@ -126,7 +126,7 @@ test("no question may outrun the recording cap", () => {
 
 test("the clock beats a pause: ending on time wins over ending on silence", () => {
   // Quiet for a while *and* past the limit — the reason must be the clock, so
-  // Donna says the right line.
+  // Harvey says the right line.
   const short = timedLimits(45);
   let state = speak(held(2000, LOUD), short);
   state = hearing(state, {

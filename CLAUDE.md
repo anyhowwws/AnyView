@@ -26,7 +26,7 @@ writes simple scripts). So:
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
 | LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028); Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
-| Voice | **Gemini TTS on Vertex** for Donna (prebuilt voice, `DONNA_VOICE`, default `Kore`); answers recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default**; her interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016 |
+| Voice | **Gemini TTS on Vertex** for Harvey, the interviewer (prebuilt voice, `HARVEY_VOICE`, default `Orus`; Donna, the Digital Garden's assistant, has no voice yet); answers recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default**; Harvey's interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
@@ -40,6 +40,13 @@ writes simple scripts). So:
 
 Out of scope (brief): LangChain/orchestration libs, any vector DB, chunking raw
 docs, Firestore, scraping Glassdoor/Blind, GKE/HA/multi-region, API keys.
+
+## Two personas
+
+**Donna** is the Digital Garden's assistant: Discover, the review queue, resume and dump extraction.
+**Harvey** is the interviewer: Practice, the pre-flight, the interjections and everything spoken in an
+interview (ADR 0029). Donna's voice is not decided yet. Don't mix them up in copy, prompts or code:
+`DonnaVoice`/`DONNA_VOICE` no longer exist, and `askDonna`/`role: "donna"` are the garden's.
 
 ## Layout
 
@@ -63,11 +70,11 @@ Backend modules:
   one while the next arrives; emits `audio` / `voice_off` frames beside the token frames.
 - `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; Phase 0 has `max_probes = 0`.
   `prompts.py` also owns **difficulty** (ADR 0014): `recruiter_screen` / `hiring_manager` / `panel` decide what the interviewer knows, and the garden reaches `session_system` at `panel` only.
-  It also owns `INTERJECTIONS` — the fixed lines Donna says when she has to cut in (ADR 0016) — and
+  It also owns `INTERJECTIONS` — the fixed lines Harvey says when he has to cut in (ADR 0016) — and
   tells the model to open with "tell me about yourself" and to set each question's `seconds`.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
   `account.py` serves `POST /account/erase` (ADR 0018): deletes the user's files, then every row, via `Repository.erase_user`.
-  `interview.py` also serves `GET /interview/resume` (the resume on file), `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields, or the saved job when that posting is already saved), `POST /interview/job/parse-link` (the same from a pasted URL, ADR 0027), `GET`/`DELETE /interview/jobs` (saved jobs, ADR 0025) and `POST /interview/say` (one of Donna's fixed interjections, by key — never free text).
+  `interview.py` also serves `GET /interview/resume` (the resume on file), `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields, or the saved job when that posting is already saved), `POST /interview/job/parse-link` (the same from a pasted URL, ADR 0027), `GET`/`DELETE /interview/jobs` (saved jobs, ADR 0025) and `POST /interview/say` (one of Harvey's fixed interjections, by key — never free text).
 - `anyview/uploads/link.py` — fetches a job posting from a pasted link (ADR 0027): every hop checked for public
   addresses and fetched from the checked IP (SSRF, DNS rebinding); JSON-LD `JobPosting` preferred, else text from `<h1>`.
 - `anyview/uploads/{store,extract}.py` — the upload store (GCS or in-memory), resume → text
@@ -198,15 +205,15 @@ retrieval test set.
   confirm what the project actually has before the first real run. A failure there is not fatal:
   the stream sends one `voice_off` frame and the interview carries on as text.
 - The clock is enforced in the browser, by the same `AnalyserNode` that drives the level meter:
-  ten seconds of dead air makes Donna speak up (the mic stays open), fifteen more of silence takes
-  her "shall we move on?" as a yes, and the question's budget ends the turn mid-sentence. Nothing
+  ten seconds of dead air makes Harvey speak up (the mic stays open), fifteen more of silence takes
+  "shall we move on?" as a yes, and the question's budget ends the turn mid-sentence. Nothing
   about timing is enforced server-side (ADR 0026).
 - **Pre-flight** (`components/preflight.tsx`, ADR 0028) sits between Start and question one while
-  planning runs: it opens the microphone (so the permission prompt lands there), plays Donna's
+  planning runs: it opens the microphone (so the permission prompt lands there), plays Harvey's
   `hello` line, and prefetches the `time_up`/`stalled` clips. Its **Begin** click is the user gesture
   that unlocks audio (`unlockAudio()`); a browser's click permission lapses long before planning ends.
-- One mic stream, one `AudioContext`, one `DonnaVoice` for the whole interview (`acquireMicrophone`,
-  `audioContext`, `donnaVoice()` in `lib/voice.ts`). Practice remounts per question, so anything
+- One mic stream, one `AudioContext`, one `HarveyVoice` for the whole interview (`acquireMicrophone`,
+  `audioContext`, `harveyVoice()` in `lib/voice.ts`). Practice remounts per question, so anything
   per-mount was wrong: a fresh `AudioContext` per answer read zeros in Safari (no click for it), and
   a fresh player cut off "let's move on". A new question calls `detach()`, never `stop()`.
 - `ask` is a fixed lead-in chosen by how the last turn ended (`prompts.lead_in`: opener / thanks /
