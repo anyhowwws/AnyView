@@ -101,7 +101,7 @@ def test_nothing_is_left_unspoken_when_the_text_has_no_final_stop():
 
 def test_a_failed_voice_keeps_the_text_and_says_so_once():
     class Mute(FakeModel):
-        def speak(self, *, text, session_id, voice="Kore"):
+        def speak(self, *, text, session_id, voice="Kore", style=None):
             raise ModelError("Harvey's voice is unavailable right now.", retryable=True)
 
     two = "Tell me about a time you led a project end to end. What did you own exactly?"
@@ -244,3 +244,36 @@ def test_each_interjection_has_a_line():
 
     assert set(INTERJECTIONS) == {"time_up", "stalled", "hello"}
     assert all(line.strip() for line in INTERJECTIONS.values())
+
+
+# --- Harvey's delivery (ADR 0029) ---------------------------------------------
+
+
+def test_a_style_goes_in_front_of_the_words_and_ends_in_a_colon():
+    from anyview.llm.adapter import spoken_prompt
+
+    assert spoken_prompt("Hello.", None) == "Hello."
+    assert spoken_prompt("Hello.", "  ") == "Hello."
+    assert spoken_prompt("Hello.", "Say it calmly.") == "Say it calmly: Hello."
+    assert spoken_prompt("Hello.", "Say it calmly:") == "Say it calmly: Hello."
+
+
+def test_everything_harvey_says_carries_his_delivery(client):
+    from anyview.interview.prompts import HARVEY_DELIVERY
+
+    client.post("/interview/say", json={"session_id": "sess-0001", "line": "hello"}, headers=AUTH)
+    said = client.model.calls[-1]["user"]
+    assert said.startswith(HARVEY_DELIVERY.rstrip(".")) and "I'm Harvey" in said
+
+    # The spoken questions go through `voiced`, which is handed the same style.
+    fake = FakeModel()
+    list(
+        voiced(
+            iter(["Tell me about a time you led a project end to end."]),
+            model=fake,
+            session_id="sess-0001",
+            voice="Alnilam",
+            style=HARVEY_DELIVERY,
+        )
+    )
+    assert fake.calls[-1]["user"].startswith(HARVEY_DELIVERY.rstrip("."))

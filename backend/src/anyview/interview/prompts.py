@@ -259,6 +259,15 @@ def lead_in(*, index: int, previous: Answer | None, spoken: bool) -> str:
     return THANKS[index % len(THANKS)]
 
 
+# How Harvey sounds, as direction for the TTS model (ADR 0029). Applied to every line
+# he speaks: questions, thanks, interjections. Fast-talking is deliberate; the
+# interview clock is real and an elite closer does not dawdle.
+HARVEY_DELIVERY = (
+    "You are Harvey, an interviewer running a behavioural screening interview. "
+    "Say this in a confident, effortlessly smug, fast-talking tone, "
+    "like an elite closer who always wins."
+)
+
 INTERJECTIONS: dict[str, str] = {
     # The clock on this question ran out while they were still talking.
     "time_up": "Sorry to cut in — in the interest of time, let's move on.",

@@ -19,13 +19,21 @@ read your resume", "Donna moves on when the clock runs out", "Ask Donna about yo
   Copy avoids pronouns for him; "Harvey" or "the interviewer" instead.
 - **Donna is the Digital Garden's assistant.** Discover, the review queue, resume and dump
   extraction, and the capture box keep her name. Her voice is not decided yet.
-- **Harvey's voice is configured as `HARVEY_VOICE`**, default **`Orus`**.
+- **Harvey's voice is configured as `HARVEY_VOICE`**, default **`Alnilam`** (chosen by the owner after auditioning; first `Orus`, see below).
   `DONNA_VOICE` and the Terraform variable `donna_voice` are gone, along with the frontend's
   `DonnaVoice`/`donnaVoice()`. The garden gets its own setting when she gets a voice.
 - **The voice name was checked against Vertex, not assumed.** "Orbit" was the first choice, but
   a synthesis call with it returns `400 INVALID_ARGUMENT`; `Orus` and `Charon` both succeed.
   An unknown voice name fails every spoken question, and the app then falls back to text, so a
-  wrong name would have looked like "voice is broken". Orus was chosen as the nearest name.
+  wrong name would have looked like "voice is broken". Orus was the first stand-in, until Alnilam was picked.
+
+- **Harvey has a delivery.** `prompts.HARVEY_DELIVERY` — "confident, effortlessly smug,
+  fast-talking, like an elite closer who always wins" — is direction for the TTS model, put in
+  front of every line he speaks as `"<style>: <line>"` (`adapter.spoken_prompt`). It is a code
+  constant, not an environment variable: it is part of who Harvey is, and changing it is a
+  reviewed change. Measured on this project: the instruction is not read aloud (the audio is
+  about as long as the line alone), and the colon form ran about 10% faster than a blank line
+  between style and words, which barely changed the delivery.
 
 ## Consequences
 

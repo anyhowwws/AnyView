@@ -34,9 +34,9 @@ variable "tts_model_id" {
 }
 
 variable "harvey_voice" {
-  description = "Prebuilt Vertex voice for Harvey, the interviewer. Male-sounding options include Orus (firm), Charon (informative), Puck (upbeat) and Fenrir (excitable). Check a name with a real call before using it: an unknown one is a 400."
+  description = "Prebuilt Vertex voice for Harvey, the interviewer. Male-sounding options include Alnilam, Orus (firm), Charon (informative), Puck (upbeat) and Fenrir (excitable). Check a name with a real call before using it: an unknown one is a 400."
   type        = string
-  default     = "Orus"
+  default     = "Alnilam"
 }
 
 variable "answer_audio_retention_days" {
