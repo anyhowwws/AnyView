@@ -57,6 +57,13 @@ def test_ask_uses_previous_answer_after_the_first_question(setup):
     assert "my first answer" in fake.calls[-1]["user"]
 
 
+def test_ask_says_the_planned_question_word_for_word(setup):
+    fake = FakeModel()
+    session = engine.start(setup, session_id="sess-0001", model=fake)
+    said = "".join(engine.ask(session, model=fake))
+    assert said == "Thanks for that. " + session.questions[0].text
+
+
 def test_answer_for_wrong_question_is_rejected(setup):
     session = engine.start(setup, session_id="sess-0001", model=FakeModel())
     with pytest.raises(EngineError) as exc:

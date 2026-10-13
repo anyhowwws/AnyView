@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   DEAD_AIR_MS,
+  GIVE_UP_AFTER_STALL_MS,
   LISTENING,
   SILENCE_MS,
   SPEECH_MS,
@@ -80,6 +81,18 @@ test("timed, ten seconds of dead air stalls but does not end the turn", () => {
   const state = speak(held(DEAD_AIR_MS + 200, QUIET), TIMED);
   assert.equal(state.stalled, true, "Donna should have something to say");
   assert.equal(state.ended, null, "but the microphone stays open");
+});
+
+test("timed, silence after her 'shall we move on?' is taken as a yes", () => {
+  const before = speak(held(DEAD_AIR_MS + GIVE_UP_AFTER_STALL_MS - 200, QUIET), TIMED);
+  assert.equal(before.ended, null, "still waiting just before the give-up point");
+  const after = speak(held(DEAD_AIR_MS + GIVE_UP_AFTER_STALL_MS + 100, QUIET), TIMED);
+  assert.equal(after.ended, "no-speech");
+  assert.ok(TIMED.giveUpMs! < TIMED.limitMs, "well before the question's own clock");
+});
+
+test("untimed never gives up on silence early: a dead microphone is a different problem", () => {
+  assert.equal(UNTIMED.giveUpMs, null);
 });
 
 test("timed, a stalled turn recovers when they finally speak", () => {

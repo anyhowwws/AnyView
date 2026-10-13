@@ -196,9 +196,15 @@ retrieval test set.
   confirm what the project actually has before the first real run. A failure there is not fatal:
   the stream sends one `voice_off` frame and the interview carries on as text.
 - The clock is enforced in the browser, by the same `AnalyserNode` that drives the level meter:
-  ten seconds of dead air makes Donna speak up (the mic stays open), and the question's budget
-  ends the turn mid-sentence. Nothing about timing is enforced server-side.
-- An answer of `(no answer given)` is what the clock running out on silence records. It keeps
+  ten seconds of dead air makes Donna speak up (the mic stays open), fifteen more of silence takes
+  her "shall we move on?" as a yes, and the question's budget ends the turn mid-sentence. Nothing
+  about timing is enforced server-side (ADR 0026).
+- Audio is unlocked in the **Start click** (`unlockAudio()`), not when Practice mounts: planning
+  takes ~20 s and a browser's click permission lapses in seconds, which left question one silent.
+- `ask` streams the fast model's one-sentence lead-in, then the planned question **word for word**
+  (ADR 0026). Spoken answers are sent as soon as they are transcribed — no review step.
+- An answer of `(no answer given)` is what the clock running out on silence (or the give-up after
+  the stall) records. It keeps
   `finish()`'s "every question needs an answer" rule intact, and skips the upload and transcription.
 - The rubric's four dimensions are applied to the opener too, so question one ("tell me about
   yourself") scores harsher than it deserves — STAR does not fit a background walkthrough.

@@ -240,7 +240,7 @@ DEFAULTS: dict[str, Any] = {
         "redesign [S1] is your clearest ownership story. [P1, S1] both sit under your Acme "
         "role. Nothing in your garden mentions Bedrock [P9]."
     ),
-    "ask": "Thanks for that. Next: tell me about a time you led a project end to end.",
+    "ask": "Thanks for that.",
     "score": {
         "dimensions": [
             {

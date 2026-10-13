@@ -55,8 +55,9 @@ def test_ask_prompt_first_vs_followup():
     first = ask_user(Q, index=0, previous_answer=None)
     later = ask_user(Q, index=2, previous_answer="My earlier answer.")
     assert "first question" in first and "<previous_answer>" not in first
-    assert "question 3 of 5" in later and "My earlier answer." in later
+    assert "question 3 of 5" in later.lower() and "My earlier answer." in later
     assert "no feedback" in later
+    assert "word for word" in later and Q.text in later
 
 
 def test_ideal_prompt_forbids_invention(setup):
