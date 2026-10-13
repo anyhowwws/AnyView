@@ -103,8 +103,8 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
         <h1 className="text-2xl font-semibold tracking-tight">Let&rsquo;s get the room ready.</h1>
         <p className="text-sm text-muted-foreground">
           {voice
-            ? "This is a spoken interview. Check you can hear Donna and she can hear you while she reads your resume and plans the questions."
-            : "You'll answer by typing. Donna is reading your resume and planning the questions."}
+            ? "This is a spoken interview. Check you can hear Donna and she can hear you while she reads your resume."
+            : "You'll answer by typing. The interviewer is reviewing your profile."}
         </p>
       </header>
 
@@ -140,7 +140,7 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
             />
             <div>
               <strong>Speaker</strong>
-              {speaker === "idle" && <span>Turn your sound on, then play Donna.</span>}
+              {speaker === "idle" && <span>Turn your sound on, then check if you can hear Donna.</span>}
               {speaker === "loading" && <span>Getting Donna&rsquo;s voice…</span>}
               {speaker === "playing" && <span>Listen…</span>}
               {speaker === "asked" && <span>Did you hear her?</span>}
@@ -151,7 +151,7 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
               <span className="preflight-actions">
                 {(speaker === "idle" || speaker === "asked") && (
                   <Button type="button" variant="outline" className="h-9" onClick={() => void playDonna()}>
-                    {speaker === "idle" ? "Play Donna" : "Play again"}
+                    {speaker === "idle" ? "Speak to me" : "Speak again"}
                   </Button>
                 )}
                 {speaker === "asked" && (
@@ -167,13 +167,13 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
         <li data-state={ready ? "done" : error ? "failed" : "working"}>
           <StepIcon state={ready ? "done" : error ? "failed" : "working"} icon={<ScrollText />} />
           <div>
-            <strong>Questions</strong>
+            <strong>Interviewer</strong>
             <span>
               {ready
-                ? "Five questions, planned for you and this role."
+                ? "Interviewer has reviewed your profile and is ready to begin."
                 : error
                   ? error
-                  : "Donna is reading your resume and the job, and planning five questions."}
+                  : "Interviewer is reviewing your profile…"}
             </span>
           </div>
         </li>
