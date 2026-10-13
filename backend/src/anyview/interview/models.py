@@ -7,6 +7,7 @@ limits are the input-size caps (a cost guard as much as a validation one).
 
 from __future__ import annotations
 
+import datetime as dt
 from enum import StrEnum
 from typing import Literal, get_args
 
@@ -92,9 +93,48 @@ class SetupInput(BaseModel):
     difficulty: Difficulty = "hiring_manager"
     time_bounded: bool = False
     job_description: str | None = Field(default=None, max_length=8_000)
+    # How the job was described, so it can be saved for next time (ADR 0025).
+    # Optional: an interview runs the same without it, it just is not remembered.
+    job: JobInput | None = None
 
 
 # --- The target job ----------------------------------------------------------
+
+
+class JobFields(BaseModel):
+    """The setup form's structured job fields, one item per line, exactly as
+    the form holds them. Stored as-is so a saved job reloads into the form."""
+
+    team: str = Field(default="", max_length=200)
+    responsibilities: str = Field(default="", max_length=4_000)
+    must_haves: str = Field(default="", max_length=4_000)
+    nice_to_haves: str = Field(default="", max_length=4_000)
+
+
+class JobInput(BaseModel):
+    """Which saved job this interview is for, if any, and how it was filled in.
+
+    `id` set: the user picked a saved job, and any change they made to its
+    fields is written back to it. `id` empty: a new job, saved on start unless
+    it matches one already saved (ADR 0025)."""
+
+    id: str | None = Field(default=None, max_length=36)
+    source: Literal["upload", "manual"]
+    fields: JobFields = JobFields()
+
+
+class SavedJob(BaseModel):
+    """A target job kept for the next practice run (ADR 0025)."""
+
+    id: str
+    company: str
+    role: str
+    seniority: Seniority
+    source: Literal["upload", "manual"]
+    job_description: str | None
+    fields: JobFields
+    created_at: dt.datetime
+    last_used_at: dt.datetime
 
 
 class JobParse(BaseModel):
@@ -117,6 +157,9 @@ class JobDocument(BaseModel):
 
     text: str
     parsed: JobParse
+    # Set when this exact posting is already saved: the form switches to it,
+    # with whatever corrections the user made last time, and no parse call ran.
+    saved_job: SavedJob | None = None
 
 
 class Question(BaseModel):

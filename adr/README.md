@@ -44,3 +44,4 @@ record of having been wrong is the useful part.
 | [0021](0021-near-duplicate-skills.md) | Near-duplicate skills are folded by a checked model call | Accepted |
 | [0022](0022-entries-added-by-hand.md) | Entries added by hand skip the model and the review queue | Accepted |
 | [0023](0023-one-warm-api-instance.md) | One warm API instance instead of scaling to zero | Accepted |
+| [0025](0025-saved-jobs.md) | Target jobs are saved, outside the event log | Accepted |

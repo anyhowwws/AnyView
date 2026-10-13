@@ -22,6 +22,7 @@ from anyview.api.sse import stream_response, tokens
 from anyview.api.uploads import audio_prefix, get_store, object_prefix
 from anyview.brain.extract import ExtractionFailed, drop_unchanged, propose
 from anyview.config import Settings
+from anyview.db.repository import NotFound
 from anyview.interview import engine
 from anyview.interview.models import (
     JOB_SCHEMA,
@@ -29,6 +30,7 @@ from anyview.interview.models import (
     JobDocument,
     JobParse,
     Report,
+    SavedJob,
     Session,
     Setup,
     SetupInput,
@@ -226,7 +228,9 @@ def start(
     setup = resolve_setup(body, user_uid=user.uid, store=store, model=model, repo=repo)
 
     if not (setup.resume_object and repo is not None):
-        return engine.start(setup, session_id=body.session_id, model=model)
+        session = engine.start(setup, session_id=body.session_id, model=model)
+        _save_job(repo, user, body.setup)
+        return session
 
     # The same text feeds two independent model calls — plan the interview and
     # propose what the resume adds to the garden — so run them side by side
@@ -242,7 +246,32 @@ def start(
         except ExtractionFailed as exc:
             # The interview is what the user asked for; the garden entry is a bonus.
             log.warning("filing the resume failed for %s: %s", body.session_id, exc.user_message)
+    _save_job(repo, user, body.setup)
     return session
+
+
+def _save_job(repo: Any, user: CurrentUser, given: SetupInput) -> None:
+    """Remember the job this interview was planned for (ADR 0025).
+
+    Only once planning has succeeded, so a failed start leaves nothing behind.
+    Best effort: the interview is what the user asked for, and a job that fails
+    to save is one they type again next time, not a reason to refuse it."""
+    if repo is None or given.job is None:
+        return
+    try:
+        repo.ensure_user(user.uid, user.email)
+        repo.save_job(
+            user.uid,
+            job_id=given.job.id,
+            company=given.company,
+            role=given.role,
+            seniority=given.seniority,
+            source=given.job.source,
+            job_description=given.job_description,
+            fields=given.job.fields,
+        )
+    except Exception:  # noqa: BLE001 — logged, and never worth failing the interview over
+        log.exception("saving the job failed for %s", user.uid)
 
 
 # --- The resume on file (ADR 0014) ------------------------------------------
@@ -284,11 +313,14 @@ class JobUploadRequest(BaseModel):
 
 @router.post("/job/parse", response_model=JobDocument)
 def parse_job(
-    body: JobUploadRequest, user: CurrentUser, model: ModelDep, store: StoreDep
+    body: JobUploadRequest, user: CurrentUser, model: ModelDep, store: StoreDep, repo: RepoDep
 ) -> JobDocument:
     """An uploaded job description, read and turned into the fields the setup
     form asks for. Everything it returns is a suggestion the user confirms
-    before it reaches a prompt."""
+    before it reaches a prompt.
+
+    A posting already saved comes back as that saved job instead, with the
+    corrections the user made last time and no parse call (ADR 0025)."""
     session_id = f"job-{uuid.uuid4().hex[:8]}"
     text = _truncate(
         _extract(
@@ -299,6 +331,10 @@ def parse_job(
     )
     if len(text.strip()) < 50:
         raise HTTPException(422, "There's almost no text in that file. Is it the right one?")
+
+    saved = repo.saved_job_with_text(user.uid, text) if repo is not None else None
+    if saved is not None:
+        return JobDocument(text=text, parsed=_parse_from_saved(saved), saved_job=saved)
 
     # Extraction, not judgement: the fields are filled in from what the posting
     # says, and the user corrects anything the model read wrong.
@@ -319,6 +355,42 @@ def parse_job(
         log.warning("job parse came back malformed: %s", exc)
         raise HTTPException(502, "That job description came back malformed. Please retry.") from exc
     return JobDocument(text=text, parsed=parsed)
+
+
+def _lines(value: str) -> list[str]:
+    return [line.strip() for line in value.splitlines() if line.strip()]
+
+
+def _parse_from_saved(job: SavedJob) -> JobParse:
+    """A saved job, in the shape a fresh parse would have, so the form treats
+    both the same way."""
+    return JobParse(
+        company=job.company,
+        role=job.role,
+        seniority=job.seniority,
+        responsibilities=_lines(job.fields.responsibilities),
+        must_haves=_lines(job.fields.must_haves),
+        nice_to_haves=_lines(job.fields.nice_to_haves),
+    )
+
+
+@router.get("/jobs", response_model=list[SavedJob])
+def saved_jobs(user: CurrentUser, repo: RepoDep) -> list[SavedJob]:
+    """The jobs this user has practised for, most recent first. Empty with no
+    database: then nothing is remembered and the form shows no list."""
+    if repo is None:
+        return []
+    return repo.saved_jobs(user.uid)
+
+
+@router.delete("/jobs/{job_id}", status_code=204)
+def delete_saved_job(job_id: str, user: CurrentUser, repo: RepoDep) -> None:
+    if repo is None:
+        raise HTTPException(404, "There are no saved jobs without a database.")
+    try:
+        repo.delete_saved_job(user.uid, job_id)
+    except NotFound as exc:
+        raise HTTPException(404, "That saved job wasn't found.") from exc
 
 
 @router.post("/ask")

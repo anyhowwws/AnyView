@@ -90,6 +90,38 @@ export interface SetupInput {
   difficulty: Difficulty;
   time_bounded: boolean;
   job_description: string | null;
+  /** How the job was described, so it is saved for next time (ADR 0025). */
+  job?: JobInput;
+}
+
+/** The form's structured job fields, one item per line (see job-template.ts). */
+export interface JobFields {
+  team: string;
+  responsibilities: string;
+  must_haves: string;
+  nice_to_haves: string;
+}
+
+export type JobSource = "upload" | "manual";
+
+/** `id` set: a saved job was picked, and edits write back to it. */
+export interface JobInput {
+  id: string | null;
+  source: JobSource;
+  fields: JobFields;
+}
+
+/** A target job kept for the next practice run (ADR 0025). */
+export interface SavedJob {
+  id: string;
+  company: string;
+  role: string;
+  seniority: Seniority;
+  source: JobSource;
+  job_description: string | null;
+  fields: JobFields;
+  created_at: string;
+  last_used_at: string;
 }
 
 /** The resume an interviewer would have received, as the setup form shows it.
@@ -115,6 +147,9 @@ export interface JobParse {
 export interface JobDocument {
   text: string;
   parsed: JobParse;
+  /** Set when this posting is already saved: no parse ran, and the form
+   *  switches to the saved job with last time's corrections. */
+  saved_job: SavedJob | null;
 }
 
 export const UPLOAD_TYPES: Record<string, string> = {

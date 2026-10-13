@@ -67,7 +67,7 @@ Backend modules:
   tells the model to open with "tell me about yourself" and to set each question's `seconds`.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
   `account.py` serves `POST /account/erase` (ADR 0018): deletes the user's files, then every row, via `Repository.erase_user`.
-  `interview.py` also serves `GET /interview/resume` (the resume on file), `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields) and `POST /interview/say` (one of Donna's fixed interjections, by key — never free text).
+  `interview.py` also serves `GET /interview/resume` (the resume on file), `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields, or the saved job when that posting is already saved), `GET`/`DELETE /interview/jobs` (saved jobs, ADR 0025) and `POST /interview/say` (one of Donna's fixed interjections, by key — never free text).
 - `anyview/uploads/{store,extract}.py` — the upload store (GCS or in-memory), resume → text
   extraction, and recorded answer → transcript (`audio_to_text`).
 - `anyview/db/{connection,migrate,repository}.py` — engine (connector + IAM auth, or DATABASE_URL), numbered SQL migrations run at startup, and **the only file that runs SQL**: app-meaningful methods over an event log + projection (ADR 0011).
@@ -261,6 +261,9 @@ retrieval test set.
   `ideal_user`'s user turn — after the cache breakpoint, where it cannot reach
   the questions. Putting it in `session_system` instead would leak it to the
   interviewer.
+- Saved jobs (ADR 0025) are a plain table, **not** event-sourced: a job is a practice setting, not a
+  fact about the candidate. `/interview/start` saves `setup.job` after planning succeeds (best effort),
+  matching by picked id → exact JD text → company/role/seniority, so one posting stays one entry.
 - A role that vanishes from a re-uploaded resume is **not** retired. Absence is
   not evidence; trimming a CV for one application is the normal reason. Retiring
   stays a manual act in `/brain`.
