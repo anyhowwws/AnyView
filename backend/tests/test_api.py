@@ -217,3 +217,28 @@ def test_cors_allows_configured_origin_only(client):
             headers={"Origin": "http://localhost:3000", "Access-Control-Request-Method": method},
         )
         assert method in pre.headers.get("access-control-allow-methods", ""), method
+
+
+# --- Cutting long text to fit (Setup's limits) ---------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "word " * 3_000,  # no line breaks at all: rfind's -1 used to keep it all
+        "line of text\n" * 1_000,  # line breaks all the way through
+        "x" * 9_000,  # no break of any kind
+    ],
+)
+def test_truncated_text_fits_the_limit_note_included(text):
+    from anyview.api.interview import MAX_JD_CHARS, _truncate
+
+    cut = _truncate(text, MAX_JD_CHARS, "The job description")
+    assert len(cut) <= MAX_JD_CHARS
+    assert cut.endswith("was cut to fit.]")
+
+
+def test_short_text_is_untouched():
+    from anyview.api.interview import _truncate
+
+    assert _truncate("short", 100, "x") == "short"
