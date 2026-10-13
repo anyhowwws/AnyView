@@ -167,13 +167,13 @@ export function CaptureBox({ onProposal }: Props) {
           <input
             ref={fileInput}
             type="file"
-            accept=".pdf,.docx,.png,.jpg,.jpeg,.webp"
+            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             className="sr-only"
             onChange={(e) => {
               const f = e.target.files?.[0];
               e.target.value = "";
               if (!f) return;
-              if (!(f.type in UPLOAD_TYPES)) return setError("Upload a PDF, Word (.docx), PNG, JPG, or WebP file.");
+              if (!(f.type in UPLOAD_TYPES)) return setError("Upload a PDF or Word (.docx) file.");
               if (f.size > MAX_UPLOAD_BYTES) return setError("That file is over 10 MB.");
               setStage("uploading");
               setProgress({ view: startView(true), fromFile: true });
@@ -185,11 +185,11 @@ export function CaptureBox({ onProposal }: Props) {
             }}
           />
           <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => fileInput.current?.click()}>
-            {stage === "uploading" ? "Uploading…" : "Upload resume or diagram"}
+            {stage === "uploading" ? "Uploading…" : "Upload resume"}
           </Button>
           {!busy && (
             <span className="text-xs text-muted-foreground">
-              Donna drafts. You review. Only confirmed entries enter your Digital Garden.
+              PDF or Word (.docx), up to 10 MB. Donna drafts, you review: only confirmed entries enter your Digital Garden.
             </span>
           )}
         </div>

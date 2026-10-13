@@ -120,9 +120,6 @@ export interface JobDocument {
 export const UPLOAD_TYPES: Record<string, string> = {
   "application/pdf": ".pdf",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-  "image/png": ".png",
-  "image/jpeg": ".jpg",
-  "image/webp": ".webp",
 };
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 

@@ -69,7 +69,7 @@ def prefix_for(content_type: str, uid: str) -> str:
 def create_upload(body: UploadRequest, user: CurrentUser, store: StoreDep) -> UploadTicket:
     types = {**ALLOWED_TYPES, **AUDIO_TYPES}
     if body.content_type not in types:
-        raise HTTPException(415, "Upload a PDF, Word (.docx), PNG, JPG, WebP, or audio file.")
+        raise HTTPException(415, "Upload a PDF or Word (.docx) file.")
     if body.size_bytes > MAX_UPLOAD_BYTES:
         raise HTTPException(413, "That file is over 10 MB. Please upload a smaller one.")
 

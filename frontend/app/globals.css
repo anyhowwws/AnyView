@@ -95,7 +95,8 @@
 .page-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; padding: 6px 0 8px; }
 .eyebrow { color: var(--primary); font-size: 11px; font-weight: 650; letter-spacing: .13em; text-transform: uppercase; }
 .page-heading h1 { font-size: clamp(32px, 4vw, 48px); font-weight: 550; line-height: 1.12; letter-spacing: -.055em; margin: 12px 0 16px; text-wrap: balance; }
-.page-heading p:not(.eyebrow) { max-width: 580px; color: var(--muted-foreground); font-size: 15px; line-height: 1.7; }
+.page-heading p:not(.eyebrow) { max-width: 640px; text-wrap: pretty; color: var(--muted-foreground); font-size: 15px; line-height: 1.7; }
+.next-step { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; padding: 20px 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--card); }
 .workspace-link { display: inline-flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 550; color: var(--primary); padding: 12px 0; white-space: nowrap; }
 .workspace-panel, .setup-workspace { border: 1px solid var(--border); background: var(--card); border-radius: 20px; padding: clamp(24px, 4vw, 44px); box-shadow: 0 8px 32px #20363804; }
 .capture-panel { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 22px 26px; }

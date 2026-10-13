@@ -22,9 +22,7 @@ from anyview.brain.manual import BadEntry, patch_for, source_text
 from anyview.brain.models import Brain, Event, Patch, Proposal, RawDump
 from anyview.db.repository import Conflict, NotFound, Repository
 from anyview.uploads.extract import (
-    ALLOWED_TYPES,
     ExtractionError,
-    diagram_to_text,
     docx_to_text,
     pdf_to_text,
 )
@@ -122,19 +120,8 @@ def _read_upload(
             )
         elif body.resume_object.endswith(".docx"):
             kind, text = "resume_docx", docx_to_text(data)
-        elif body.resume_object.endswith((".png", ".jpg", ".webp")):
-            suffix = body.resume_object.rsplit(".", 1)[-1]
-            mime = {value.lstrip("."): key for key, value in ALLOWED_TYPES.items()}[suffix]
-            # The original image remains in Cloud Storage as `object_name`; its
-            # extracted description uses the existing text dump category. This
-            # keeps production migrations additive: the app identity is not
-            # allowed to alter the original raw_dumps check constraint.
-            kind = "text"
-            text = diagram_to_text(
-                data, mime, model=model, session_id=f"upload-{uuid.uuid4().hex[:8]}"
-            )
         else:
-            raise HTTPException(415, "Upload a PDF, Word (.docx), PNG, JPG, or WebP file.")
+            raise HTTPException(415, "Upload a PDF or Word (.docx) file.")
     except ExtractionError as exc:
         raise HTTPException(422, exc.user_message) from exc
     if len(text.strip()) < 20:
