@@ -27,6 +27,9 @@ export const SILENCE_MS = 2500;
 /** Dead air that an interviewer would notice. In a timed interview Donna says
  *  something; in an untimed one it is how we spot a dead microphone. */
 export const DEAD_AIR_MS = 10_000;
+/** After she has asked "shall we move on?", how much more silence counts as a
+ *  yes. Without it a timed question sat in silence until its whole clock ran out. */
+export const GIVE_UP_AFTER_STALL_MS = 15_000;
 export const UNTIMED_DEAD_AIR_MS = 30_000;
 /** A hard cap, well inside the 10 MB upload limit at 32 kbps. A timed question
  *  replaces this with its own, shorter clock. */
@@ -42,6 +45,9 @@ export interface ListenLimits {
   deadAirMs: number;
   limitMs: number;
   endOnDeadAir: boolean;
+  /** Timed only: silence from the start this long, with nothing said, ends the
+   *  turn as no answer. Null leaves it to `endOnDeadAir`. */
+  giveUpMs: number | null;
 }
 
 export const UNTIMED: ListenLimits = {
@@ -49,6 +55,7 @@ export const UNTIMED: ListenLimits = {
   deadAirMs: UNTIMED_DEAD_AIR_MS,
   limitMs: MAX_ANSWER_MS,
   endOnDeadAir: true,
+  giveUpMs: null,
 };
 
 export function timedLimits(seconds: number): ListenLimits {
@@ -57,6 +64,7 @@ export function timedLimits(seconds: number): ListenLimits {
     deadAirMs: DEAD_AIR_MS,
     limitMs: Math.min(seconds * 1000, MAX_ANSWER_MS),
     endOnDeadAir: false,
+    giveUpMs: DEAD_AIR_MS + GIVE_UP_AFTER_STALL_MS,
   };
 }
 
@@ -125,6 +133,9 @@ export function hearing(
     // Nothing said yet. Untimed, that means a dead microphone; timed, it is
     // just a silence long enough for Donna to fill.
     if (limits.endOnDeadAir) return { ...next, ended: "no-speech" };
+    if (limits.giveUpMs !== null && at - startedAt >= limits.giveUpMs) {
+      return { ...next, stalled: true, ended: "no-speech" };
+    }
     next = { ...next, stalled: true };
   }
   return next;
@@ -151,6 +162,19 @@ function audioContext(): AudioContext {
     shared = new Ctor();
   }
   return shared;
+}
+
+/** Call from a click handler. A browser lets a page start audio only in
+ *  response to a click, and that permission fades within seconds — far less
+ *  than planning an interview takes. Resuming the shared context inside the
+ *  Start click keeps it unlocked for when Donna first speaks. */
+export function unlockAudio(): void {
+  try {
+    const ctx = audioContext();
+    if (ctx.state === "suspended") void ctx.resume();
+  } catch {
+    // No Web Audio: Practice falls back to text and says so.
+  }
 }
 
 export class DonnaVoice {

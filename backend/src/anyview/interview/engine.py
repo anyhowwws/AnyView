@@ -132,14 +132,18 @@ def ask(session: Session, *, model: Model) -> Iterator[str]:
     if question is None:
         raise EngineError("No question to ask.")
     previous = session.previous_answer.text if session.previous_answer else None
+    # The fast model writes only the greeting or the acknowledgement; the planned
+    # question follows word for word. Asked to reword it, the fast model squeezed
+    # a carefully planned question into a sentence or two and lost what it asked.
     yield from model.stream(
         system=session_system(session.setup),
         user=ask_user(question, index=session.current, previous_answer=previous),
         session_id=session.session_id,
         call="ask",
         effort="low",
-        max_tokens=400,
+        max_tokens=120,
     )
+    yield " " + question.text.strip()
 
 
 def submit_answer(session: Session, answer: Answer) -> Session:

@@ -153,14 +153,14 @@ def ask_user(question: Question, *, index: int, previous_answer: str | None) -> 
 
 {lead_in}
 
-Then ask question {index + 1} of {QUESTION_COUNT}. Ask it in your own words but keep its
-meaning exactly:
+Question {index + 1} of {QUESTION_COUNT} follows your sentence, read out exactly as written:
 
 <question>
 {question.text}
 </question>
 
-Reply with only what Donna would say aloud. Two or three sentences at most."""
+Reply with only that one sentence. Do not ask, restate or introduce the question — it is
+said straight after you, word for word."""
 
 
 def score_user(question: Question, answer: str) -> str:

@@ -29,6 +29,8 @@ import {
   valuesFromParse,
   type JobValues,
 } from "@/lib/job-template";
+import { loadVoicePreference } from "@/lib/store";
+import { unlockAudio } from "@/lib/voice";
 import {
   DIFFICULTIES,
   PACES,
@@ -286,6 +288,9 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
       onSubmit={(e) => {
         e.preventDefault();
         if (!seniority || !canSubmit) return;
+        // Now, inside the click: by the time the questions are planned the
+        // browser no longer counts this as the user asking for sound.
+        if (loadVoicePreference()) unlockAudio();
         void onStart(file, {
           company: company.trim(),
           role: role.trim(),

@@ -55,8 +55,9 @@ export function VoiceAnswer({
     ) {
       if (reason === "no-speech" || !heardSpeech) {
         // Nothing was ever said. Untimed that is a broken microphone worth
-        // mentioning; timed, the clock simply ran out and Donna moves on.
-        if (reason === "limit") onTranscript(NO_ANSWER, reason);
+        // mentioning; timed, either the clock ran out or the silence outlasted
+        // her "shall we move on?", and Donna moves on.
+        if (seconds !== null) onTranscript(NO_ANSWER, reason);
         else onError("We didn't hear anything. Check your microphone, or type your answer.");
         return;
       }
@@ -84,7 +85,9 @@ export function VoiceAnswer({
         if (!live) return;
         // Her cutting in should land while the recording is still being sent,
         // not after, so this goes first.
-        if (reason === "limit") onInterject("time_up");
+        if (reason === "limit" || (reason === "no-speech" && seconds !== null)) {
+          onInterject("time_up");
+        }
         void send(recording.blob, recording.contentType, recording.heardSpeech, reason);
       },
       onError: (message) => live && onError(message),
