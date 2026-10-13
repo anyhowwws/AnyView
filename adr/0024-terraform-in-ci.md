@@ -30,14 +30,23 @@ of the PR and its plan comment, and what is allowed to run on `main`.
 
 The third, for now. The Environment version is the intended end state once the
 repository is public; it is a small change (add `environment:` to the apply job and
-move the apply identity's trust to that subject).
+move the apply identity's trust to that environment).
 
 - **Two identities** (`infra/terraform_ci.tf`), both through the existing WIF pool:
   - `anyview-tf-plan`: viewer + security reviewer, read on the state bucket, and
     create-only on `plans/` in it. Any workflow in this repository may use it.
   - `anyview-tf-apply`: owner. Only a workflow running on `main` may use it (the
-    binding is on the exact subject `repo:<repo>:ref:refs/heads/main`, not the
-    repository). A pull request gets a `pull_request` subject and cannot match it.
+    binding is on the OIDC `ref` attribute `refs/heads/main`; the pool only admits
+    tokens from this repository). A pull request's ref is `refs/pull/<n>/merge`, so it
+    cannot match.
+
+    *Found on the first automatic apply:* the first version bound the exact `sub` claim
+    `repo:<repo>:ref:refs/heads/main`. This repository has GitHub's **immutable subject**
+    format on (`repo:<owner>@<id>/<repo>@<id>:ref:...`), so that string never matched, the
+    apply failed with `iam.serviceAccounts.getAccessToken denied`, and the deploy jobs were
+    skipped behind it. Binding on `ref` does not depend on the subject format. The change
+    to the binding had to be applied from a laptop, because the pipeline's own apply
+    identity could not authenticate until it was in place.
 - **`terraform-plan`** runs on pull requests (same-repo only) and on pushes to main.
   On a PR it posts the plan as a comment. On main it saves the plan file to
   `gs://<project>-tfstate/plans/<sha>.tfplan`.

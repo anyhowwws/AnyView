@@ -13,10 +13,10 @@ locals {
   # named rather than referenced.
   tfstate_bucket = "${var.project_id}-tfstate"
 
-  # What GitHub puts in the OIDC `sub` claim for a job running on main. A pull
-  # request job gets `repo:<repo>:pull_request` and a job on any other branch gets
-  # that branch's ref, so neither can impersonate the apply SA.
-  apply_subject = "repo:${var.github_repo}:ref:refs/heads/main"
+  # The OIDC `ref` claim of a job running on main. A pull request job's ref is
+  # `refs/pull/<n>/merge` and any other branch or tag has its own, so none of them
+  # can impersonate the apply SA.
+  apply_ref = "refs/heads/main"
 }
 
 # --- Plan: read-only ----------------------------------------------------------
@@ -115,12 +115,17 @@ resource "google_billing_account_iam_member" "tf_apply_budget" {
   depends_on = [google_project_service.enabled["cloudbilling.googleapis.com"]]
 }
 
-# One exact subject, not a repository-wide set: only a job running on `main` gets
-# this identity (ADR 0024). The repository is private on GitHub Free, which has no
-# branch protection and no environment approvals, so who can push to main is the
-# real control.
+# Only a job running on `main` gets this identity (ADR 0024). It is bound on the
+# `ref` attribute, not on the exact `sub` claim: this repository has GitHub's
+# immutable subject format turned on (`repo:<owner>@<id>/<repo>@<id>:ref:...`),
+# so a binding on the readable `repo:owner/repo:ref:refs/heads/main` string never
+# matches and the first automatic apply failed with getAccessToken denied. Scoping
+# by ref is still tight: the pool's attribute_condition (github_wif.tf) already
+# admits only tokens from this one repository. The repository is private on
+# GitHub Free, which has no branch protection and no environment approvals, so who
+# can push to main is the real control.
 resource "google_service_account_iam_member" "tf_apply_impersonate" {
   service_account_id = google_service_account.tf_apply.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principal://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/subject/${local.apply_subject}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github.name}/attribute.ref/${local.apply_ref}"
 }
