@@ -97,7 +97,7 @@ class FakeModel:
             yield word if i == 0 else " " + word
 
     def speak(
-        self, *, text: str, session_id: str, voice: str = "Alnilam", style: str | None = None
+        self, *, text: str, session_id: str, voice: str = "Charon", style: str | None = None
     ) -> bytes:
         """Silence, one real WAV file, lasting about as long as the words would.
 

@@ -19,7 +19,7 @@ read your resume", "Donna moves on when the clock runs out", "Ask Donna about yo
   Copy avoids pronouns for him; "Harvey" or "the interviewer" instead.
 - **Donna is the Digital Garden's assistant.** Discover, the review queue, resume and dump
   extraction, and the capture box keep her name. Her voice is not decided yet.
-- **Harvey's voice is configured as `HARVEY_VOICE`**, default **`Alnilam`** (chosen by the owner after auditioning; first `Orus`, see below).
+- **Harvey's voice is configured as `HARVEY_VOICE`**, default **`Charon`** (chosen by ear after auditioning; first `Orus`, then `Alnilam`, which read as British in a real run).
   `DONNA_VOICE` and the Terraform variable `donna_voice` are gone, along with the frontend's
   `DonnaVoice`/`donnaVoice()`. The garden gets its own setting when she gets a voice.
 - **The voice name was checked against Vertex, not assumed.** "Orbit" was the first choice, but
@@ -28,18 +28,26 @@ read your resume", "Donna moves on when the clock runs out", "Ask Donna about yo
   wrong name would have looked like "voice is broken". Orus was the first stand-in, until Alnilam was picked.
 
 - **Harvey has a delivery.** `prompts.HARVEY_DELIVERY` is direction for the TTS model, put in
-  front of every line he speaks as `"<style>: <line>"` (`adapter.spoken_prompt`): a sharp New
-  York closer, smooth low-to-mid baritone, dry and slightly smug, brisk and clipped. It is a code
-  constant, not an environment variable: it is part of who Harvey is, and changing it is a
-  reviewed change.
-- **The delivery was tuned by stopwatch as well as by ear.** The first version asked for
-  "short, deliberate pauses" and ran about 30% slower than plain speech (9.6 s against 7.2 s
-  for a sample question), which the owner heard as too slow. Dropping the pause and
-  relaxed-pace wording gave 7.5 s. A "noticeably faster" variant ran 6.6 s and was passed over
-  as likely to feel rushed over five questions. The direction is not read aloud, which was
-  checked by transcribing the clips. One styled "let's move on" once came back with its line
-  said twice (9.5 s); three repeats were all normal, so it is a rare quirk and no guard is
-  added. A TTS quota exists (requests per minute per model): generate audition clips slowly.
+  front of every line he speaks as `"<style>: <line>"` (`adapter.spoken_prompt`): a smooth
+  baritone with a strong Brooklyn New York accent and a faint smirk, brisk and clipped, dry
+  and slightly smug. It is a code constant, not an environment variable: it is part of who
+  Harvey is, and changing it is a reviewed change.
+- **What auditioning taught us, so it need not be learned twice.**
+  - A long direction that asked for "deliberate pauses" ran ~30% slower than plain speech
+    (9.6 s against 7.2 s for a sample question): drop pause and relaxed-pace wording.
+  - Alnilam with a "New York closer" direction still sounded British to the owner. A direction
+    that only names a persona does not fix an accent: name the accent, and prefer a voice
+    that does not fight it.
+  - A separate accent line with negations ("never British, never mid-Atlantic") made the model
+    **read the instructions aloud**: seven-second lines became 41–54 s. Keep accent and
+    pace in one short, positive clause (the shipped one measured 6.7 s on Charon).
+  - **Length is the safety check:** a clip far longer than the line alone means the direction
+    is being spoken. Transcribing it confirms. An automated accent rating by a model is not
+    reliable (it judges the words, and rated the British-sounding clip "0/10 British"): accent
+    is checked by ear.
+  - One styled "let's move on" once came back with its line said twice; three repeats were
+    normal, so no guard is added. Mind the TTS quota (requests per minute per model) when
+    auditioning: generate clips slowly.
 
 ## Consequences
 

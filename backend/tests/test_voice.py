@@ -272,7 +272,7 @@ def test_everything_harvey_says_carries_his_delivery(client):
             iter(["Tell me about a time you led a project end to end."]),
             model=fake,
             session_id="sess-0001",
-            voice="Alnilam",
+            voice="Charon",
             style=HARVEY_DELIVERY,
         )
     )

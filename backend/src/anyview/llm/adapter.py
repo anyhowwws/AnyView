@@ -407,7 +407,7 @@ class VertexGemini:
             raise ModelError("The model declined to answer this turn.")
 
     def speak(
-        self, *, text: str, session_id: str, voice: str = "Alnilam", style: str | None = None
+        self, *, text: str, session_id: str, voice: str = "Charon", style: str | None = None
     ) -> bytes:
         """One line of dialogue as a WAV file, spoken by a prebuilt Vertex voice.
 
