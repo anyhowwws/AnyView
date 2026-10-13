@@ -166,8 +166,11 @@ function audioContext(): AudioContext {
 
 /** Call from a click handler. A browser lets a page start audio only in
  *  response to a click, and that permission fades within seconds — far less
- *  than planning an interview takes. Resuming the shared context inside the
- *  Start click keeps it unlocked for when Donna first speaks. */
+ *  than planning an interview takes. The pre-flight's "Play Donna" and "Begin"
+ *  clicks call this (ADR 0028). The same context drives the microphone's level
+ *  meter, so this also keeps Safari from reading the microphone as silence: a
+ *  context it never saw a click for stays suspended, and a suspended analyser
+ *  reads zeros. */
 export function unlockAudio(): void {
   try {
     const ctx = audioContext();
@@ -239,7 +242,15 @@ export class DonnaVoice {
     }
   }
 
-  /** Cut her off — a new question, or the listener leaving. */
+  /** Stop listening for this question's end, but let whatever is playing
+   *  finish. A new question calls this: her "let's move on" must be heard to
+   *  the end, and the next question's clips queue up behind it. */
+  detach(): void {
+    this.onFinished = null;
+    this.complete = false;
+  }
+
+  /** Cut her off — the candidate switched modes or left the interview. */
   stop(): void {
     for (const source of this.playing) {
       source.onended = null;
@@ -256,7 +267,71 @@ export class DonnaVoice {
   }
 }
 
+/** One player for the whole interview (ADR 0028). Practice remounts on every
+ *  question, and a player per mount knew nothing of the clip still playing:
+ *  the next question cut off her "let's move on" and could talk over it. */
+let donna: DonnaVoice | null = null;
+
+export function donnaVoice(): DonnaVoice {
+  donna ??= new DonnaVoice();
+  return donna;
+}
+
 // --- The candidate speaking -------------------------------------------------
+
+/** One microphone stream for the whole interview, opened by the pre-flight
+ *  (ADR 0028). Asking per question put Safari's permission prompt in the middle
+ *  of question one and repeated the hardware start-up every turn. */
+let mic: MediaStream | null = null;
+
+export async function acquireMicrophone(): Promise<MediaStream> {
+  if (mic?.getAudioTracks().some((t) => t.readyState === "live")) return mic;
+  mic = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+  });
+  return mic;
+}
+
+/** Turn the microphone off: the interview is over, or was abandoned. */
+export function releaseMicrophone(): void {
+  mic?.getTracks().forEach((t) => t.stop());
+  mic = null;
+}
+
+/** A level reading on the shared context. `disconnect` leaves the stream and
+ *  the context running for the next turn. */
+function tap(stream: MediaStream) {
+  const ctx = audioContext();
+  if (ctx.state === "suspended") void ctx.resume();
+  const source = ctx.createMediaStreamSource(stream);
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 1024;
+  source.connect(analyser);
+  const samples = new Float32Array(analyser.fftSize);
+  return {
+    /** RMS amplitude, 0..1. */
+    level(): number {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const s of samples) sum += s * s;
+      return Math.sqrt(sum / samples.length);
+    },
+    disconnect: () => source.disconnect(),
+  };
+}
+
+/** The pre-flight's meter: report the microphone level until stopped. */
+export async function watchLevel(onLevel: (level: number) => void): Promise<() => void> {
+  const meter = tap(await acquireMicrophone());
+  let frame = requestAnimationFrame(function tick() {
+    onLevel(meter.level());
+    frame = requestAnimationFrame(tick);
+  });
+  return () => {
+    cancelAnimationFrame(frame);
+    meter.disconnect();
+  };
+}
 
 /** The recording formats a browser might give us, best first. Chrome and
  *  Firefox produce WebM/Opus; Safari produces MP4/AAC. The base type is what
@@ -327,9 +402,7 @@ export async function listen({
 
   let stream: MediaStream;
   try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    stream = await acquireMicrophone();
   } catch {
     onError("The microphone is blocked. Allow it in your browser, or type your answer.");
     return { stop: () => {}, cancel: () => {} };
@@ -339,11 +412,7 @@ export async function listen({
   const chunks: Blob[] = [];
   recorder.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
 
-  const ctx = new AudioContext();
-  const analyser = ctx.createAnalyser();
-  analyser.fftSize = 1024;
-  ctx.createMediaStreamSource(stream).connect(analyser);
-  const samples = new Float32Array(analyser.fftSize);
+  const meter = tap(stream);
 
   const startedAt = performance.now();
   let state = LISTENING;
@@ -354,9 +423,9 @@ export async function listen({
   let cancelled = false;
 
   function teardown() {
+    // The stream stays open for the next question; releaseMicrophone() ends it.
     cancelAnimationFrame(frame);
-    stream.getTracks().forEach((t) => t.stop());
-    void ctx.close();
+    meter.disconnect();
   }
 
   function finish(reason: ListenEnd | "manual") {
@@ -378,10 +447,7 @@ export async function listen({
   }
 
   function tick() {
-    analyser.getFloatTimeDomainData(samples);
-    let sum = 0;
-    for (const s of samples) sum += s * s;
-    const level = Math.sqrt(sum / samples.length);
+    const level = meter.level();
     onLevel(level);
 
     const at = performance.now();

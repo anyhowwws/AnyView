@@ -242,5 +242,5 @@ def test_say_refuses_free_text(client):
 def test_each_interjection_has_a_line():
     from anyview.interview.prompts import INTERJECTIONS
 
-    assert set(INTERJECTIONS) == {"time_up", "stalled"}
+    assert set(INTERJECTIONS) == {"time_up", "stalled", "hello"}
     assert all(line.strip() for line in INTERJECTIONS.values())

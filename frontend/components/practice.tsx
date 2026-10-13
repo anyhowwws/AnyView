@@ -8,14 +8,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { NO_ANSWER, VoiceAnswer } from "@/components/voice-answer";
 import { ApiError, askQuestion, interjection } from "@/lib/api";
 import { loadVoicePreference, saveVoicePreference } from "@/lib/store";
-import { DonnaVoice, microphoneSupported } from "@/lib/voice";
+import { donnaVoice, microphoneSupported, type DonnaVoice, type ListenEnd } from "@/lib/voice";
 import type { Session } from "@/lib/types";
 
 interface Props {
   session: Session;
   spoken: string | undefined; // already-streamed text for this question (after a reload)
   onSpoken: (questionId: number, text: string) => void;
-  onAnswer: (text: string) => Promise<boolean>;
+  /** `cutOff`: the clock or Donna ended the answer, so the next question
+   *  opens without thanking them for it (ADR 0028). */
+  onAnswer: (text: string, cutOff: boolean) => Promise<boolean>;
   onEnd: () => void;
   busy: boolean;
   error: string | null;
@@ -54,10 +56,10 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   // its text is already here.
   const reask = useRef(false);
   const [remaining, setRemaining] = useState<number | null>(null);
-  // One player for the whole practice run; it holds the AudioContext, which a
-  // browser only lets us open in response to a click.
+  // One player for the whole interview, shared across these per-question
+  // mounts, so a clip from the last question plays out under the next (ADR 0028).
   const donna = useRef<DonnaVoice | null>(null);
-  if (donna.current === null && typeof window !== "undefined") donna.current = new DonnaVoice();
+  if (donna.current === null && typeof window !== "undefined") donna.current = donnaVoice();
 
   useEffect(() => {
     // Speaking is the default, so this normally just unlocks audio. Getting
@@ -104,10 +106,9 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     // Her voice arriving is what hands the turn over; without it, the end of
     // the text does.
     let audioExpected = speaking;
-    if (voice) {
-      voice.stop();
-      voice.onFinished = () => setTurn("listening");
-    }
+    // Not stop(): whatever she is still saying ("let's move on") plays to the
+    // end, and this question's clips queue behind it.
+    if (voice) voice.onFinished = () => setTurn("listening");
 
     const timer = setTimeout(() => {
       askQuestion(
@@ -142,7 +143,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     return () => {
       clearTimeout(timer);
       controller.abort();
-      voice?.stop();
+      voice?.detach();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [question.id, attempt, spoken, voiceReady]);
@@ -183,13 +184,21 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answering, question.id]);
 
+  // Once per question. Without this a failed send looped: `busy` pauses the
+  // clock, the pause holds 0 s, resuming sets `remaining` to 0 again, and that
+  // fired the send again — thousands of requests a minute while the API was down.
+  const timedOut = useRef(false);
+
   useEffect(() => {
     // Only the typed path is enforced here. When the microphone is open the
     // recorder owns the cut-off, because it has to stop the recording at the
     // same instant.
-    if (remaining !== 0 || turn === "listening" || !answering) return;
+    if (remaining !== 0 || turn === "listening" || !answering || timedOut.current) return;
+    timedOut.current = true;
+    const text = answer.trim() || NO_ANSWER;
+    setAnswer(text); // so a failed send can be sent again by hand
     void interject("time_up");
-    void submit(answer.trim() || NO_ANSWER);
+    void submit(text, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remaining]);
 
@@ -199,10 +208,10 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     if (clip) donna.current?.play(clip);
   }
 
-  function submit(override?: string) {
+  function submit(override?: string, cutOff = false) {
     const trimmed = (override ?? answer).trim();
     if (!trimmed || busy) return;
-    return onAnswer(trimmed).then((saved) => {
+    return onAnswer(trimmed, cutOff).then((saved) => {
       if (!saved) return;
       setAnswer("");
       setTurn(voiceOn ? "listening" : "typing");
@@ -234,17 +243,20 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
         // Ask this question again, aloud. It costs one more short call, and
         // opening the microphone on a question she never said left people
         // waiting for her to speak — until she asked whether to move on.
+        donna.current?.stop();
         reask.current = true;
         setAttempt((n) => n + 1);
       })
       .catch(() => setVoiceNote("This browser is blocking audio playback on the page."));
   }
 
-  /** Every spoken answer goes straight in, however the turn ended. */
-  function onTranscript(spokenText: string) {
+  /** Every spoken answer goes straight in. If the clock or the silence ended
+   *  it, she has already said "let's move on", so the next question won't
+   *  thank them for it. */
+  function onTranscript(spokenText: string, reason: ListenEnd | "manual") {
     setAnswer(spokenText);
     setTurn("sending");
-    void submit(spokenText);
+    void submit(spokenText, reason === "limit" || reason === "no-speech");
   }
 
   const canAnswer = !streaming && !streamError && answer.trim().length > 0 && !busy;
@@ -353,7 +365,14 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           {streamError && (
             <div className="flex flex-wrap items-center gap-3 text-sm text-destructive" role="alert">
               <span>{streamError}</span>
-              <Button variant="outline" className="h-10" onClick={() => setAttempt((n) => n + 1)}>
+              <Button
+              variant="outline"
+              className="h-10"
+              onClick={() => {
+                donna.current?.stop();
+                setAttempt((n) => n + 1);
+              }}
+            >
                 Try again
               </Button>
             </div>

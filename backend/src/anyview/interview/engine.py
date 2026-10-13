@@ -38,7 +38,7 @@ from anyview.interview.models import (
     Setup,
     State,
 )
-from anyview.interview.prompts import ask_user, ideal_user, plan_user, score_user, session_system
+from anyview.interview.prompts import ideal_user, lead_in, plan_user, score_user, session_system
 from anyview.llm.adapter import Model, Reply
 
 TRANSITIONS: dict[State, set[State]] = {
@@ -124,26 +124,18 @@ def start(setup: Setup, *, session_id: str, model: Model) -> Session:
     return _move(session, State.ASK)
 
 
-def ask(session: Session, *, model: Model) -> Iterator[str]:
-    """Stream what the interviewer says for the current question. Does not change
-    state: the session stays in `ask` until an answer arrives."""
+def ask(session: Session, *, spoken: bool = False) -> Iterator[str]:
+    """What the interviewer says for the current question: a fixed lead-in
+    chosen by how the last turn ended, then the planned question word for word
+    (ADR 0026, 0028). No model call. Does not change state: the session stays in
+    `ask` until an answer arrives. A generator still, so the route streams it
+    the same way it always has."""
     require_state(session, State.ASK)
     question = session.current_question
     if question is None:
         raise EngineError("No question to ask.")
-    previous = session.previous_answer.text if session.previous_answer else None
-    # The fast model writes only the greeting or the acknowledgement; the planned
-    # question follows word for word. Asked to reword it, the fast model squeezed
-    # a carefully planned question into a sentence or two and lost what it asked.
-    yield from model.stream(
-        system=session_system(session.setup),
-        user=ask_user(question, index=session.current, previous_answer=previous),
-        session_id=session.session_id,
-        call="ask",
-        effort="low",
-        max_tokens=120,
-    )
-    yield " " + question.text.strip()
+    opening = lead_in(index=session.current, previous=session.previous_answer, spoken=spoken)
+    yield " ".join(part for part in (opening, question.text.strip()) if part)
 
 
 def submit_answer(session: Session, answer: Answer) -> Session:

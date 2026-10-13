@@ -445,7 +445,7 @@ def ask(session: Session, model: ModelDep, settings: SettingsDep, voice: bool = 
     # Validate state before opening the stream so a bad session is a plain 409,
     # not an error frame inside a 200.
     engine.require_state(session, State.ASK)
-    words = engine.ask(session, model=model)
+    words = engine.ask(session, spoken=voice)
     if not voice:
         return stream_response(tokens(words))
     # Voice mode: the same words, plus a spoken clip per sentence (ADR 0013).
@@ -463,7 +463,7 @@ class SayRequest(BaseModel):
     session_id: SessionId
     # A key, never free text: this route must not become a way to have the TTS
     # model read out anything a caller likes.
-    line: Literal["time_up", "stalled"]
+    line: Literal["time_up", "stalled", "hello"]
 
 
 class Spoken(BaseModel):
