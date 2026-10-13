@@ -200,6 +200,11 @@ retrieval test set.
 - The rubric's four dimensions are applied to the opener too, so question one ("tell me about
   yourself") scores harsher than it deserves — STAR does not fit a background walkthrough.
   Per-question rubrics belong with the Phase 3 probing work (ADR 0016).
+- Documents are **PDF and Word (.docx) only**, for resumes and job descriptions alike; images were
+  removed deliberately (no diagram reading). `POST /uploads` still also issues tickets for audio, because
+  the browser recorder shares it, but users never pick audio, so no user-facing message mentions it. The
+  accepted types live in `uploads/extract.py:ALLOWED_TYPES` and `frontend/lib/types.ts:UPLOAD_TYPES`;
+  keep them, the file inputs' `accept`, and the on-screen "PDF or Word" hint in step.
 - Recorded answers live under `audio/<uid>/` in the uploads bucket, not `uploads/<uid>/`, because
   a GCS lifecycle rule matches a literal prefix and cannot wildcard the uid. They expire after 30
   days (`answer_audio_retention_days`); resumes never do.
