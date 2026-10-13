@@ -86,10 +86,20 @@ class StartRequest(BaseModel):
 
 
 def _truncate(text: str, limit: int, what: str) -> str:
+    """Cut `text` to at most `limit` characters, note included, at a line break
+    if there is one, else a space. The result has to pass the same limit on
+    `Setup`; it used to overshoot by the length of the note, and by nearly the
+    whole text when there was no line break (rfind's -1 is truthy)."""
     if len(text) <= limit:
         return text
-    cut = text.rfind("\n", 0, limit) or limit
-    return f"{text[:cut].rstrip()}\n\n[{what} continues past this point and was cut to fit.]"
+    note = f"\n\n[{what} continues past this point and was cut to fit.]"
+    room = limit - len(note)
+    cut = text.rfind("\n", 0, room)
+    if cut <= 0:
+        cut = text.rfind(" ", 0, room)
+    if cut <= 0:
+        cut = room
+    return text[:cut].rstrip() + note
 
 
 def _extract(

@@ -416,3 +416,22 @@ def test_deleting_a_saved_job(client, store):
     assert client.delete(f"/interview/jobs/{job_id}").status_code == 204
     assert client.delete(f"/interview/jobs/{job_id}").status_code == 404
     assert client.get("/interview/jobs").json() == []
+
+
+def test_a_posting_too_long_for_one_prompt_is_cut_and_still_starts(client, store):
+    """A posting fetched or read as one long paragraph used to come back over
+    Setup's 8,000-character limit, and /start refused it with a 422."""
+    name = _upload(
+        client, store, name=f"uploads/{UID}/jd.docx", lines=["Cloud Architect at Initech. " * 400]
+    )
+    parsed = client.post("/interview/job/parse", json={"object_name": name}).json()
+    assert len(parsed["text"]) <= 8_000
+    cv = _upload(client, store)
+    r = client.post(
+        "/interview/start",
+        json={
+            "session_id": "sess-0001",
+            "setup": _setup(resume_object=cv, job_description=parsed["text"]),
+        },
+    )
+    assert r.status_code == 200, r.text
