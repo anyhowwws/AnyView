@@ -86,6 +86,12 @@ variable "budget_currency" {
   default     = "SGD"
 }
 
+variable "ingest_max_attempts" {
+  description = "Deliveries Cloud Tasks makes of one ingest job before giving up (ADR 0034). Also given to the worker, which fails the job on the last one."
+  type        = number
+  default     = 5
+}
+
 variable "api_max_instances" {
   description = "Hard cap on Cloud Run instances. Keeps both cost and (later) Cloud SQL connection count bounded. 1 for Phase 0."
   type        = number

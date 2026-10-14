@@ -1,3 +1,34 @@
+# What both services built from the API image need to run the app: the model,
+# the database and the upload bucket. The worker (ingest.tf) takes these and
+# nothing else; the API adds what only a browser-facing service needs.
+locals {
+  runtime_env = {
+    GOOGLE_CLOUD_PROJECT = var.project_id
+    VERTEX_REGION        = var.vertex_region
+    MODEL_ID             = var.model_id
+    MODEL_ID_FAST        = var.fast_model_id
+    TTS_MODEL_ID         = var.tts_model_id
+    HARVEY_VOICE         = var.harvey_voice
+    DONNA_VOICE          = var.donna_voice
+    LIVE_MODEL_ID        = var.live_model_id
+    LIVE_REGION          = var.live_region
+    UPLOAD_BUCKET        = google_storage_bucket.uploads.name
+    DB_INSTANCE          = google_sql_database_instance.main.connection_name
+    DB_NAME              = google_sql_database.anyview.name
+    DB_IAM_USER          = local.db_api_user
+  }
+
+  api_env = {
+    CORS_ORIGINS   = join(",", var.cors_origins)
+    ALLOWED_EMAILS = join(",", var.allowed_emails)
+    # Queued ingestion (ADR 0034): where the API puts a job, who Cloud Tasks
+    # calls with it, and as whom.
+    TASKS_QUEUE   = google_cloud_tasks_queue.ingest.id
+    WORKER_URL    = google_cloud_run_v2_service.worker.uri
+    TASKS_INVOKER = google_service_account.tasks.email
+  }
+}
+
 resource "google_cloud_run_v2_service" "api" {
   name     = "anyview-api"
   location = var.region
@@ -31,65 +62,13 @@ resource "google_cloud_run_v2_service" "api" {
         startup_cpu_boost = true # extra CPU while booting: imports + migrations (ADR 0023)
       }
 
-      env {
-        name  = "GOOGLE_CLOUD_PROJECT"
-        value = var.project_id
-      }
-      env {
-        name  = "VERTEX_REGION"
-        value = var.vertex_region
-      }
-      env {
-        name  = "MODEL_ID"
-        value = var.model_id
-      }
-      env {
-        name  = "MODEL_ID_FAST"
-        value = var.fast_model_id
-      }
-      env {
-        name  = "TTS_MODEL_ID"
-        value = var.tts_model_id
-      }
-      env {
-        name  = "HARVEY_VOICE"
-        value = var.harvey_voice
-      }
-      env {
-        name  = "DONNA_VOICE"
-        value = var.donna_voice
-      }
-      env {
-        name  = "LIVE_MODEL_ID"
-        value = var.live_model_id
-      }
-      env {
-        name  = "LIVE_REGION"
-        value = var.live_region
-      }
-      env {
-        name  = "CORS_ORIGINS"
-        value = join(",", var.cors_origins)
-      }
-      env {
-        name  = "ALLOWED_EMAILS"
-        value = join(",", var.allowed_emails)
-      }
-      env {
-        name  = "UPLOAD_BUCKET"
-        value = google_storage_bucket.uploads.name
-      }
-      env {
-        name  = "DB_INSTANCE"
-        value = google_sql_database_instance.main.connection_name
-      }
-      env {
-        name  = "DB_NAME"
-        value = google_sql_database.anyview.name
-      }
-      env {
-        name  = "DB_IAM_USER"
-        value = local.db_api_user
+      # The shared runtime settings, then the API's own (locals above).
+      dynamic "env" {
+        for_each = merge(local.runtime_env, local.api_env)
+        content {
+          name  = env.key
+          value = env.value
+        }
       }
     }
 
