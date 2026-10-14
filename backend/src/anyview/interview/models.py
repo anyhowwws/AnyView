@@ -14,7 +14,10 @@ from typing import Annotated, Literal, get_args
 from pydantic import BaseModel, Field
 
 QUESTION_COUNT = 5
-MAX_PROBES = 0  # Phase 3 raises this to 2; the state exists now so the machine is complete.
+# Follow-up questions Harvey may ask on one question, in a spoken interview on
+# Gemini Live (ADR 0030). He asks for each one through a tool; the API says no
+# once the budget is spent. Typed answers have no follow-ups.
+MAX_PROBES = 2
 
 # The clock for one answer when the model does not say otherwise, the range it
 # is held to, and the pause that counts as an awkward silence rather than a
@@ -184,13 +187,27 @@ class Question(BaseModel):
 # What the browser records when the clock runs out on silence (ADR 0016).
 NO_ANSWER = "(no answer given)"
 
+# A spoken answer is a transcript, and five minutes of talking runs past what
+# anyone types. Typed answers keep the form's 4,000.
+MAX_ANSWER_CHARS = 8_000
+
+
+class FollowUp(BaseModel):
+    """One follow-up Harvey asked during a spoken answer, and what the candidate
+    said to it (ADR 0030). Scored with the answer it followed, as one exchange."""
+
+    question: str = Field(min_length=1, max_length=1_000)
+    answer: str = Field(min_length=1, max_length=MAX_ANSWER_CHARS)
+
 
 class Answer(BaseModel):
     question_id: int = Field(ge=1, le=QUESTION_COUNT)
-    text: str = Field(min_length=1, max_length=4_000)
+    text: str = Field(min_length=1, max_length=MAX_ANSWER_CHARS)
     # The clock or Harvey ended this answer, not the candidate. The next question
     # then opens without a "thank you" for an answer that had to be cut short (ADR 0028).
     cut_off: bool = False
+    # Follow-ups asked in a Live interview, in order. At most MAX_PROBES.
+    follow_ups: list[FollowUp] = Field(default=[], max_length=MAX_PROBES)
 
 
 class Session(BaseModel):
@@ -232,6 +249,7 @@ class IdealAnswer(BaseModel):
 class QuestionReport(BaseModel):
     question: Question
     answer: str
+    follow_ups: list[FollowUp] = []
     dimensions: list[DimensionScore] = Field(min_length=4, max_length=4)
     summary: str
     gaps: list[str]

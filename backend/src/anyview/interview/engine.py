@@ -139,8 +139,12 @@ def ask(session: Session, *, spoken: bool = False) -> Iterator[str]:
 
 
 def submit_answer(session: Session, answer: Answer) -> Session:
-    """ask → answer → next → ask | wrap. Pure: no model call in Phase 0
-    (probing is off), so this is where the brief's probe branch will plug in."""
+    """ask → answer → (probe → answer)* → next → ask | wrap. Pure: no model call.
+
+    Follow-ups happen inside a spoken Live turn (ADR 0030), where Harvey asks
+    for each one and the API holds him to `MAX_PROBES`; they arrive here
+    already answered, carried on the `Answer`. The probe transitions are walked
+    so the machine stays the one in the brief."""
     require_state(session, State.ASK)
     question = session.current_question
     if question is None or answer.question_id != question.id:
@@ -152,9 +156,10 @@ def submit_answer(session: Session, answer: Answer) -> Session:
     session = _move(session, State.ANSWER)
     session = session.model_copy(update={"answers": [*session.answers, answer]})
 
-    probes_used = 0  # Phase 3: count follow-ups asked for this question
-    if probes_used < MAX_PROBES:
-        pass  # Phase 3: _move(session, State.PROBE) and stream a follow-up
+    if len(answer.follow_ups) > MAX_PROBES:
+        raise EngineError(f"At most {MAX_PROBES} follow-ups per question.", status=422)
+    for _ in answer.follow_ups:
+        session = _move(_move(session, State.PROBE), State.ANSWER)
 
     session = _move(session, State.NEXT)
     if len(session.answers) < QUESTION_COUNT:
@@ -175,7 +180,7 @@ def _score_one(
         score_future = pool.submit(
             model.generate,
             system=system,
-            user=score_user(question, answer.text),
+            user=score_user(question, answer.text, answer.follow_ups),
             session_id=session.session_id,
             call="score",
             output_schema=SCORE_SCHEMA,
@@ -201,6 +206,7 @@ def _score_one(
     return QuestionReport(
         question=question,
         answer=answer.text,
+        follow_ups=answer.follow_ups,
         dimensions=score.dimensions,
         summary=score.summary,
         gaps=score.gaps,

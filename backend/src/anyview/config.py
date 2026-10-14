@@ -19,6 +19,9 @@ class Settings:
     fast_model_id: str
     tts_model_id: str = "gemini-2.5-flash-preview-tts"
     harvey_voice: str = "Charon"
+    # Harvey on Gemini Live (ADR 0030). Live models are regional, not `global`.
+    live_model_id: str = "gemini-live-2.5-flash-native-audio"
+    live_region: str = "us-central1"
     cors_origins: list[str] = field(default_factory=list)
     allowed_emails: frozenset[str] = frozenset()
     upload_bucket: str = ""
@@ -51,6 +54,8 @@ class Settings:
             # it gets its own id; the voice is one of Vertex's prebuilt speakers.
             tts_model_id=os.environ.get("TTS_MODEL_ID", "gemini-2.5-flash-preview-tts"),
             harvey_voice=os.environ.get("HARVEY_VOICE", "Charon"),
+            live_model_id=os.environ.get("LIVE_MODEL_ID", "gemini-live-2.5-flash-native-audio"),
+            live_region=os.environ.get("LIVE_REGION", "us-central1"),
             cors_origins=origins or ["http://localhost:3000"],
             allowed_emails=emails,
             upload_bucket=os.environ.get("UPLOAD_BUCKET", ""),

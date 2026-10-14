@@ -120,3 +120,42 @@ def test_config_adds_thinking_allowance_and_sets_schema():
 def test_vertex_client_requires_project_id():
     with pytest.raises(RuntimeError):
         VertexGemini(project_id="", region="global", model="gemini-3.1-pro-preview")
+
+
+def test_live_messages_become_plain_events(caplog):
+    """The SDK's Live message shapes, mapped to LiveEvents (ADR 0030)."""
+    from google.genai import types
+
+    from anyview.llm.adapter import _VertexLive
+
+    message = types.LiveServerMessage(
+        server_content=types.LiveServerContent(
+            model_turn=types.Content(
+                parts=[types.Part(inline_data=types.Blob(data=b"\x01\x02", mime_type="audio/pcm"))]
+            ),
+            output_transcription=types.Transcription(text="Tell me"),
+            input_transcription=types.Transcription(text="I led"),
+            interrupted=True,
+            turn_complete=True,
+        ),
+        tool_call=types.LiveServerToolCall(
+            function_calls=[types.FunctionCall(id="c1", name="finish_question", args={})]
+        ),
+        usage_metadata=types.UsageMetadata(
+            prompt_token_count=900, response_token_count=40, thoughts_token_count=10
+        ),
+    )
+    live = _VertexLive(None, model="live-model", session_id="sess-1")
+    with caplog.at_level("INFO", logger="anyview.usage"):
+        events = live._translate(message)
+    assert [e.kind for e in events] == [
+        "audio",
+        "harvey_text",
+        "candidate_text",
+        "interrupted",
+        "turn_complete",
+        "tool_call",
+    ]
+    assert events[0].audio == b"\x01\x02" and events[-1].call_id == "c1"
+    row = json.loads(caplog.records[-1].message)
+    assert row["call"] == "live" and row["input_tokens"] == 900 and row["output_tokens"] == 50

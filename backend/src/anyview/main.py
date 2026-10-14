@@ -16,7 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from anyview.api import account, auth, brain, interview, uploads
+from anyview.api import account, auth, brain, interview, live, uploads
 from anyview.config import Settings
 from anyview.interview.engine import EngineError
 from anyview.llm.adapter import Model, ModelError
@@ -83,6 +83,8 @@ def build_model() -> Model:
         model=settings.model_id,
         fast_model=settings.fast_model_id,
         tts_model=settings.tts_model_id,
+        live_model=settings.live_model_id,
+        live_region=settings.live_region,
     )
 
 
@@ -124,6 +126,7 @@ app.dependency_overrides[auth.get_verifier] = lambda: (
     auth.fake_verifier if settings.use_fake_model else auth.verify_firebase_token(settings)
 )
 app.include_router(interview.router)
+app.include_router(live.router)
 app.include_router(uploads.router)
 app.include_router(brain.router)
 app.include_router(account.router)
