@@ -9,12 +9,12 @@
 <h3 align="center">AnyView</h3>
 
   <p align="center">
-    Interview preparation web app with a "second brain".
+    Grow your career into a Digital Garden, then practise interviews against it.
     <br />
-    <a href="BRIEF.md"><strong>Read the brief »</strong></a>
+    <a href="https://anyview.anyapps.cloud"><strong>Open the live app »</strong></a>
     <br />
     <br />
-    <a href="https://anyview.anyapps.cloud">Live app</a>
+    <a href="BRIEF.md">Product brief</a>
     &middot;
     <a href="adr/">Decision records</a>
     &middot;
@@ -29,7 +29,9 @@
   <summary>Table of Contents</summary>
   <ol>
     <li><a href="#about-the-project">About The Project</a></li>
-    <li><a href="#what-it-does">What It Does</a></li>
+    <li><a href="#the-digital-garden">The Digital Garden</a></li>
+    <li><a href="#practice-against-your-garden">Practice Against Your Garden</a></li>
+    <li><a href="#how-it-meets-the-challenge">How It Meets The Challenge</a></li>
     <li><a href="#how-its-built">How It's Built</a>
       <ul>
         <li><a href="#built-with">Built With</a></li>
@@ -45,49 +47,98 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-AnyView keeps a structured, user-confirmed knowledge base of everything a
-job-seeker has done — roles, projects, STAR stories, skills, achievements —
-built from free-text brain dumps and uploaded resumes. It runs mock interviews
-(HR/screening or technical) tailored to a target company, role and seniority,
-streams the interviewer live, scores each answer per rubric dimension, and
-generates an ideal answer built only from the user's own brain so that gaps in
-the brain are surfaced and fed back into it.
+What you know about your own career is scattered: an out-of-date CV, a
+LinkedIn profile, old performance reviews, notes in a dozen places. When an
+interview comes, you rebuild it from memory, under pressure, and the best
+examples are the ones you forget.
 
-Two personas run it: **Donna** looks after the knowledge base (the Digital
-Garden) — extraction, the review queue and Discover, where you ask questions
-about your own career — and **Harvey** is the interviewer, who speaks each
-question over Gemini Live and asks follow-ups.
+AnyView gathers that knowledge into a **Digital Garden**: a structured,
+connected record of your roles, projects, stories, skills and achievements.
+Every entry is backed by a word-for-word quote from what you gave it, and
+nothing gets in until you confirm it. You can see the whole garden at once, ask
+it questions, and rehearse interviews with an interviewer who has read it. It
+is a second brain for your career, but one you tend and can trust, because
+every entry shows where it came from.
 
-The full product brief is in [BRIEF.md](BRIEF.md). Architecture decisions are in
-[adr/](adr/).
+Two AI personas work in it. **Donna** tends the garden: she reads what you give
+her, proposes entries and answers your questions about it. **Harvey** is the
+interviewer.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
 
-<!-- WHAT IT DOES -->
-## What It Does
+<!-- THE DIGITAL GARDEN -->
+## The Digital Garden
 
-**Build the Digital Garden.** Upload a resume (PDF or Word) or paste a brain
-dump. Donna turns it into roles, projects, stories, skills, achievements,
-education, languages and feedback. Each one carries a word-for-word quote from
-what you gave her, and nothing enters the garden until you confirm it in the
-review queue. The garden is shown as a graph, with a heatmap of which
-competencies you have evidence for.
+**Planting.** Upload a resume (PDF or Word) or paste a brain dump. Donna reads
+it with Gemini and proposes entries of eight kinds: roles, projects, stories,
+skills, achievements, education, languages and feedback others have given
+you. Each comes with the quote it was drawn from. An entry whose quote she can't
+find in your document is marked unverified, never silently dropped or accepted. Near-duplicates ("GCP" and "Google
+Cloud") are merged, and skills are linked to the roles, projects and
+credentials that show them.
 
-**Ask Donna about it.** In Discover you ask questions about your own career,
-typed or out loud, and every answer cites the garden entries it came from.
+**Tending.** Proposals wait in a review queue. You confirm, edit or discard each
+one, and only confirmed entries join the garden. Uploading a newer resume
+proposes only what changed. Every change is kept in a history, so the garden
+can always be rebuilt from it.
 
-**Practise with Harvey.** Give him a job, as a file, a pasted link or text, and
-pick a difficulty. Recruiter screen, hiring manager and panel differ in what
-Harvey knows: your resume only, then the job description, then your whole
-garden. He asks each question out loud, listens, asks up to two follow-ups and
-keeps time, cutting in when you stall or run long.
+**Seeing it whole.** The garden is drawn as a graph of how your work connects,
+with a coverage heatmap showing which competencies you have evidence for and
+which are thin.
 
-**Get a straight report.** Every answer is scored on each rubric dimension
+**Asking it.** In Discover you ask Donna about your own career, typed or out
+loud ("What have I done with Kubernetes?", "Which project best shows
+leadership?"). Each answer cites the garden entries it came from, so you can
+check it.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- PRACTICE -->
+## Practice Against Your Garden
+
+**Tailored to the job.** Give Harvey a job description as a file, a link or
+pasted text. Three difficulty levels change what he knows: a recruiter screen
+sees only your resume, a hiring manager also has the job description, and a
+panel has your whole garden.
+
+**Spoken, like the real thing.** Harvey asks each question out loud over
+Gemini Live, listens, asks up to two follow-ups and keeps time, cutting in when
+you stall or run long.
+
+**A straight report.** Every answer is scored on each rubric dimension
 separately, never as one blended number. Each comes with an ideal answer built
-only from your own garden, and when the garden has nothing to build it from,
-the report says so instead of inventing it.
+only from your own garden. When the garden has nothing to build it from, the
+report says so instead of inventing an answer, which shows you exactly what to
+add next.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- CHALLENGE FIT -->
+## How It Meets The Challenge
+
+The challenge asks for AI that changes how people access knowledge, make
+decisions and get everyday work done. AnyView does this for one person's
+professional knowledge:
+
+| Challenge direction | In AnyView |
+|---|---|
+| Document intelligence | Resumes and job descriptions (PDF, Word or a link) become typed, linked entries, each checked against a quote from the source. |
+| Knowledge accessibility | Knowledge scattered across documents and memory becomes one garden you can browse, filter and see as a graph. |
+| Intelligent search / research assistant | Discover answers questions about your career, with a citation for every claim. |
+| AI copilot | Harvey runs a tailored mock interview and Donna keeps the garden up to date as you add more. |
+| Decision-making | The coverage heatmap and the report show where your evidence is strong and where it is missing. |
+
+**Google Cloud in use:** Gemini on Vertex AI (Gemini 3.1 Pro for planning and
+scoring, Flash-Lite for fast calls, Gemini Live for the spoken interview, Gemini
+text-to-speech), Cloud Run, Cloud Tasks, Cloud SQL for PostgreSQL with
+pgvector, Cloud Storage, Identity Platform, Secret Manager and Firebase
+Hosting.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -110,7 +161,8 @@ the report says so instead of inventing it.
   with Gemini text-to-speech as the fallback. There is no separate speech API.
 
 The diagram is in [docs/architecture.drawio](docs/architecture.drawio) (open it
-in [diagrams.net](https://app.diagrams.net/)).
+in [diagrams.net](https://app.diagrams.net/)), and the reasoning behind each
+choice is in [adr/](adr/).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -141,14 +193,14 @@ in [diagrams.net](https://app.diagrams.net/)).
 Phase 0 is done: one page, resume uploaded as PDF/DOCX (or pasted), target
 company/role/seniority, five tailored questions asked one at a time, streaming
 interviewer, per-dimension scored report. Phase 1 is done too: sign-in, the
-brain and its database, the review queue, Discover, and ingestion queued on
+Digital Garden and its database, the review queue, Discover, and ingestion queued on
 Cloud Tasks. Spoken interviews on Gemini Live, with follow-ups, arrived ahead of
 schedule.
 
 - [x] Phase 0 — single-page mock interview with a scored report
-- [x] Phase 1 — auth, brain capture, review queue, event log, repository module
+- [x] Phase 1 — auth, Digital Garden capture, review queue, event log, repository module
 - [ ] Phase 2 — embeddings (`gemini-embedding-2`), hybrid retrieval, golden retrieval test set
-- [ ] Phase 3 — HR versus technical formats, deeper probing, gap loop from report back into the brain
+- [ ] Phase 3 — HR versus technical formats, deeper probing, gap loop from the report back into the garden
 - [ ] Phase 4 — session history, trends, cost dashboard
 - [ ] Phase 5 — voice for dumping, recording and playback of the user's own answers
 
@@ -162,7 +214,10 @@ See [BRIEF.md](BRIEF.md#build-order) for the detail of each phase, and the
 <!-- LICENSE -->
 ## License
 
-No license has been chosen; the repository is private.
+Copyright © 2026 AnyApps. All rights reserved. The source is public for the
+hackathon's judging only; it may not be used, copied, modified or distributed
+without permission. See [LICENSE](LICENSE), and contact
+[anyview@anyapps.cloud](mailto:anyview@anyapps.cloud) for permission.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
