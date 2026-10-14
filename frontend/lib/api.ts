@@ -31,6 +31,17 @@ export class ApiError extends Error {
   }
 }
 
+/** The Live relay's address (ADR 0030): the API's own origin, as a WebSocket. */
+export const LIVE_URL = `${BASE.replace(/^http/, "ws")}/interview/live`;
+
+/** The ID token for a caller that cannot send headers: a WebSocket sends it in
+ *  its first frame instead (ADR 0030). */
+export async function signInToken(): Promise<string> {
+  const token = await idToken();
+  if (!token) throw new ApiError("Sign in to continue.", 401);
+  return token;
+}
+
 /** Every API call carries the signed-in user's Firebase ID token (ADR 0009). */
 async function authHeaders(): Promise<Record<string, string>> {
   const token = await idToken();
