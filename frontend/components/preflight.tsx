@@ -44,7 +44,8 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
     if (!voice) return;
     // Fetch the cut-in lines now, so "let's move on" is ready the first time it
     // is needed and is never queued behind the question that follows it.
-    for (const line of ["time_up", "stalled", "move_on", "goodbye"] as const) {
+    // "hello" too: it is read by Live, slower than TTS the first time (ADR 0034).
+    for (const line of ["hello", "time_up", "stalled", "move_on", "goodbye"] as const) {
       prefetchInterjection(sessionId, line);
     }
     let live = true;

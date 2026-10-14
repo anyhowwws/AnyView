@@ -1,6 +1,6 @@
 # 0032 — On Live, the browser cuts in; Harvey bridges, and closes the interview
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by [0034](0034-harveys-fixed-lines-in-his-live-voice.md) (the clips are read by Live, in several wordings)
 - **Date:** 2026-10-14
 - **Amends:** 0031 (the cue channel and the closing line), 0016 (how silence is measured on Live)
 
