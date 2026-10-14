@@ -70,7 +70,15 @@ export function ReportView({ report, onRestart }: Props) {
 
             <div className="grid gap-4 lg:grid-cols-2">
               <Column title="Your answer">
-                <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.answer}</p>
+                <div className="space-y-3">
+                  <p className="whitespace-pre-wrap text-sm text-muted-foreground">{item.answer}</p>
+                  {item.follow_ups?.map((f, i) => (
+                    <div key={i} className="space-y-1 border-l-2 border-border pl-3">
+                      <p className="text-xs font-medium">Harvey followed up: {f.question}</p>
+                      <p className="whitespace-pre-wrap text-sm text-muted-foreground">{f.answer}</p>
+                    </div>
+                  ))}
+                </div>
               </Column>
               <Column
                 title={

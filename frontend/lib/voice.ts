@@ -168,7 +168,7 @@ function decodeBase64(b64: string): ArrayBuffer {
  *  and Practice remounts on every question, so this must not be per instance. */
 let shared: AudioContext | null = null;
 
-function audioContext(): AudioContext {
+export function audioContext(): AudioContext {
   if (!shared) {
     const Ctor =
       window.AudioContext ??

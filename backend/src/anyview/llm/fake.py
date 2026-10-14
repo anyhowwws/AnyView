@@ -1,25 +1,30 @@
 """A scripted stand-in for the real model.
 
-Same three methods as `VertexGemini`, no network, no tokens. Tests use it to
+Same four methods as `VertexGemini`, no network, no tokens. Tests use it to
 drive the engine and the API deterministically; `ANYVIEW_FAKE_MODEL=1` runs the
 whole app on it for a browser walk-through that costs nothing.
 
 Replies are keyed by the `call` name (`plan`, `ask`, `score`, `ideal`,
 `parse_job`, `transcribe`, `discover`, `segment`, `dedupe`, `link`) so a test can script
 one kind of call without caring about the others. `speak` returns silence of a
-plausible length instead of a reply.
+plausible length instead of a reply, and `live` a scripted conversation (`FakeLive`).
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import time
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
 from anyview.llm.adapter import (
+    LIVE_INPUT_RATE,
+    LIVE_OUTPUT_RATE,
     PCM_SAMPLE_RATE,
     Effort,
+    LiveEvent,
     ModelError,
     Reply,
     Usage,
@@ -41,6 +46,7 @@ class FakeModel:
         self.fail = fail
         self.calls: list[dict[str, Any]] = []  # every invocation, for assertions
         self.delay = delay  # seconds per call, so a local run shows progress (ANYVIEW_FAKE_DELAY_S)
+        self.live_sessions: list[FakeLive] = []  # every Live conversation opened, for assertions
 
     model = "fake"
 
@@ -109,9 +115,119 @@ class FakeModel:
         seconds = min(len(text) / SPOKEN_CHARS_PER_SECOND, 30)
         return wav(bytes(2 * int(PCM_SAMPLE_RATE * seconds)))
 
+    def live(
+        self, *, system: str, tools: list[dict[str, Any]], session_id: str, voice: str = "Charon"
+    ) -> AbstractAsyncContextManager[FakeLive]:
+        """A scripted Live conversation (ADR 0031): see `FakeLive`."""
+        self._record("live", session_id, system, voice)
+        session = FakeLive(
+            system,
+            session_id=session_id,
+            follow_ups=self.replies.get("live_follow_ups", 1),
+            answer=str(self.replies.get("live_answer", DEFAULTS["transcribe"])),
+        )
+        self.live_sessions.append(session)
+
+        @asynccontextmanager
+        async def opened() -> AsyncIterator[FakeLive]:
+            yield session
+
+        return opened()
+
 
 # Roughly conversational pace: ~150 words a minute at ~5.5 characters a word.
 SPOKEN_CHARS_PER_SECOND = 14
+
+# The fake "hears" an answer once this much microphone audio has arrived:
+# four seconds at 16 kHz, 16-bit. A real microphone streams silence too, so a
+# local walk-through answers itself; tests send exactly this much.
+FAKE_ANSWER_BYTES = 4 * LIVE_INPUT_RATE * 2
+FAKE_FOLLOW_UP = "What was the measurable outcome, in your own words?"
+
+
+def _between(text: str, start: str, end: str) -> str:
+    head, _, rest = text.partition(start)
+    return rest.partition(end)[0].strip() if rest else ""
+
+
+class FakeLive:
+    """Harvey on Live, scripted. It asks the question in `<question>` when it
+    gets `[begin]`, takes enough microphone audio as an answer, asks for
+    `follow_ups` follow-ups through the tool, then closes the question. Cues
+    behave as the real prompt asks: a nudge for [silent], a close for
+    [move_on] and [time_up]. Audio out is silence of a realistic length."""
+
+    def __init__(self, system: str, *, session_id: str, follow_ups: int, answer: str) -> None:
+        self.question = _between(system, "<question>", "</question>") or "Tell me about yourself."
+        self.session_id = session_id
+        self.follow_ups = follow_ups
+        self.answer = answer
+        self.sent_text: list[str] = []
+        self.tool_results: list[tuple[str, dict[str, Any]]] = []
+        self._queue: asyncio.Queue[LiveEvent | None] = asyncio.Queue()
+        self._heard = 0
+        self._asked = 0
+        self._listening = False
+        self._closed = False
+
+    async def _say(self, text: str) -> None:
+        seconds = min(len(text) / SPOKEN_CHARS_PER_SECOND, 10)
+        pcm = bytes(2 * int(LIVE_OUTPUT_RATE * seconds))
+        for start in range(0, len(pcm), 9_600):  # 200 ms chunks, as Live sends them
+            await self._queue.put(LiveEvent("audio", audio=pcm[start : start + 9_600]))
+        await self._queue.put(LiveEvent("harvey_text", text=text))
+        await self._queue.put(LiveEvent("turn_complete"))
+        _log_usage(
+            session_id=self.session_id, call="live", model="fake", usage=_FAKE_USAGE, latency_ms=1
+        )
+
+    async def _call(self, name: str, **args: Any) -> None:
+        await self._queue.put(
+            LiveEvent("tool_call", call_id=f"call-{len(self.tool_results)}", name=name, args=args)
+        )
+
+    async def send_audio(self, pcm: bytes) -> None:
+        if not self._listening:
+            return
+        self._heard += len(pcm)
+        if self._heard >= FAKE_ANSWER_BYTES:
+            self._listening = False
+            self._heard = 0
+            await self._queue.put(LiveEvent("candidate_text", text=self.answer))
+            if self._asked < self.follow_ups:
+                await self._call("ask_follow_up", question=FAKE_FOLLOW_UP, reason="no outcome")
+            else:
+                await self._say("Okay.")
+                await self._call("finish_question")
+
+    async def send_text(self, text: str) -> None:
+        self.sent_text.append(text)
+        if text.startswith("[begin]"):
+            await self._say(self.question)
+            self._listening = True
+        elif text.startswith("[silent]"):
+            await self._say("Take your time. Want me to put that another way?")
+        elif text.startswith(("[move_on]", "[time_up]")):
+            self._listening = False
+            await self._say("In the interest of time, let's move on.")
+            await self._call("finish_question")
+
+    async def send_tool_result(self, call_id: str, name: str, result: dict[str, Any]) -> None:
+        self.tool_results.append((name, result))
+        if name == "ask_follow_up":
+            self._asked += 1
+            if result.get("allowed"):
+                await self._say(FAKE_FOLLOW_UP)
+                self._listening = True
+            else:
+                await self._say("Okay.")
+                await self._call("finish_question")
+        elif name == "finish_question":
+            await self._queue.put(LiveEvent("turn_complete"))
+
+    async def events(self) -> AsyncIterator[LiveEvent]:
+        while (event := await self._queue.get()) is not None:
+            yield event
 
 
 def default_plan(count: int) -> dict[str, Any]:

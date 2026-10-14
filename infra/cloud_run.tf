@@ -60,6 +60,14 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.donna_voice
       }
       env {
+        name  = "LIVE_MODEL_ID"
+        value = var.live_model_id
+      }
+      env {
+        name  = "LIVE_REGION"
+        value = var.live_region
+      }
+      env {
         name  = "CORS_ORIGINS"
         value = join(",", var.cors_origins)
       }
@@ -85,8 +93,10 @@ resource "google_cloud_run_v2_service" "api" {
       }
     }
 
-    # Interviews stream for up to a few minutes; default 300s is fine, stated explicitly.
-    timeout = "300s"
+    # A WebSocket counts as one request for as long as it is open. A Live question
+    # (ADR 0031) runs up to its clock (≤ 300 s) plus follow-ups, and the API caps
+    # it at nine minutes, inside Live's own ten-minute connection limit.
+    timeout = "600s"
   }
 
   lifecycle {

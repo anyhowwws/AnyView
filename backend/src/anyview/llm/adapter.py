@@ -1,10 +1,11 @@
 """The one place the model SDK is imported (ADR 0004, superseded by 0007).
 
-Three operations, plain Python in and out:
+Four operations, plain Python in and out:
 
     generate(...) -> Reply      one complete response, optionally parsed JSON
     stream(...)   -> Iterator   text deltas as they arrive; usage at the end
     speak(...)    -> bytes      one sentence spoken aloud, as a WAV file (ADR 0013)
+    live(...)     -> LiveSession  a two-way spoken conversation on Gemini Live (ADR 0031)
 
 Everything else in the app talks in `str`, `dict`, and the small dataclasses
 below. No SDK object leaves this module. This is an indirection layer, not a
@@ -22,8 +23,9 @@ import json
 import logging
 import time
 import wave
-from collections.abc import Callable, Iterator
-from dataclasses import asdict, dataclass
+from collections.abc import AsyncIterator, Callable, Iterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Protocol
 
 from google import genai
@@ -94,6 +96,44 @@ class ModelError(Exception):
         self.retryable = retryable
 
 
+# --- Live (ADR 0031) ----------------------------------------------------------
+# What a Live session hands back, as plain data. `kind` says which fields mean
+# something: audio carries `audio` (24 kHz 16-bit mono PCM), the two transcript
+# kinds carry `text`, a tool call carries `call_id`, `name` and `args`.
+
+LiveKind = Literal[
+    "audio", "harvey_text", "candidate_text", "tool_call", "interrupted", "turn_complete"
+]
+
+# The microphone audio a Live session takes: raw 16-bit little-endian PCM, mono.
+LIVE_INPUT_RATE = 16_000
+LIVE_OUTPUT_RATE = 24_000
+
+
+@dataclass(frozen=True)
+class LiveEvent:
+    kind: LiveKind
+    audio: bytes = b""
+    text: str = ""
+    call_id: str = ""
+    name: str = ""
+    args: dict[str, Any] = field(default_factory=dict)
+
+
+class LiveSession(Protocol):
+    """One open Live conversation. `async` because it is a socket held open for
+    minutes: the API relays the browser's microphone in while it relays
+    Harvey's voice out, and neither may wait for the other."""
+
+    async def send_audio(self, pcm: bytes) -> None: ...
+
+    async def send_text(self, text: str) -> None: ...
+
+    async def send_tool_result(self, call_id: str, name: str, result: dict[str, Any]) -> None: ...
+
+    def events(self) -> AsyncIterator[LiveEvent]: ...
+
+
 class Model(Protocol):
     """What the engine depends on. `VertexGemini` and `FakeModel` both satisfy it.
     A Protocol is a structural interface: any class with these two methods fits,
@@ -128,6 +168,10 @@ class Model(Protocol):
         self, *, text: str, session_id: str, voice: str, style: str | None = None
     ) -> bytes: ...
 
+    def live(
+        self, *, system: str, tools: list[dict[str, Any]], session_id: str, voice: str
+    ) -> AbstractAsyncContextManager[LiveSession]: ...
+
 
 def spoken_prompt(text: str, style: str | None) -> str:
     """The prompt a TTS model speaks. A style is plain-language direction put in
@@ -160,6 +204,21 @@ def _usage_from(meta: Any) -> Usage:
     if meta is None:
         return Usage()
     answer = meta.candidates_token_count or 0
+    thoughts = meta.thoughts_token_count or 0
+    return Usage(
+        input_tokens=meta.prompt_token_count or 0,
+        output_tokens=answer + thoughts,
+        thinking_tokens=thoughts,
+        cache_read=meta.cached_content_token_count or 0,
+    )
+
+
+def _live_usage_from(meta: Any) -> Usage:
+    """Live reports usage with different field names from generate_content:
+    `response_token_count` rather than `candidates_token_count`."""
+    if meta is None:
+        return Usage()
+    answer = meta.response_token_count or 0
     thoughts = meta.thoughts_token_count or 0
     return Usage(
         input_tokens=meta.prompt_token_count or 0,
@@ -268,11 +327,19 @@ class VertexGemini:
         model: str,
         fast_model: str | None = None,
         tts_model: str | None = None,
+        live_model: str | None = None,
+        live_region: str | None = None,
     ) -> None:
         if not project_id:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for Vertex model access")
         self.model = model
         self.fast_model = fast_model or model
+        # Live models are served from regions, not from `global` (ADR 0031), so
+        # they get their own client; it is built on first use.
+        self.live_model = live_model or "gemini-live-2.5-flash-native-audio"
+        self._project_id = project_id
+        self._live_region = live_region or "us-central1"
+        self._live_client: genai.Client | None = None
         # A third model, for speech. Text models cannot synthesise audio and TTS
         # models cannot hold a conversation, so this is its own id (ADR 0013).
         self.tts_model = tts_model or "gemini-2.5-flash-preview-tts"
@@ -450,3 +517,156 @@ class VertexGemini:
             log.warning("tts returned no audio for %d characters", len(text))
             raise ModelError("Harvey's voice is unavailable right now.", retryable=True)
         return wav(blob.data, rate=_rate_from(blob.mime_type))
+
+    # --- Live (ADR 0031) -------------------------------------------------------
+
+    def live(
+        self, *, system: str, tools: list[dict[str, Any]], session_id: str, voice: str = "Charon"
+    ) -> AbstractAsyncContextManager[LiveSession]:
+        """Open a spoken conversation. Use as `async with model.live(...) as session:`.
+
+        Harvey speaks in a prebuilt voice and hears through the session's own
+        voice-activity detection. `tools` are plain JSON-schema function
+        declarations; the caller answers each call with `send_tool_result`.
+        Both sides are transcribed, so the caller gets text without a second
+        model call."""
+        if self._live_client is None:
+            self._live_client = genai.Client(
+                vertexai=True, project=self._project_id, location=self._live_region
+            )
+        config = live_config(system=system, tools=tools, voice=voice)
+        return self._live_session(config, session_id=session_id)
+
+    @asynccontextmanager
+    async def _live_session(
+        self, config: types.LiveConnectConfig, *, session_id: str
+    ) -> AsyncIterator[LiveSession]:
+        assert self._live_client is not None
+        try:
+            async with self._live_client.aio.live.connect(
+                model=self.live_model, config=config
+            ) as session:
+                yield _VertexLive(session, model=self.live_model, session_id=session_id)
+        except ModelError:
+            raise
+        except Exception as exc:
+            raise _translate(exc) from exc
+
+
+def live_config(*, system: str, tools: list[dict[str, Any]], voice: str) -> types.LiveConnectConfig:
+    """The Live session's settings (ADR 0031). A function of its own so a test
+    can build it without credentials."""
+    return types.LiveConnectConfig(
+        response_modalities=[types.Modality.AUDIO],
+        system_instruction=system,
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice)
+            )
+        ),
+        tools=[
+            types.Tool(
+                function_declarations=[
+                    types.FunctionDeclaration(
+                        name=tool["name"],
+                        description=tool["description"],
+                        parameters_json_schema=tool["parameters"],
+                    )
+                    for tool in tools
+                ]
+            )
+        ],
+        input_audio_transcription=types.AudioTranscriptionConfig(),
+        output_audio_transcription=types.AudioTranscriptionConfig(),
+        # Interview answers are full of thinking pauses. A low end-of-speech
+        # sensitivity and a long silence before "they stopped" keep Harvey
+        # from jumping in mid-thought; proactive audio lets him stay quiet
+        # when a pause does end a turn.
+        realtime_input_config=types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(
+                end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+                silence_duration_ms=1_200,
+            )
+        ),
+        proactivity=types.ProactivityConfig(proactive_audio=True),
+    )
+
+
+class _VertexLive:
+    """`LiveSession` over the SDK's async session. SDK objects stay in here."""
+
+    def __init__(self, session: Any, *, model: str, session_id: str) -> None:
+        self._session = session
+        self._model = model
+        self._session_id = session_id
+        self._started = time.monotonic()
+
+    async def send_audio(self, pcm: bytes) -> None:
+        await self._session.send_realtime_input(
+            audio=types.Blob(data=pcm, mime_type=f"audio/pcm;rate={LIVE_INPUT_RATE}")
+        )
+
+    async def send_text(self, text: str) -> None:
+        # Realtime text, not `send_client_content`: newer Live models accept
+        # client content only to seed history before the conversation starts.
+        await self._session.send_realtime_input(text=text)
+
+    async def send_tool_result(self, call_id: str, name: str, result: dict[str, Any]) -> None:
+        await self._session.send_tool_response(
+            function_responses=[types.FunctionResponse(id=call_id, name=name, response=result)]
+        )
+
+    async def events(self) -> AsyncIterator[LiveEvent]:
+        # `receive()` yields one model turn and stops at its end, so it is read
+        # in a loop. A pass that yields nothing means the server closed.
+        while True:
+            got = False
+            try:
+                async for message in self._session.receive():
+                    got = True
+                    for event in self._translate(message):
+                        yield event
+            except Exception as exc:
+                raise _translate(exc) from exc
+            if not got:
+                return
+
+    def _translate(self, message: Any) -> list[LiveEvent]:
+        out: list[LiveEvent] = []
+        if message.usage_metadata is not None:
+            # Live bills the whole session context on every turn; one usage row
+            # per report keeps that visible beside every other call.
+            _log_usage(
+                session_id=self._session_id,
+                call="live",
+                model=self._model,
+                usage=_live_usage_from(message.usage_metadata),
+                latency_ms=int((time.monotonic() - self._started) * 1000),
+            )
+        content = message.server_content
+        if content is not None:
+            for part in getattr(content.model_turn, "parts", None) or []:
+                blob = getattr(part, "inline_data", None)
+                if blob is not None and blob.data:
+                    out.append(LiveEvent("audio", audio=blob.data))
+            if content.output_transcription and content.output_transcription.text:
+                out.append(LiveEvent("harvey_text", text=content.output_transcription.text))
+            if content.input_transcription and content.input_transcription.text:
+                out.append(LiveEvent("candidate_text", text=content.input_transcription.text))
+            if content.interrupted:
+                out.append(LiveEvent("interrupted"))
+            if content.turn_complete:
+                out.append(LiveEvent("turn_complete"))
+        if message.tool_call is not None:
+            for call in message.tool_call.function_calls or []:
+                out.append(
+                    LiveEvent(
+                        "tool_call",
+                        call_id=call.id or "",
+                        name=call.name or "",
+                        args=call.args or {},
+                    )
+                )
+        if message.go_away is not None:
+            log.info("live session %s told to go away: %s", self._session_id, message.go_away)
+        return out

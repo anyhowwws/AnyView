@@ -33,6 +33,18 @@ variable "tts_model_id" {
   default     = "gemini-2.5-flash-preview-tts"
 }
 
+variable "live_model_id" {
+  description = "Vertex AI Live model that runs Harvey's spoken interview, follow-ups included (ADR 0031). Native-audio Live models are regional; confirm the id is enabled in Model Garden for the project before relying on it."
+  type        = string
+  default     = "gemini-live-2.5-flash-native-audio"
+}
+
+variable "live_region" {
+  description = "Region the Live model is served from. Live models are not served from `global` (ADR 0031)."
+  type        = string
+  default     = "us-central1"
+}
+
 variable "harvey_voice" {
   description = "Prebuilt Vertex voice for Harvey, the interviewer. Male-sounding options include Charon (informative), Alnilam, Orus (firm), Puck (upbeat) and Fenrir (excitable). Alnilam read as British in a real run; the accent comes from the voice and the delivery direction together. Check a name with a real call before using it: an unknown one is a 400."
   type        = string

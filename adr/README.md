@@ -25,7 +25,7 @@ record of having been wrong is the useful part.
 | [0002](0002-postgres-over-firestore.md) | Cloud SQL for PostgreSQL over Firestore | Accepted |
 | [0003](0003-retrieval-over-user-authored-brain.md) | Retrieval over the user-authored brain (supersedes the earlier no-RAG decision) | Accepted |
 | [0004](0004-llm-access-via-vertex-ai.md) | LLM access via Vertex AI, IAM-governed | Superseded by 0007 (model); access decision stands |
-| [0005](0005-hand-rolled-sse-streaming.md) | Hand-rolled server-sent events over a streaming SDK | Accepted, amended by 0006 |
+| [0005](0005-hand-rolled-sse-streaming.md) | Hand-rolled server-sent events over a streaming SDK | Accepted, amended by 0006 and 0031 |
 | [0006](0006-browser-to-cloud-run-direct.md) | Browser talks to Cloud Run directly, not through Firebase Hosting | Accepted |
 | [0007](0007-gemini-on-vertex.md) | Gemini on Vertex AI as the Phase 0 model | Accepted |
 | [0008](0008-custom-domain-dns-in-route53.md) | Custom domain on Firebase Hosting, DNS records managed in Route 53 | Accepted, amended by 0012 |
@@ -33,8 +33,8 @@ record of having been wrong is the useful part.
 | [0010](0010-resume-upload-via-signed-urls.md) | Resume upload: signed URLs into Cloud Storage, PDF read by the model | Accepted |
 | [0011](0011-cloud-sql-iam-auth-and-event-log.md) | Cloud SQL access: IAM authentication, one state-free password, enforced event log | Accepted, amended by 0018 |
 | [0012](0012-split-dns-into-its-own-stack.md) | Split the Route 53 DNS record into its own Terraform stack | Accepted |
-| [0013](0013-voice-mode.md) | Voice mode: Gemini TTS for Donna, Gemini transcription for answers | Accepted, extended by 0016 |
-| [0014](0014-interview-setup-situation-not-sources.md) | Interview setup describes a situation, not a set of sources | Accepted |
+| [0013](0013-voice-mode.md) | Voice mode: Gemini TTS for Donna, Gemini transcription for answers | Accepted, extended by 0016; the fallback path since 0031 |
+| [0014](0014-interview-setup-situation-not-sources.md) | Interview setup describes a situation, not a set of sources | Accepted, amended by 0031 |
 | [0015](0015-resume-re-ingestion-deltas.md) | Re-ingesting a resume: suppress what has not changed | Accepted |
 | [0016](0016-voice-first-and-the-clock.md) | Speaking by default; a per-question clock and an opener | Accepted |
 | [0017](0017-discover-whole-garden-before-retrieval.md) | Discover: ask Donna about the garden, whole garden before retrieval | Accepted |
@@ -48,6 +48,7 @@ record of having been wrong is the useful part.
 | [0025](0025-saved-jobs.md) | Target jobs are saved, outside the event log | Accepted |
 | [0026](0026-voice-turns-that-flow.md) | Voice turns that flow: audio from question one, the question verbatim, no review step | Accepted |
 | [0027](0027-job-posting-from-a-link.md) | A job posting can come from a link, fetched by the API | Accepted |
-| [0028](0028-preflight-and-fixed-lead-ins.md) | A pre-flight before question one; fixed lead-ins; one microphone per interview | Accepted |
+| [0028](0028-preflight-and-fixed-lead-ins.md) | A pre-flight before question one; fixed lead-ins; one microphone per interview | Accepted, amended by 0031 |
 | [0029](0029-harvey-interviews-donna-keeps-the-garden.md) | Harvey interviews; Donna keeps the Digital Garden | Accepted |
 | [0030](0030-donna-speaks-in-discover.md) | Donna speaks in Discover, when asked to | Accepted |
+| [0031](0031-harvey-on-gemini-live.md) | Harvey on Gemini Live: planned questions, a live conversation, follow-ups now | Accepted |

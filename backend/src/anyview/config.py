@@ -20,6 +20,9 @@ class Settings:
     tts_model_id: str = "gemini-2.5-flash-preview-tts"
     harvey_voice: str = "Charon"
     donna_voice: str = "Kore"
+    # Harvey on Gemini Live (ADR 0031). Live models are regional, not `global`.
+    live_model_id: str = "gemini-live-2.5-flash-native-audio"
+    live_region: str = "us-central1"
     cors_origins: list[str] = field(default_factory=list)
     allowed_emails: frozenset[str] = frozenset()
     upload_bucket: str = ""
@@ -54,6 +57,8 @@ class Settings:
             harvey_voice=os.environ.get("HARVEY_VOICE", "Charon"),
             # Donna speaks only in Discover's speak mode (ADR 0030).
             donna_voice=os.environ.get("DONNA_VOICE", "Kore"),
+            live_model_id=os.environ.get("LIVE_MODEL_ID", "gemini-live-2.5-flash-native-audio"),
+            live_region=os.environ.get("LIVE_REGION", "us-central1"),
             cors_origins=origins or ["http://localhost:3000"],
             allowed_emails=emails,
             upload_bucket=os.environ.get("UPLOAD_BUCKET", ""),

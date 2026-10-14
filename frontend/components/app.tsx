@@ -10,7 +10,7 @@ import { ApiError, startInterview, streamReport, submitAnswer, uploadResume } fr
 import { signOut } from "@/lib/auth";
 import { EMPTY, clear, load, save, type Saved } from "@/lib/store";
 import { releaseMicrophone } from "@/lib/voice";
-import type { Session, SetupInput } from "@/lib/types";
+import type { FollowUp, Session, SetupInput } from "@/lib/types";
 
 /** Top-level flow: setup → practice → report. Owns the session and persists it. */
 export function App() {
@@ -97,7 +97,7 @@ export function App() {
     update({ ...base, session, phase: "report", report });
   }
 
-  const onAnswer = (text: string, cutOff: boolean) =>
+  const onAnswer = (text: string, cutOff: boolean, followUps: FollowUp[] = []) =>
     run(async () => {
       if (!saved.session) return;
       const q = saved.session.questions[saved.session.current];
@@ -105,6 +105,7 @@ export function App() {
         question_id: q.id,
         text,
         cut_off: cutOff,
+        follow_ups: followUps,
       });
       if (session.state === "wrap") {
         const next: Saved = { ...saved, session, phase: "report" };

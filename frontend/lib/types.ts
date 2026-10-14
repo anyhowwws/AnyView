@@ -18,18 +18,18 @@ export type Difficulty = "recruiter_screen" | "hiring_manager" | "panel";
 export const DIFFICULTIES: { value: Difficulty; label: string; blurb: string }[] = [
   {
     value: "recruiter_screen",
-    label: "Recruiter screen",
-    blurb: "Only what your resume can answer. Everything is on the page in front of them.",
+    label: "Recruiter screen · Easy",
+    blurb: "Your resume only. They ask what the page in front of them can answer.",
   },
   {
     value: "hiring_manager",
-    label: "Hiring manager",
+    label: "Hiring manager · Medium",
     blurb: "Your resume and the job description. They will ask about what the role needs and your CV doesn't show.",
   },
   {
     value: "panel",
-    label: "Panel",
-    blurb: "They have done their homework — your Digital Garden too. Expect the questions your resume alone could not have prompted.",
+    label: "Panel · Hard",
+    blurb: "Your resume, the job description and your Digital Garden. Expect the questions your resume alone could not have prompted.",
   },
 ];
 
@@ -168,11 +168,19 @@ export interface Question {
   seconds: number;
 }
 
+/** A follow-up Harvey asked during a spoken answer, and the reply (ADR 0031). */
+export interface FollowUp {
+  question: string;
+  answer: string;
+}
+
 export interface Answer {
   question_id: number;
   text: string;
   /** The clock or Harvey ended it, not the candidate: no "thank you" next (ADR 0028). */
   cut_off?: boolean;
+  /** Asked on Gemini Live, scored with the answer as one exchange. At most two. */
+  follow_ups?: FollowUp[];
 }
 
 export interface Session {
@@ -200,6 +208,7 @@ export interface IdealAnswer {
 export interface QuestionReport {
   question: Question;
   answer: string;
+  follow_ups?: FollowUp[];
   dimensions: DimensionScore[];
   summary: string;
   gaps: string[];

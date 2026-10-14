@@ -46,6 +46,9 @@ export function reportToMarkdown(report: Report, labels: ExportLabels, date: Dat
 
     out.push("", "### Summary", "", item.summary);
     out.push("", "### Your answer", "", quote(item.answer));
+    for (const f of item.follow_ups ?? []) {
+      out.push("", `**Harvey followed up:** ${f.question}`, "", quote(f.answer));
+    }
 
     out.push("", report.garden_used ? "### Ideal answer (resume and Digital Garden)" : "### Ideal answer (resume)", "");
     if (item.ideal.has_material) {

@@ -5,19 +5,22 @@ import { AnimatePresence, motion } from "framer-motion";
 import { Keyboard, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { LiveAnswer } from "@/components/live-answer";
 import { NO_ANSWER, VoiceAnswer } from "@/components/voice-answer";
 import { ApiError, askQuestion, interjection } from "@/lib/api";
+import { liveAvailable, markLiveBroken } from "@/lib/live";
 import { loadVoicePreference, saveVoicePreference } from "@/lib/store";
 import { harveyVoice, microphoneSupported, type ListenEnd, type VoicePlayer } from "@/lib/voice";
-import type { Session } from "@/lib/types";
+import type { FollowUp, Session } from "@/lib/types";
 
 interface Props {
   session: Session;
   spoken: string | undefined; // already-streamed text for this question (after a reload)
   onSpoken: (questionId: number, text: string) => void;
   /** `cutOff`: the clock or Harvey ended the answer, so the next question
-   *  opens without thanking them for it (ADR 0028). */
-  onAnswer: (text: string, cutOff: boolean) => Promise<boolean>;
+   *  opens without thanking them for it (ADR 0028). `followUps`: asked on Live
+   *  (ADR 0031), scored with the answer. */
+  onAnswer: (text: string, cutOff: boolean, followUps?: FollowUp[]) => Promise<boolean>;
   onEnd: () => void;
   busy: boolean;
   error: string | null;
@@ -26,8 +29,9 @@ interface Props {
 /** The candidate's turn, once Harvey has finished speaking. `typing` is both the
  *  silent path and the escape hatch from any voice state. `sending` is a spoken
  *  answer on its way: it goes straight in, as it would in a real interview,
- *  and is shown only if sending it fails. */
-type Turn = "typing" | "listening" | "sending";
+ *  and is shown only if sending it fails. `live` is the whole question as one
+ *  Gemini Live conversation (ADR 0031): asking, answering and follow-ups. */
+type Turn = "typing" | "listening" | "sending" | "live";
 
 /** The Practice surface: one question centred, streaming text, a typing
  *  indicator, a thin progress rail. Speaking is the default — the question is
@@ -60,6 +64,10 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   // mounts, so a clip from the last question plays out under the next (ADR 0028).
   const harvey = useRef<VoicePlayer | null>(null);
   if (harvey.current === null && typeof window !== "undefined") harvey.current = harveyVoice();
+  // What Harvey has said on Live so far for this question, for `onSpoken`.
+  const liveText = useRef("");
+  // Which (question, attempt) the Live conversation was opened for.
+  const liveKey = useRef<string | null>(null);
 
   useEffect(() => {
     // Speaking is the default, so this normally just unlocks audio. Getting
@@ -87,6 +95,23 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     if (!voiceReady) return; // wait for the preference, so we ask only once
     const voice = harvey.current;
     const speaking = wantsVoice.current && voice !== null && voice.ready;
+
+    // Speaking, on Live: one conversation does the asking and the answering,
+    // so there is nothing to stream from /ask. Harvey re-asks a question we
+    // already have the text for, which is what an interviewer would do.
+    if (speaking && liveAvailable()) {
+      // `onSpoken` changes `spoken`, which re-runs this effect mid-conversation.
+      const key = `${question.id}:${attempt}`;
+      if (liveKey.current === key) return;
+      liveKey.current = key;
+      reask.current = false;
+      liveText.current = "";
+      setText("");
+      setStreaming(true);
+      setStreamError(null);
+      setTurn("live");
+      return () => voice?.detach();
+    }
 
     if (spoken !== undefined && !reask.current) {
       // Re-entering a question we already have the text for: nothing to stream,
@@ -193,7 +218,9 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     // Only the typed path is enforced here. When the microphone is open the
     // recorder owns the cut-off, because it has to stop the recording at the
     // same instant.
-    if (remaining !== 0 || turn === "listening" || !answering || timedOut.current) return;
+    if (remaining !== 0 || turn === "listening" || turn === "live" || !answering || timedOut.current) {
+      return;
+    }
     timedOut.current = true;
     const text = answer.trim() || NO_ANSWER;
     setAnswer(text); // so a failed send can be sent again by hand
@@ -248,6 +275,26 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
         setAttempt((n) => n + 1);
       })
       .catch(() => setVoiceNote("This browser is blocking audio playback on the page."));
+  }
+
+  /** A Live answer goes straight in, follow-ups and all. If sending fails, the
+   *  transcript lands in the typed box so it can be sent again by hand. */
+  function onLiveAnswer(live: { text: string; cut_off?: boolean; follow_ups?: FollowUp[] }) {
+    setAnswer(live.text);
+    setTurn("sending");
+    void onAnswer(live.text, !!live.cut_off, live.follow_ups).then((saved) => {
+      if (!saved) return;
+      setAnswer("");
+    });
+  }
+
+  /** Live failed for a reason of its own: carry on with the turn-based voice
+   *  path for the rest of the interview, starting with this question. */
+  function onLiveFallback(message: string) {
+    markLiveBroken();
+    setVoiceNote(`${message} Carrying on with standard voice mode.`);
+    reask.current = true;
+    setAttempt((n) => n + 1);
   }
 
   /** Every spoken answer goes straight in. If the clock or the silence ended
@@ -386,7 +433,31 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
         </p>
       )}
 
-      {voiceOn && turn === "listening" && !streaming && !streamError ? (
+      {voiceOn && turn === "live" && !streamError ? (
+        <LiveAnswer
+          session={session}
+          seconds={timed ? question.seconds : null}
+          onHarvey={(fragment) => {
+            liveText.current += fragment;
+            setText(liveText.current.trim());
+          }}
+          onAsked={() => {
+            setStreaming(false);
+            onSpoken(question.id, liveText.current.trim());
+          }}
+          onAnswer={onLiveAnswer}
+          onFallback={onLiveFallback}
+          onError={(message) => {
+            setVoiceNote(message);
+            setStreaming(false);
+            setTurn("typing");
+          }}
+          onTypeInstead={() => {
+            setStreaming(false);
+            setTurn("typing");
+          }}
+        />
+      ) : voiceOn && turn === "listening" && !streaming && !streamError ? (
         <VoiceAnswer
           sessionId={session.session_id}
           seconds={timed ? question.seconds : null}
