@@ -1,8 +1,8 @@
 // The browser's clock for a question on Gemini Live (ADR 0016, 0031, 0032).
 //
-// Live hears the candidate and decides when an answer is finished, but it will
-// not speak while they are talking, so it cannot cut in when time is up, and
-// it cannot tell "err…" from an answer. So the browser owns time and silence
+// Live hears the candidate and decides when an answer is finished, but barge-in
+// runs one way: their speech interrupts Harvey, never the reverse, so he cannot
+// cut in when time is up. And it cannot tell "err…" from an answer. So the browser owns time and silence
 // outright: it plays Harvey's fixed lines (the `/interview/say` clips) and ends
 // the question itself. When that happens is decided here, by rules kept pure so
 // they can be tested without a microphone.

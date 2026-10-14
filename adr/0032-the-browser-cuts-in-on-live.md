@@ -8,8 +8,11 @@
 
 The first real run on Live (ADR 0031) worked, follow-ups and all, and showed six problems:
 
-1. **Time-up did not cut in.** The browser sent `[time_up]` as text, but Live will not speak
-   while the candidate is talking. Harvey waited for them to stop, so the clock meant nothing.
+1. **Time-up did not cut in.** The browser sent `[time_up]` as text, but with automatic voice
+   activity detection Live answers only once it decides the candidate's turn is over, and their
+   continuing speech counts as barge-in on anything it starts to say. Barge-in runs one way: the
+   candidate can interrupt Harvey, not the reverse. Harvey waited for them to stop, so the clock
+   meant nothing.
 2. **No nudge on a long pause or an "err…".** The dead-air clock counted any microphone level
    ≥ 0.02 as speech, so a filler, a breath or the room kept resetting it.
 3. **The question was split on screen.** It was built from Live's output transcript, which
@@ -50,6 +53,14 @@ rather than 600. After a cut, the next question opens straight away: the clip al
 **The last question closes the interview.** The prompt tells Harvey to say that's all his
 questions and thank them for their time. When the browser ends it instead (time-up, move-on,
 "Finish"), or on the turn-based fallback path, the fixed `goodbye` clip plays, once.
+
+## Alternatives
+
+**Manual turn-taking.** Live can run with automatic activity detection off, the client marking
+when the candidate's turn starts and ends. At time-up the browser would end the turn and Harvey
+would cut in in his own Live voice, with no barge-in to stop him. Not taken yet: the browser
+would then have to judge the end of *every* answer, which Live's own detection does well today,
+and the behaviour on Vertex is untested. Worth an experiment against the real model.
 
 ## Consequences
 

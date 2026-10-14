@@ -218,7 +218,7 @@ retrieval test set.
   (`LIVE_MODEL_ID`, default `gemini-live-2.5-flash-native-audio`) must be enabled in Model Garden,
   with proactive audio, before the first real run. If it fails, the socket sends `fallback: true`
   and the browser uses the turn-based path for the rest of the page. The browser owns the clock and
-  the cut-ins (`lib/live-cues.ts`, ADR 0032): Live won't speak over the candidate, so the browser plays
+  the cut-ins (`lib/live-cues.ts`, ADR 0032): barge-in only runs one way (the candidate's speech interrupts Harvey, never the reverse), so the browser plays
   the fixed `time_up`/`stalled`/`move_on`/`goodbye` clips and sends `end` with a reason. Silence is
   measured from the last non-filler transcript word, not the mic level. No text cues go to Live. One socket per question; a WebSocket
   is one request to Cloud Run for as long as it is open, so the service timeout is 600 s.

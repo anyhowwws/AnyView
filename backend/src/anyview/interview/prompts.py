@@ -328,9 +328,10 @@ INTERJECTIONS: dict[str, str] = {
 # One Live session per question. The plan decides what is asked; Live decides
 # how the conversation around it goes: when an answer is finished and whether
 # to follow up. Everything the app must control goes through a tool the API can
-# refuse. Time and silence are the browser's (ADR 0032): Live will not speak
-# while the candidate is talking, so it cannot cut in, and it cannot tell "err…"
-# from an answer, so the browser plays Harvey's fixed lines and ends the
+# refuse. Time and silence are the browser's (ADR 0032): with automatic voice
+# detection Live replies only when the candidate's turn ends, and their speech
+# barges in on anything it says, so it cannot cut in; and it cannot tell "err…"
+# from an answer. So the browser plays Harvey's fixed lines and ends the
 # question itself. The system text below is re-billed on every turn of the
 # session, so it carries the materials once and the earlier answers only as
 # excerpts.

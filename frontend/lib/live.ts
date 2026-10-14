@@ -295,8 +295,8 @@ export class LiveQuestion {
       this.handlers.onInterject("stalled");
       return;
     }
-    // Time is up, or the silence said "move on". Live will not talk over the
-    // candidate, so the browser cuts in itself: Harvey's line, then the end.
+    // Time is up, or the silence said "move on". Live cannot cut in (the
+    // candidate's speech barges in on him), so the browser does: his line, then the end.
     this.end(out.action);
     this.handlers.onInterject(out.action);
   }
