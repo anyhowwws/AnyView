@@ -280,7 +280,7 @@ const clips = new Map<string, string>();
 
 export async function interjection(
   sessionId: string,
-  line: "time_up" | "stalled" | "hello",
+  line: "time_up" | "stalled" | "move_on" | "goodbye" | "hello",
 ): Promise<string | null> {
   const cached = clips.get(line);
   if (cached !== undefined) return cached;

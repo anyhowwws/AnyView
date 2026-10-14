@@ -477,7 +477,7 @@ class SayRequest(BaseModel):
     session_id: SessionId
     # A key, never free text: this route must not become a way to have the TTS
     # model read out anything a caller likes.
-    line: Literal["time_up", "stalled", "hello"]
+    line: Literal["time_up", "stalled", "move_on", "goodbye", "hello"]
 
 
 class Spoken(BaseModel):
@@ -489,7 +489,7 @@ def say(body: SayRequest, model: ModelDep, settings: SettingsDep) -> Spoken:
     """One of Harvey's fixed interjections, spoken (ADR 0016).
 
     The browser fetches each line once and reuses the clip for the whole
-    interview, so a five-question run synthesises two short clips at most."""
+    interview, so a five-question run synthesises each short clip once at most."""
     audio = model.speak(
         text=INTERJECTIONS[body.line],
         session_id=body.session_id,

@@ -1,12 +1,19 @@
-// The browser's clock for a question on Gemini Live (ADR 0016, 0031).
+// The browser's clock for a question on Gemini Live (ADR 0016, 0031, 0032).
 //
-// Live hears the candidate and decides when an answer is finished, but it does
-// not notice silence on its own: it only reacts once someone has spoken. So the
-// browser still owns time, as it always has, and tells Harvey when to step in.
-// What Harvey *says* is up to him; when he says it is decided here, by rules
-// kept pure so they can be tested without a microphone.
+// Live hears the candidate and decides when an answer is finished, but it will
+// not speak while they are talking, so it cannot cut in when time is up, and
+// it cannot tell "err…" from an answer. So the browser owns time and silence
+// outright: it plays Harvey's fixed lines (the `/interview/say` clips) and ends
+// the question itself. When that happens is decided here, by rules kept pure so
+// they can be tested without a microphone.
+//
+// "Silence" is measured from the candidate's last real word, not from the mic
+// level: a level counts fillers, breathing and the room as talking, and the
+// nudge never came. This relies on Live transcribing while they speak, which it
+// does in fragments every second or so.
 
-export type LiveCue = "silent" | "move_on" | "time_up";
+/** What the browser does now. `stalled` is a nudge; the other two end the question. */
+export type LiveAction = "stalled" | "move_on" | "time_up";
 
 /** Dead air an interviewer would notice. Untimed interviews wait longer. */
 export const LIVE_DEAD_AIR_MS = 10_000;
@@ -15,21 +22,29 @@ export const LIVE_UNTIMED_DEAD_AIR_MS = 30_000;
 export const LIVE_GIVE_UP_MS = 15_000;
 /** Nudges per question; past this, the next long silence moves on. */
 export const MAX_NUDGES = 2;
-/** After a cue that closes the question, how long to wait for Harvey to close it
- *  before the browser closes it itself. */
-export const CLOSE_GRACE_MS = 15_000;
+
+/** Sounds that are not words. Repeated letters ("ummm", "errr") count too. */
+const FILLER = /^(u+m+|u+h+m*|e+r+m*|e+h+|h+m+|m+|a+h+|o+h+)$/;
+
+/** Whether a transcript fragment has a real word in it, not just "um" or "err…". */
+export function substantive(text: string): boolean {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}']+/u)
+    .some((word) => word !== "" && !FILLER.test(word));
+}
 
 export interface CueState {
   /** When Harvey finished asking the question: the clock starts here. Null until then. */
   askedAt: number | null;
-  /** The last moment anyone was audible: the candidate talking or Harvey playing. */
+  /** The last moment that counts as not-silence: a real word from the candidate,
+   *  or Harvey speaking. */
   lastSoundAt: number;
   nudges: number;
-  /** When the last nudge was sent. Cleared when the candidate speaks again. */
+  /** When the last nudge was played. Cleared when the candidate speaks again. */
   nudgedAt: number | null;
-  /** A cue that closes the question has gone. Nothing more is sent after it. */
-  closing: boolean;
-  closingAt: number | null;
+  /** The question has been ended. Nothing more happens after it. */
+  ended: boolean;
 }
 
 export const FRESH: CueState = {
@@ -37,8 +52,7 @@ export const FRESH: CueState = {
   lastSoundAt: 0,
   nudges: 0,
   nudgedAt: null,
-  closing: false,
-  closingAt: null,
+  ended: false,
 };
 
 export interface CueLimits {
@@ -46,48 +60,39 @@ export interface CueLimits {
   budgetMs: number | null;
 }
 
-/** Fold one tick into the state. Returns the cue to send now, if any, and
- *  `end` when the browser should close the question itself because Harvey has
- *  not, long after being told to. */
+/** Fold one tick into the state. `spoke`: a substantive transcript fragment
+ *  arrived since the last tick. `harvey`: Harvey is audible. Returns what the
+ *  browser should do now, if anything. */
 export function nextCue(
   state: CueState,
-  { now, candidate, harvey }: { now: number; candidate: boolean; harvey: boolean },
+  { now, spoke, harvey }: { now: number; spoke: boolean; harvey: boolean },
   limits: CueLimits,
-): { state: CueState; cue: LiveCue | null; end: boolean } {
-  let next = candidate || harvey ? { ...state, lastSoundAt: now } : state;
+): { state: CueState; action: LiveAction | null } {
+  if (state.ended) return { state, action: null };
+  let next = spoke || harvey ? { ...state, lastSoundAt: now } : state;
   // They answered the nudge: the next long silence is a fresh one.
-  if (candidate && next.nudgedAt !== null) next = { ...next, nudgedAt: null };
+  if (spoke && next.nudgedAt !== null) next = { ...next, nudgedAt: null };
+  if (next.askedAt === null) return { state: next, action: null };
 
-  if (next.closing) {
-    const overdue = next.closingAt !== null && now - next.closingAt >= CLOSE_GRACE_MS;
-    return { state: next, cue: null, end: overdue };
+  const end = (action: LiveAction) => ({ state: { ...next, ended: true }, action });
+
+  // The clock beats everything: a timed question ends when it ends, even
+  // mid-sentence.
+  if (limits.budgetMs !== null && now - next.askedAt >= limits.budgetMs) return end("time_up");
+
+  if (next.nudgedAt !== null) {
+    // Nudged, and the candidate has not said a word since. The nudge counts as
+    // sound, so the silence is measured from when it stopped playing.
+    if (now - Math.max(next.lastSoundAt, next.nudgedAt) >= LIVE_GIVE_UP_MS) return end("move_on");
+    return { state: next, action: null };
   }
-  if (next.askedAt === null) return { state: next, cue: null, end: false };
-
-  const close = (cue: LiveCue) => ({
-    state: { ...next, closing: true, closingAt: now },
-    cue,
-    end: false,
-  });
-
-  // The clock beats everything: a timed question ends when it ends.
-  if (limits.budgetMs !== null && now - next.askedAt >= limits.budgetMs) return close("time_up");
 
   const quietFor = now - Math.max(next.lastSoundAt, next.askedAt);
   const deadAir = limits.budgetMs === null ? LIVE_UNTIMED_DEAD_AIR_MS : LIVE_DEAD_AIR_MS;
-
-  if (next.nudgedAt !== null) {
-    // Nudged, and the candidate has not spoken since. Harvey's nudge counts as
-    // sound, so the silence is measured from when he stopped, or from the cue
-    // if he has not started yet.
-    if (now - Math.max(next.lastSoundAt, next.nudgedAt) >= LIVE_GIVE_UP_MS) return close("move_on");
-    return { state: next, cue: null, end: false };
-  }
-
   if (quietFor >= deadAir) {
-    if (next.nudges >= MAX_NUDGES) return close("move_on");
+    if (next.nudges >= MAX_NUDGES) return end("move_on");
     next = { ...next, nudges: next.nudges + 1, nudgedAt: now };
-    return { state: next, cue: "silent", end: false };
+    return { state: next, action: "stalled" };
   }
-  return { state: next, cue: null, end: false };
+  return { state: next, action: null };
 }
