@@ -9,6 +9,7 @@ from anyview.brain.discover import (
     answer,
     cited,
     for_speech,
+    group_labels,
     system_prompt,
     user_prompt,
 )
@@ -94,3 +95,33 @@ def test_speak_mode_adds_clips_in_donnas_voice_without_the_labels():
     for c in spoken:
         assert c["user"].startswith(DONNA_DELIVERY)
         assert "[" not in c["user"]
+
+
+# --- ranges: the model sometimes cites a run of certificates as one bracket ----
+
+SCREENSHOT = (
+    "It also notes a 4/5 self-rating for Amazon Web Services [K44] alongside multiple "
+    "AWS certifications [A1–A11, A13]."
+)
+
+
+def test_a_range_is_cited_label_by_label():
+    labels = {f"A{n}": f"a-{n}" for n in range(1, 14)} | {"K44": "k-44"}
+    assert [c["label"] for c in cited(SCREENSHOT, labels)] == (
+        ["K44"] + [f"A{n}" for n in range(1, 12)] + ["A13"]
+    )
+
+
+def test_a_range_is_never_read_aloud():
+    assert for_speech(SCREENSHOT) == (
+        "It also notes a 4/5 self-rating for Amazon Web Services alongside multiple "
+        "AWS certifications."
+    )
+
+
+def test_group_labels_spells_out_ranges_and_refuses_nonsense():
+    assert group_labels("A1-3, P2") == ["A1", "A2", "A3", "P2"]
+    assert group_labels("A1 — A2") == ["A1", "A2"]
+    assert group_labels("A5–A2") == ["A5"]  # backwards
+    assert group_labels("A1–P3") == ["A1"]  # across kinds
+    assert group_labels("A1–A500") == ["A1"]  # not a citation anyone means

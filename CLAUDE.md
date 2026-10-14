@@ -128,6 +128,8 @@ Backend modules:
   garden over `POST /brain/discover` (SSE: tokens, then one `citations` frame). Whole garden in the
   system prompt, no retrieval yet; `discover_context()` is the seam Phase 2 retrieval replaces.
   Read-only, stateless, fast model. Cited labels are checked against the user's label map.
+  The model sometimes cites a range (`[A1–A11, A13]`) despite the prompt; `group_labels` (and
+  `groupLabels` in `lib/discover-text.ts`, same grammar) spell ranges out, so they become chips and are never spoken.
   Speak mode (ADR 0030): `voice: true` wraps the stream in `interview/voice.py:voiced()` with Donna's voice;
   `for_speech` strips labels and Markdown from what is synthesised (never from what is shown).
   `POST /brain/discover/transcribe` turns a spoken question into text via `api/uploads.py:transcribe_recording`,

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { blocks, inline, suggestions } from "../lib/discover-text.ts";
+import { blocks, groupLabels, inline, suggestions } from "../lib/discover-text.ts";
 import type { Brain } from "../lib/types.ts";
 
 const known = new Set(["P1", "S1"]);
@@ -15,6 +15,29 @@ test("resolved labels become citations; invented ones stay text", () => {
 
 test("a comma list of labels becomes one citation each", () => {
   assert.deepEqual(inline("[P1, S1]", known), [{ t: "cite", label: "P1" }, { t: "cite", label: "S1" }]);
+});
+
+test("a range of labels becomes one citation per label", () => {
+  const certs = new Set(["A1", "A2", "A3", "A5"]);
+  assert.deepEqual(inline("certifications [A1–A3, A5].", certs), [
+    { t: "text", text: "certifications " },
+    { t: "cite", label: "A1" },
+    { t: "cite", label: "A2" },
+    { t: "cite", label: "A3" },
+    { t: "cite", label: "A5" },
+    { t: "text", text: "." },
+  ]);
+});
+
+test("ranges: hyphens, a bare end number, and nonsense kept to the first label", () => {
+  assert.deepEqual(groupLabels("A1-3"), ["A1", "A2", "A3"]);
+  assert.deepEqual(groupLabels("A1 — A2, P4"), ["A1", "A2", "P4"]);
+  assert.deepEqual(groupLabels("A5–A2"), ["A5"]);
+  assert.deepEqual(groupLabels("A1–P3"), ["A1"]);
+});
+
+test("invented labels in a bracket with real ones are dropped", () => {
+  assert.deepEqual(inline("[P1, P9]", known), [{ t: "cite", label: "P1" }]);
 });
 
 test("bold, paragraphs and both list kinds", () => {

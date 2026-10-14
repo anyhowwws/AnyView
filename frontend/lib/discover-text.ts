@@ -17,18 +17,49 @@ export type Block =
 const BULLET = /^\s*[-*•]\s+/;
 const NUMBERED = /^\s*\d+[.)]\s+/;
 
+// One cited item: a label ("P3") or a range of one kind ("A1–A11", "A1-11").
+// The prompt asks for one label per bracket, but the model writes ranges for a
+// long run of certificates. Same grammar as the server's `discover.cited`.
+const ITEM = String.raw`[A-Z]\d+(?:\s*[-–—]\s*[A-Z]?\d+)?`;
+const RANGE = /^([A-Z])(\d+)\s*[-–—]\s*([A-Z]?)(\d+)$/;
+const MAX_RANGE = 100;
+
+/** The labels inside one bracket, ranges spelled out: "A1–A3, A7" gives
+ *  A1, A2, A3, A7. A range across kinds or backwards keeps its first label. */
+export function groupLabels(group: string): string[] {
+  const out: string[] = [];
+  for (const part of group.split(",").map((p) => p.trim())) {
+    const m = RANGE.exec(part);
+    if (!m) {
+      out.push(part);
+      continue;
+    }
+    const [, prefix, from, endPrefix, to] = m;
+    const start = Number(from);
+    const end = Number(to);
+    if ((endPrefix === "" || endPrefix === prefix) && start <= end && end - start < MAX_RANGE) {
+      for (let n = start; n <= end; n++) out.push(`${prefix}${n}`);
+    } else {
+      out.push(`${prefix}${start}`);
+    }
+  }
+  return out;
+}
+
 /** Split one line into text, **bold** and citation pieces. A label becomes a
- *  citation only if the server resolved it (`known`); an invented [P9] stays
- *  as the text the model wrote. */
+ *  citation only if the server resolved it (`known`); a bracket with no real
+ *  label in it ([P9]) stays as the text the model wrote. In a bracket with
+ *  some real labels, the invented ones are dropped, as the server drops them
+ *  from the sources. */
 export function inline(line: string, known: Set<string>): Inline[] {
   const out: Inline[] = [];
-  const pattern = /\*\*(.+?)\*\*|\[([A-Z]\d+(?:\s*,\s*[A-Z]\d+)*)\]/g;
+  const pattern = new RegExp(String.raw`\*\*(.+?)\*\*|\[(${ITEM}(?:\s*,\s*${ITEM})*)\]`, "g");
   let last = 0;
   for (const m of line.matchAll(pattern)) {
     const at = m.index ?? 0;
     if (m[2] !== undefined) {
-      const labels = m[2].split(",").map((l) => l.trim());
-      if (!labels.every((l) => known.has(l))) continue; // leave it in the text run
+      const labels = groupLabels(m[2]).filter((l) => known.has(l));
+      if (labels.length === 0) continue; // leave it in the text run
       if (at > last) out.push({ t: "text", text: line.slice(last, at) });
       for (const label of labels) out.push({ t: "cite", label });
     } else {
