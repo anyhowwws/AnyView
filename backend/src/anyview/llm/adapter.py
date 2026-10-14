@@ -169,7 +169,13 @@ class Model(Protocol):
     ) -> bytes: ...
 
     def live(
-        self, *, system: str, tools: list[dict[str, Any]], session_id: str, voice: str
+        self,
+        *,
+        system: str,
+        tools: list[dict[str, Any]],
+        session_id: str,
+        voice: str,
+        proactive_audio: bool = True,
     ) -> AbstractAsyncContextManager[LiveSession]: ...
 
 
@@ -521,7 +527,13 @@ class VertexGemini:
     # --- Live (ADR 0031) -------------------------------------------------------
 
     def live(
-        self, *, system: str, tools: list[dict[str, Any]], session_id: str, voice: str = "Charon"
+        self,
+        *,
+        system: str,
+        tools: list[dict[str, Any]],
+        session_id: str,
+        voice: str = "Charon",
+        proactive_audio: bool = True,
     ) -> AbstractAsyncContextManager[LiveSession]:
         """Open a spoken conversation. Use as `async with model.live(...) as session:`.
 
@@ -529,12 +541,15 @@ class VertexGemini:
         voice-activity detection. `tools` are plain JSON-schema function
         declarations; the caller answers each call with `send_tool_result`.
         Both sides are transcribed, so the caller gets text without a second
-        model call."""
+        model call. `proactive_audio` off makes Live answer every input, which
+        a session that only reads lines aloud needs (`interview/fixed_lines.py`)."""
         if self._live_client is None:
             self._live_client = genai.Client(
                 vertexai=True, project=self._project_id, location=self._live_region
             )
-        config = live_config(system=system, tools=tools, voice=voice)
+        config = live_config(
+            system=system, tools=tools, voice=voice, proactive_audio=proactive_audio
+        )
         return self._live_session(config, session_id=session_id)
 
     @asynccontextmanager
@@ -553,7 +568,9 @@ class VertexGemini:
             raise _translate(exc) from exc
 
 
-def live_config(*, system: str, tools: list[dict[str, Any]], voice: str) -> types.LiveConnectConfig:
+def live_config(
+    *, system: str, tools: list[dict[str, Any]], voice: str, proactive_audio: bool = True
+) -> types.LiveConnectConfig:
     """The Live session's settings (ADR 0031). A function of its own so a test
     can build it without credentials."""
     return types.LiveConnectConfig(
@@ -575,7 +592,9 @@ def live_config(*, system: str, tools: list[dict[str, Any]], voice: str) -> type
                     for tool in tools
                 ]
             )
-        ],
+        ]
+        if tools
+        else None,
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
         # Interview answers are full of thinking pauses. A low end-of-speech
@@ -588,7 +607,7 @@ def live_config(*, system: str, tools: list[dict[str, Any]], voice: str) -> type
                 silence_duration_ms=1_200,
             )
         ),
-        proactivity=types.ProactivityConfig(proactive_audio=True),
+        proactivity=types.ProactivityConfig(proactive_audio=True) if proactive_audio else None,
     )
 
 

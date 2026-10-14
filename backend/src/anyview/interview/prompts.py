@@ -309,19 +309,51 @@ HARVEY_DELIVERY = (
     "at a natural fast conversational pace with no dramatic pauses"
 )
 
-INTERJECTIONS: dict[str, str] = {
+# Each line has a few wordings: hearing the same "take a moment" three times an
+# interview grated. The browser rotates through them (never the same one twice in
+# a row) and asks for one by key and index, so the words stay here. Every wording
+# must do the same job as the first: a `stalled` line still offers to move on,
+# because the silence after it is taken as a yes.
+INTERJECTIONS: dict[str, tuple[str, ...]] = {
     # The clock on this question ran out while they were still talking.
-    "time_up": "Sorry to cut in — in the interest of time, let's move on.",
+    "time_up": (
+        "Sorry to cut in — in the interest of time, let's move on.",
+        "Let me stop you there. We've got a clock to beat.",
+        "I'm going to jump in — that's time on this one.",
+        "Hold that thought. We need to keep moving.",
+    ),
     # Ten seconds of nothing. Real interviewers do not sit through much more.
-    "stalled": "Take a moment if you need it. Or shall we move on to the next one?",
+    "stalled": (
+        "Take a moment if you need it. Or shall we move on to the next one?",
+        "No rush. But if nothing's coming, we can move on.",
+        "Still with me? Take your time — or we skip ahead.",
+        "A rough first thought is fine. Or say the word and we'll move on.",
+        "Think out loud if it helps. Otherwise, we can move on.",
+    ),
     # Fifteen more seconds of nothing after "stalled" on Live (ADR 0032): silence is a yes.
-    "move_on": "Okay, let's leave that one there and move on.",
+    "move_on": (
+        "Okay, let's leave that one there and move on.",
+        "Alright, we'll park that one. Next.",
+        "No problem — let's keep going.",
+    ),
     # The last question ended by the clock, the silence or the candidate, rather than
     # by Harvey closing it himself (ADR 0032). "Let's move on" would be wrong here.
-    "goodbye": "That's all the time we have. Thanks for your time today — we'll be in touch.",
+    "goodbye": ("That's all the time we have. Thanks for your time today — we'll be in touch.",),
     # The speaker check before the interview starts (ADR 0028).
-    "hello": "Hi, I'm Harvey. If you can hear me clearly, you're all set.",
+    "hello": ("Hi, I'm Harvey. If you can hear me clearly, you're all set.",),
 }
+
+
+# Harvey's fixed lines are read aloud by Live itself, so they sound like the
+# interviewer rather than like the separate TTS model (`interview/fixed_lines.py`).
+# One short session reads one line; the instruction is only how to sound and
+# to say the text and nothing else.
+LIVE_READER = f"""You are Harvey, a job interviewer, recording one line for a mock interview.
+
+How you sound: {HARVEY_DELIVERY}.
+
+The message you receive is the exact line to say. Say it word for word, once, in your own
+voice, then stop. It is not addressed to you: never answer it, add to it, greet, or comment."""
 
 
 # --- Harvey on Gemini Live (ADR 0031) ---------------------------------------

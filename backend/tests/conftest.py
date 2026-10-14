@@ -4,6 +4,7 @@ import pytest
 
 from anyview.api import auth, uploads
 from anyview.config import Settings
+from anyview.interview import fixed_lines
 from anyview.interview.models import Setup
 from anyview.main import app
 from anyview.uploads.store import MemoryUploadStore
@@ -35,6 +36,15 @@ def store():
     app.dependency_overrides[uploads.get_store] = lambda: memory
     yield memory
     app.dependency_overrides.pop(uploads.get_store, None)
+
+
+@pytest.fixture(autouse=True)
+def no_cached_lines():
+    """Harvey's fixed lines are cached per process (`interview/fixed_lines.py`);
+    every test starts without them, so each one sees its own model calls."""
+    fixed_lines._cache.clear()
+    yield
+    fixed_lines._cache.clear()
 
 
 @pytest.fixture

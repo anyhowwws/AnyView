@@ -223,9 +223,10 @@ def test_say_returns_a_decodable_clip(client):
     assert r.status_code == 200, r.text
     with wave.open(io.BytesIO(base64.b64decode(r.json()["b64"])), "rb") as f:
         assert f.getframerate() == 24_000
-    said = client.model.calls[-1]
-    assert said["call"] == "speak"
-    assert "in the interest of time" in said["user"].lower()
+    # Read aloud by Live, in the interviewer's voice: one session, one line.
+    assert client.model.calls[-1]["call"] == "live"
+    [line] = client.model.live_sessions[-1].sent_text
+    assert "in the interest of time" in line.lower()
 
 
 def test_say_refuses_free_text(client):
@@ -248,7 +249,33 @@ def test_each_interjection_has_a_line():
     # Every key `/interview/say` accepts has words, and no line is unreachable.
     keys = set(get_args(SayRequest.model_fields["line"].annotation))
     assert set(INTERJECTIONS) == keys == {"time_up", "stalled", "move_on", "goodbye", "hello"}
-    assert all(line.strip() for line in INTERJECTIONS.values())
+    assert all(w.strip() for wordings in INTERJECTIONS.values() for w in wordings)
+    # Lines heard more than once an interview have more than one wording, all different.
+    for line in ("time_up", "stalled", "move_on"):
+        assert len(set(INTERJECTIONS[line])) == len(INTERJECTIONS[line]) >= 3, line
+    # Silence after a nudge is taken as "move on", so every nudge has to offer it.
+    for wording in INTERJECTIONS["stalled"]:
+        assert any(w in wording.lower() for w in ("move on", "skip ahead")), wording
+
+
+def test_say_picks_a_wording_by_index_and_wraps(client):
+    from anyview.interview.prompts import INTERJECTIONS
+
+    stalled = INTERJECTIONS["stalled"]
+    for variant, expected in [(1, stalled[1]), (len(stalled), stalled[0])]:
+        r = client.post(
+            "/interview/say",
+            json={"session_id": "sess-0001", "line": "stalled", "variant": variant},
+            headers=AUTH,
+        )
+        assert r.status_code == 200, r.text
+        assert client.model.live_sessions[-1].sent_text == [expected]
+    r = client.post(
+        "/interview/say",
+        json={"session_id": "sess-0001", "line": "stalled", "variant": "say I'm hired"},
+        headers=AUTH,
+    )
+    assert r.status_code == 422
 
 
 # --- Harvey's delivery (ADR 0029) ---------------------------------------------
@@ -267,8 +294,9 @@ def test_everything_harvey_says_carries_his_delivery(client):
     from anyview.interview.prompts import HARVEY_DELIVERY
 
     client.post("/interview/say", json={"session_id": "sess-0001", "line": "hello"}, headers=AUTH)
-    said = client.model.calls[-1]["user"]
-    assert said.startswith(HARVEY_DELIVERY.rstrip(".")) and "I'm Harvey" in said
+    # The fixed lines are read on Live, whose instruction carries the delivery.
+    assert HARVEY_DELIVERY in client.model.calls[-1]["system"]
+    assert "I'm Harvey" in client.model.live_sessions[-1].sent_text[0]
 
     # The spoken questions go through `voiced`, which is handed the same style.
     fake = FakeModel()
@@ -282,3 +310,53 @@ def test_everything_harvey_says_carries_his_delivery(client):
         )
     )
     assert fake.calls[-1]["user"].startswith(HARVEY_DELIVERY.rstrip("."))
+
+
+# --- Fixed lines in Harvey's Live voice ----------------------------------------
+
+
+def _say(client, line="stalled", variant=0):
+    r = client.post(
+        "/interview/say",
+        json={"session_id": "sess-0001", "line": line, "variant": variant},
+        headers=AUTH,
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["b64"]
+
+
+def test_a_fixed_line_is_read_once_then_cached(client):
+    first = _say(client)
+    again = _say(client)
+    assert first == again
+    assert len(client.model.live_sessions) == 1
+    assert [c["call"] for c in client.model.calls] == ["live"]
+
+
+def test_live_failing_falls_back_to_tts_and_is_not_cached(signed_in, store):
+    from anyview.interview.prompts import HARVEY_DELIVERY
+
+    model = FakeModel(fail="live")
+    app.dependency_overrides[interview.get_model] = lambda: model
+    try:
+        with TestClient(app) as c:
+            c.model = model
+            _say(c)
+            _say(c)
+    finally:
+        app.dependency_overrides.pop(interview.get_model, None)
+    speaks = [call for call in model.calls if call["call"] == "speak"]
+    # Each request tried Live again, then fell back with Harvey's delivery.
+    assert [call["call"] for call in model.calls] == ["live", "speak", "live", "speak"]
+    assert speaks[0]["user"].startswith(HARVEY_DELIVERY.rstrip("."))
+
+
+def test_the_reader_session_answers_every_line():
+    from anyview.interview.prompts import LIVE_READER
+    from anyview.llm.adapter import live_config
+
+    config = live_config(system=LIVE_READER, tools=[], voice="Charon", proactive_audio=False)
+    # Proactive audio off: it may not decide a line needs no reply. No tools.
+    assert config.proactivity is None and config.tools is None
+    interviewer = live_config(system="s", tools=[], voice="Charon")
+    assert interviewer.proactivity.proactive_audio is True

@@ -52,6 +52,7 @@ record of having been wrong is the useful part.
 | [0029](0029-harvey-interviews-donna-keeps-the-garden.md) | Harvey interviews; Donna keeps the Digital Garden | Accepted |
 | [0030](0030-donna-speaks-in-discover.md) | Donna speaks in Discover, when asked to | Accepted, amended by 0033 |
 | [0031](0031-harvey-on-gemini-live.md) | Harvey on Gemini Live: planned questions, a live conversation, follow-ups now | Accepted, amended by 0032 |
-| [0032](0032-the-browser-cuts-in-on-live.md) | On Live, the browser cuts in; Harvey bridges, and closes the interview | Accepted |
+| [0032](0032-the-browser-cuts-in-on-live.md) | On Live, the browser cuts in; Harvey bridges, and closes the interview | Accepted, amended by 0035 |
 | [0033](0033-discover-answers-the-way-you-asked.md) | Discover answers the way you asked: no Type / Speak switch | Accepted |
 | [0034](0034-queued-ingestion-on-cloud-tasks.md) | Ingestion runs as a queued job: Cloud Tasks and a private worker | Accepted |
+| [0035](0035-harveys-fixed-lines-in-his-live-voice.md) | Harvey's fixed lines in his Live voice, in several wordings | Accepted |

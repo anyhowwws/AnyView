@@ -116,7 +116,13 @@ class FakeModel:
         return wav(bytes(2 * int(PCM_SAMPLE_RATE * seconds)))
 
     def live(
-        self, *, system: str, tools: list[dict[str, Any]], session_id: str, voice: str = "Charon"
+        self,
+        *,
+        system: str,
+        tools: list[dict[str, Any]],
+        session_id: str,
+        voice: str = "Charon",
+        proactive_audio: bool = True,
     ) -> AbstractAsyncContextManager[FakeLive]:
         """A scripted Live conversation (ADR 0031): see `FakeLive`."""
         self._record("live", session_id, system, voice)
@@ -159,6 +165,9 @@ class FakeLive:
 
     def __init__(self, system: str, *, session_id: str, follow_ups: int, answer: str) -> None:
         self.question = _between(system, "<question>", "</question>") or "Tell me about yourself."
+        # No question means a session that only reads fixed lines aloud
+        # (`interview/fixed_lines.py`): it says whatever text it is sent.
+        self.reader = "<question>" not in system
         self.last = "This is the last question" in system
         self.session_id = session_id
         self.follow_ups = follow_ups
@@ -207,6 +216,9 @@ class FakeLive:
 
     async def send_text(self, text: str) -> None:
         self.sent_text.append(text)
+        if self.reader:
+            await self._say(text)
+            return
         if text.startswith("[begin]"):
             await self._say(self.question)
             self._listening = True
