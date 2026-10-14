@@ -44,7 +44,7 @@ def test_setup_enforces_size_caps(setup):
     with pytest.raises(ValidationError):
         Answer(question_id=1, text="")
     with pytest.raises(ValidationError):
-        Answer(question_id=1, text="x" * 8_001)  # a spoken transcript can run long (ADR 0030)
+        Answer(question_id=1, text="x" * 8_001)  # a spoken transcript can run long (ADR 0031)
 
 
 def test_plan_output_requires_exactly_five_questions():

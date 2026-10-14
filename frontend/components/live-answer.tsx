@@ -23,7 +23,7 @@ interface Props {
   onTypeInstead: () => void;
 }
 
-/** One question on Gemini Live (ADR 0030): Harvey asks, listens, nudges and
+/** One question on Gemini Live (ADR 0031): Harvey asks, listens, nudges and
  *  follows up in one open conversation. Mounted once per question. */
 export function LiveAnswer({
   session,

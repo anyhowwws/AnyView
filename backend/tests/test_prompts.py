@@ -92,7 +92,7 @@ def test_each_difficulty_states_its_own_scope(setup):
     screen = session_system(setup.model_copy(update={"difficulty": "recruiter_screen"}))
     manager = session_system(setup.model_copy(update={"difficulty": "hiring_manager"}))
     assert "answerable from the page in front of you" in screen
-    # A recruiter's screen is the resume alone: no job description in the room (ADR 0030).
+    # A recruiter's screen is the resume alone: no job description in the room (ADR 0031).
     assert "<job_description>" not in screen and "no job description" in screen
     assert "<job_description>" in manager
     assert "does not\nevidence" in manager  # the gap is what a hiring manager probes

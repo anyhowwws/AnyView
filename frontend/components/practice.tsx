@@ -10,7 +10,7 @@ import { NO_ANSWER, VoiceAnswer } from "@/components/voice-answer";
 import { ApiError, askQuestion, interjection } from "@/lib/api";
 import { liveAvailable, markLiveBroken } from "@/lib/live";
 import { loadVoicePreference, saveVoicePreference } from "@/lib/store";
-import { harveyVoice, microphoneSupported, type HarveyVoice, type ListenEnd } from "@/lib/voice";
+import { harveyVoice, microphoneSupported, type ListenEnd, type VoicePlayer } from "@/lib/voice";
 import type { FollowUp, Session } from "@/lib/types";
 
 interface Props {
@@ -19,7 +19,7 @@ interface Props {
   onSpoken: (questionId: number, text: string) => void;
   /** `cutOff`: the clock or Harvey ended the answer, so the next question
    *  opens without thanking them for it (ADR 0028). `followUps`: asked on Live
-   *  (ADR 0030), scored with the answer. */
+   *  (ADR 0031), scored with the answer. */
   onAnswer: (text: string, cutOff: boolean, followUps?: FollowUp[]) => Promise<boolean>;
   onEnd: () => void;
   busy: boolean;
@@ -30,7 +30,7 @@ interface Props {
  *  silent path and the escape hatch from any voice state. `sending` is a spoken
  *  answer on its way: it goes straight in, as it would in a real interview,
  *  and is shown only if sending it fails. `live` is the whole question as one
- *  Gemini Live conversation (ADR 0030): asking, answering and follow-ups. */
+ *  Gemini Live conversation (ADR 0031): asking, answering and follow-ups. */
 type Turn = "typing" | "listening" | "sending" | "live";
 
 /** The Practice surface: one question centred, streaming text, a typing
@@ -62,7 +62,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   const [remaining, setRemaining] = useState<number | null>(null);
   // One player for the whole interview, shared across these per-question
   // mounts, so a clip from the last question plays out under the next (ADR 0028).
-  const harvey = useRef<HarveyVoice | null>(null);
+  const harvey = useRef<VoicePlayer | null>(null);
   if (harvey.current === null && typeof window !== "undefined") harvey.current = harveyVoice();
   // What Harvey has said on Live so far for this question, for `onSpoken`.
   const liveText = useRef("");

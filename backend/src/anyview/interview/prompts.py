@@ -72,7 +72,7 @@ def reads_garden(setup: Setup) -> bool:
 
 def reads_job(setup: Setup) -> bool:
     """Whether the interviewer has the job description. A recruiter's screen is
-    the resume alone; the hiring manager and the panel have both (ADR 0030)."""
+    the resume alone; the hiring manager and the panel have both (ADR 0031)."""
     return setup.difficulty != "recruiter_screen"
 
 
@@ -319,7 +319,7 @@ INTERJECTIONS: dict[str, str] = {
 }
 
 
-# --- Harvey on Gemini Live (ADR 0030) ---------------------------------------
+# --- Harvey on Gemini Live (ADR 0031) ---------------------------------------
 # One Live session per question. The plan decides what is asked; Live decides
 # how the conversation around it goes: when an answer is finished, how to
 # nudge, whether to follow up. Everything the app must control goes through a
@@ -389,7 +389,7 @@ def _opening(index: int, previous: Answer | None) -> str:
 def live_system(
     setup: Setup, *, questions: list[Question], answers: list[Answer], index: int
 ) -> str:
-    """Harvey's instructions for one question of a spoken interview (ADR 0030)."""
+    """Harvey's instructions for one question of a spoken interview (ADR 0031)."""
     question = questions[index]
     previous = answers[-1] if answers else None
     garden = ""

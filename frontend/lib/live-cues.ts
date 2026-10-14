@@ -1,4 +1,4 @@
-// The browser's clock for a question on Gemini Live (ADR 0016, 0030).
+// The browser's clock for a question on Gemini Live (ADR 0016, 0031).
 //
 // Live hears the candidate and decides when an answer is finished, but it does
 // not notice silence on its own: it only reacts once someone has spoken. So the

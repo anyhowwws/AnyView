@@ -34,13 +34,13 @@ variable "tts_model_id" {
 }
 
 variable "live_model_id" {
-  description = "Vertex AI Live model that runs Harvey's spoken interview, follow-ups included (ADR 0030). Native-audio Live models are regional; confirm the id is enabled in Model Garden for the project before relying on it."
+  description = "Vertex AI Live model that runs Harvey's spoken interview, follow-ups included (ADR 0031). Native-audio Live models are regional; confirm the id is enabled in Model Garden for the project before relying on it."
   type        = string
   default     = "gemini-live-2.5-flash-native-audio"
 }
 
 variable "live_region" {
-  description = "Region the Live model is served from. Live models are not served from `global` (ADR 0030)."
+  description = "Region the Live model is served from. Live models are not served from `global` (ADR 0031)."
   type        = string
   default     = "us-central1"
 }
@@ -49,6 +49,12 @@ variable "harvey_voice" {
   description = "Prebuilt Vertex voice for Harvey, the interviewer. Male-sounding options include Charon (informative), Alnilam, Orus (firm), Puck (upbeat) and Fenrir (excitable). Alnilam read as British in a real run; the accent comes from the voice and the delivery direction together. Check a name with a real call before using it: an unknown one is a 400."
   type        = string
   default     = "Charon"
+}
+
+variable "donna_voice" {
+  description = "Prebuilt Vertex voice for Donna, the Digital Garden's assistant, heard only in Discover's speak mode (ADR 0030). Female-sounding options include Kore (firm), Aoede (breezy), Leda (youthful), Zephyr (bright) and Sulafat (warm). Check a name with a real call before using it: an unknown one is a 400."
+  type        = string
+  default     = "Kore"
 }
 
 variable "answer_audio_retention_days" {

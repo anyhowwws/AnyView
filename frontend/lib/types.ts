@@ -168,7 +168,7 @@ export interface Question {
   seconds: number;
 }
 
-/** A follow-up Harvey asked during a spoken answer, and the reply (ADR 0030). */
+/** A follow-up Harvey asked during a spoken answer, and the reply (ADR 0031). */
 export interface FollowUp {
   question: string;
   answer: string;

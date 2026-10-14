@@ -1,7 +1,8 @@
 // Voice mode (ADR 0013): Harvey's speech out, the candidate's speech in.
 // Time-bounded interviews (ADR 0016) add a clock to the listening rules.
+// Discover's speak mode (ADR 0030) uses the same parts for Donna.
 //
-// Out: the /interview/ask stream carries a WAV clip per sentence. They must be
+// Out: the /interview/ask and /brain/discover streams carry a WAV clip per sentence. They must be
 // heard in order and without gaps, so each one is decoded and scheduled on the
 // Web Audio clock rather than handed to an <audio> element, which would leave
 // an audible seam between sentences.
@@ -34,6 +35,9 @@ export const UNTIMED_DEAD_AIR_MS = 30_000;
 /** A hard cap, well inside the 10 MB upload limit at 32 kbps. A timed question
  *  replaces this with its own, shorter clock. */
 export const MAX_ANSWER_MS = 4 * 60_000;
+/** A question for Donna is a sentence or two, not an answer (ADR 0030). */
+export const MAX_QUESTION_MS = 60_000;
+const QUESTION_DEAD_AIR_MS = 8_000;
 
 export type ListenEnd = "silence" | "limit" | "no-speech";
 
@@ -54,6 +58,16 @@ export const UNTIMED: ListenLimits = {
   silenceMs: SILENCE_MS,
   deadAirMs: UNTIMED_DEAD_AIR_MS,
   limitMs: MAX_ANSWER_MS,
+  endOnDeadAir: true,
+  giveUpMs: null,
+};
+
+/** Asking Donna something out loud: a pause ends the question, and eight
+ *  seconds of nothing means the microphone was opened by accident. */
+export const QUESTION: ListenLimits = {
+  silenceMs: SILENCE_MS,
+  deadAirMs: QUESTION_DEAD_AIR_MS,
+  limitMs: MAX_QUESTION_MS,
   endOnDeadAir: true,
   giveUpMs: null,
 };
@@ -141,7 +155,7 @@ export function hearing(
   return next;
 }
 
-// --- Harvey speaking ---------------------------------------------------------
+// --- Harvey and Donna speaking ------------------------------------------------
 
 function decodeBase64(b64: string): ArrayBuffer {
   const binary = atob(b64);
@@ -180,7 +194,9 @@ export function unlockAudio(): void {
   }
 }
 
-export class HarveyVoice {
+/** Plays a stream of clips back to back. One per persona: Harvey's and Donna's
+ *  never play on the same screen, but each keeps its own queue. */
+export class VoicePlayer {
   private ctx: AudioContext | null = null;
   private playing = new Set<AudioBufferSourceNode>();
   /** Decoding is async, so clips are chained rather than raced: clip two must
@@ -250,7 +266,7 @@ export class HarveyVoice {
     this.complete = false;
   }
 
-  /** Cut Harvey off — the candidate switched modes or left the interview. */
+  /** Cut the speaker off — the candidate switched modes, or left. */
   stop(): void {
     for (const source of this.playing) {
       source.onended = null;
@@ -270,11 +286,19 @@ export class HarveyVoice {
 /** One player for the whole interview (ADR 0028). Practice remounts on every
  *  question, and a player per mount knew nothing of the clip still playing:
  *  the next question cut off "let's move on" and could talk over it. */
-let harvey: HarveyVoice | null = null;
+let harvey: VoicePlayer | null = null;
 
-export function harveyVoice(): HarveyVoice {
-  harvey ??= new HarveyVoice();
+export function harveyVoice(): VoicePlayer {
+  harvey ??= new VoicePlayer();
   return harvey;
+}
+
+/** Donna's player, for Discover's speak mode (ADR 0030). */
+let donna: VoicePlayer | null = null;
+
+export function donnaVoice(): VoicePlayer {
+  donna ??= new VoicePlayer();
+  return donna;
 }
 
 // --- The candidate speaking -------------------------------------------------
@@ -396,7 +420,7 @@ export async function listen({
 }: ListenOptions): Promise<ListenHandle> {
   const format = pickFormat();
   if (!format) {
-    onError("This browser can't record audio. You can still type your answer.");
+    onError("This browser can't record audio. You can still type instead.");
     return { stop: () => {}, cancel: () => {} };
   }
 
@@ -404,7 +428,7 @@ export async function listen({
   try {
     stream = await acquireMicrophone();
   } catch {
-    onError("The microphone is blocked. Allow it in your browser, or type your answer.");
+    onError("The microphone is blocked. Allow it in your browser, or type instead.");
     return { stop: () => {}, cancel: () => {} };
   }
 

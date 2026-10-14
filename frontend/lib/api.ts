@@ -31,11 +31,11 @@ export class ApiError extends Error {
   }
 }
 
-/** The Live relay's address (ADR 0030): the API's own origin, as a WebSocket. */
+/** The Live relay's address (ADR 0031): the API's own origin, as a WebSocket. */
 export const LIVE_URL = `${BASE.replace(/^http/, "ws")}/interview/live`;
 
 /** The ID token for a caller that cannot send headers: a WebSocket sends it in
- *  its first frame instead (ADR 0030). */
+ *  its first frame instead (ADR 0031). */
 export async function signInToken(): Promise<string> {
   const token = await idToken();
   if (!token) throw new ApiError("Sign in to continue.", 401);
@@ -259,8 +259,9 @@ export async function uploadResume(file: File): Promise<string> {
   return putTicket(ticket, file, file.type);
 }
 
-/** Uploads a recorded answer the same way, under the user's `audio/` prefix
- *  (ADR 0013), and returns the object name to transcribe. */
+/** Uploads a recording (an interview answer, or a question for Donna) the same
+ *  way, under the user's `audio/` prefix (ADR 0013), and returns the object
+ *  name to transcribe. */
 export async function uploadAnswerAudio(blob: Blob, contentType: string): Promise<string> {
   const ticket = await post<UploadTicket>("/uploads", {
     filename: "answer",
@@ -293,6 +294,16 @@ export async function interjection(
   } catch {
     return null;
   }
+}
+
+/** A question asked out loud in Discover (ADR 0030), as text. The recording is
+ *  uploaded with `uploadAnswerAudio`, like an interview answer. */
+export async function transcribeQuestion(conversationId: string, objectName: string): Promise<string> {
+  const { text } = await post<{ text: string }>("/brain/discover/transcribe", {
+    conversation_id: conversationId,
+    object_name: objectName,
+  });
+  return text;
 }
 
 /** Turns an uploaded recording into the words that were said. */
@@ -426,12 +437,20 @@ export interface Citation {
 
 /** Asks Donna about the confirmed garden. Streams her words through onToken;
  *  resolves with the entries the answer cites once the server sends `done`. */
+/** Speak mode (ADR 0030): Donna's clips, and the one notice that her voice failed
+ *  and the answer carries on as text. */
+export interface DonnaSpeech {
+  onAudio: (b64: string) => void;
+  onVoiceOff: (message: string) => void;
+}
+
 export async function askDonna(
   conversationId: string,
   question: string,
   history: DiscoverTurn[],
   onToken: (text: string) => void,
   signal: AbortSignal,
+  speech?: DonnaSpeech,
 ): Promise<Citation[]> {
   const auth = await authHeaders();
   let res: Response;
@@ -439,7 +458,7 @@ export async function askDonna(
     res = await fetch(`${BASE}/brain/discover`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...auth },
-      body: JSON.stringify({ conversation_id: conversationId, question, history }),
+      body: JSON.stringify({ conversation_id: conversationId, question, history, voice: !!speech }),
       signal,
     });
   } catch (err) {
@@ -453,6 +472,10 @@ export async function askDonna(
   for await (const { event, data } of readSse(res.body)) {
     if (event === "token") {
       onToken((data as { text: string }).text);
+    } else if (event === "audio") {
+      speech?.onAudio((data as { b64: string }).b64);
+    } else if (event === "voice_off") {
+      speech?.onVoiceOff((data as { message: string }).message);
     } else if (event === "citations") {
       citations = (data as { entities: Citation[] }).entities;
     } else if (event === "error") {

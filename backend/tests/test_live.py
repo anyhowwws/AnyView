@@ -1,4 +1,4 @@
-"""Harvey on Gemini Live (ADR 0030): the turn's rules, the prompt per room, and
+"""Harvey on Gemini Live (ADR 0031): the turn's rules, the prompt per room, and
 the WebSocket relay end to end on FakeLive. No network."""
 
 import json

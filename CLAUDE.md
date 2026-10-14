@@ -24,9 +24,9 @@ writes simple scripts). So:
 |---|---|---|
 | Cloud | GCP | 0001 |
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
-| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028). **Gemini Live** (`LIVE_MODEL_ID`, regional: `LIVE_REGION`) runs each spoken question as a conversation with follow-ups (ADR 0030); Vertex AI (location `global` for everything else) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
+| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028). **Gemini Live** (`LIVE_MODEL_ID`, regional: `LIVE_REGION`) runs each spoken question as a conversation with follow-ups (ADR 0031); Vertex AI (location `global` for everything else) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
-| Voice | **Gemini Live** for a spoken interview: one session per question, relayed over `WS /interview/live` (ADR 0030). The turn-based path below is its fallback. **Gemini TTS on Vertex** for Harvey, the interviewer (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`; Donna, the Digital Garden's assistant, has no voice yet); answers recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default**; Harvey's interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016, 0030 |
+| Voice | **Gemini Live** for a spoken interview: one session per question, relayed over `WS /interview/live` (ADR 0031); the turn-based path below is its fallback. **Gemini TTS on Vertex** for Harvey, the interviewer, on that fallback path (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`) and for Donna in Discover's speak mode (`DONNA_VOICE`, default `Kore`, `discover.DONNA_DELIVERY`); answers and spoken questions recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default in an interview; typing is the default in Discover**; Harvey's interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016, 0030, 0031 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
@@ -45,8 +45,9 @@ docs, Firestore, scraping Glassdoor/Blind, GKE/HA/multi-region, API keys.
 
 **Donna** is the Digital Garden's assistant: Discover, the review queue, resume and dump extraction.
 **Harvey** is the interviewer: Practice, the pre-flight, the interjections and everything spoken in an
-interview (ADR 0029). Donna's voice is not decided yet. Don't mix them up in copy, prompts or code:
-`DonnaVoice`/`DONNA_VOICE` no longer exist, and `askDonna`/`role: "donna"` are the garden's.
+interview (ADR 0029). Donna speaks only in Discover, when the candidate switches it to Speak (ADR 0030).
+Don't mix them up in copy, prompts or code: `HARVEY_VOICE`/`harveyVoice()` are the interviewer's,
+`DONNA_VOICE`/`donnaVoice()`/`askDonna`/`role: "donna"` are the garden's.
 
 ## Layout
 
@@ -69,8 +70,8 @@ Backend modules:
   `FakeLive` asks the planned question, takes 4 s of microphone audio as an answer, asks one follow-up, then closes.
 - `anyview/interview/voice.py` — splits the `ask` stream into sentences and synthesises each
   one while the next arrives; emits `audio` / `voice_off` frames beside the token frames.
-  The fallback when Live fails (ADR 0030).
-- `anyview/interview/live.py` — `LiveTurn`: one spoken question's rules with no I/O (ADR 0030). The
+  The fallback when Live fails (ADR 0031).
+- `anyview/interview/live.py` — `LiveTurn`: one spoken question's rules with no I/O (ADR 0031). The
   follow-up budget (`MAX_PROBES` = 2, none after a closing cue), the browser's cues (keys only),
   and the transcript → `Answer` with `follow_ups`. `prompts.live_system` is Harvey's instruction
   per question; `prompts.LIVE_TOOLS` are `ask_follow_up` and `finish_question`.
@@ -80,7 +81,7 @@ Backend modules:
 - `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; follow-ups happen on Live and arrive on the `Answer`.
   `prompts.py` also owns **difficulty** (ADR 0014): `recruiter_screen` (Easy: resume only, no job description) / `hiring_manager` (Medium: + job
   description) / `panel` (Hard: + garden) decide what the interviewer knows, in planning and on
-  Live (ADR 0030); the garden reaches `session_system` at `panel` only.
+  Live (ADR 0031); the garden reaches `session_system` at `panel` only.
   It also owns `INTERJECTIONS` — the fixed lines Harvey says when he has to cut in (ADR 0016) — and
   tells the model to open with "tell me about yourself" and to set each question's `seconds`.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
@@ -127,6 +128,10 @@ Backend modules:
   garden over `POST /brain/discover` (SSE: tokens, then one `citations` frame). Whole garden in the
   system prompt, no retrieval yet; `discover_context()` is the seam Phase 2 retrieval replaces.
   Read-only, stateless, fast model. Cited labels are checked against the user's label map.
+  Speak mode (ADR 0030): `voice: true` wraps the stream in `interview/voice.py:voiced()` with Donna's voice;
+  `for_speech` strips labels and Markdown from what is synthesised (never from what is shown).
+  `POST /brain/discover/transcribe` turns a spoken question into text via `api/uploads.py:transcribe_recording`,
+  the helper `/interview/transcribe` uses too.
 - `backend/migrations/NNN_*.sql` — the schema. Additive only; the DB enforces provenance, append-only events, the competency taxonomy, one live skill per name.
 
 ## Commands
@@ -206,7 +211,7 @@ retrieval test set.
 
 ## Gotchas
 
-- **Live (ADR 0030)** is regional (`LIVE_REGION`, default `us-central1`) and its model id
+- **Live (ADR 0031)** is regional (`LIVE_REGION`, default `us-central1`) and its model id
   (`LIVE_MODEL_ID`, default `gemini-live-2.5-flash-native-audio`) must be enabled in Model Garden,
   with proactive audio, before the first real run. If it fails, the socket sends `fallback: true`
   and the browser uses the turn-based path for the rest of the page. The browser owns the clock
@@ -300,7 +305,7 @@ retrieval test set.
   does not re-extract the PDF. Without a database the flow still works — it asks
   for the file every time.
 - Difficulty gates *sourcing only*. Follow-ups (`MAX_PROBES` = 2) exist at every level on Live
-  (ADR 0030), so Panel is harder because of what Harvey knows, not because he probes more. A Panel interview
+  (ADR 0031), so Panel is harder because of what Harvey knows, not because he probes more. A Panel interview
   with an empty garden uses `PANEL_WITHOUT_GARDEN`: never point the model at a
   `<digital_garden>` block that is not in the prompt.
 - The report reads the garden at *every* difficulty, but below Panel it rides in

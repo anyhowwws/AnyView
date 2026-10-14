@@ -1,4 +1,4 @@
-"""One question of a spoken interview on Gemini Live (ADR 0030): the rules, not the plumbing.
+"""One question of a spoken interview on Gemini Live (ADR 0031): the rules, not the plumbing.
 
 The Live model talks, listens and decides when to follow up. This class holds
 what the app decides instead, and turns what was said into the same `Answer`

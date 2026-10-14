@@ -56,6 +56,10 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.harvey_voice
       }
       env {
+        name  = "DONNA_VOICE"
+        value = var.donna_voice
+      }
+      env {
         name  = "LIVE_MODEL_ID"
         value = var.live_model_id
       }
@@ -90,7 +94,7 @@ resource "google_cloud_run_v2_service" "api" {
     }
 
     # A WebSocket counts as one request for as long as it is open. A Live question
-    # (ADR 0030) runs up to its clock (≤ 300 s) plus follow-ups, and the API caps
+    # (ADR 0031) runs up to its clock (≤ 300 s) plus follow-ups, and the API caps
     # it at nine minutes, inside Live's own ten-minute connection limit.
     timeout = "600s"
   }

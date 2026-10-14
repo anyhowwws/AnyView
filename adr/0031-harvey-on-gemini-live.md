@@ -1,4 +1,4 @@
-# 0030 — Harvey on Gemini Live: planned questions, a live conversation, follow-ups now
+# 0031 — Harvey on Gemini Live: planned questions, a live conversation, follow-ups now
 
 - **Status:** Accepted
 - **Date:** 2026-10-14
@@ -94,6 +94,8 @@ with `/ask` + TTS + transcription. Typed answers are unchanged and have no follo
 - Live audio now transits the API, where uploads never did (ADR 0010). It is streamed, not stored.
 - A socket pins a question to one Cloud Run instance; a deploy mid-question drops it and the
   browser falls back for the rest of that interview. The Cloud Run request timeout rises to 600 s.
+- Donna's Discover speak mode (ADR 0030) is unaffected: it stays on Gemini TTS through
+  `speak()` and `voiced()`, which this decision keeps as Harvey's fallback.
 - Live models are regional (`LIVE_REGION`, default `us-central1`), unlike every other model here.
   `LIVE_MODEL_ID` defaults to `gemini-live-2.5-flash-native-audio`; **confirm the id, proactive
   audio and the concurrent-session quota in Model Garden before the first real run.** A

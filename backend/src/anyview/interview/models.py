@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 QUESTION_COUNT = 5
 # Follow-up questions Harvey may ask on one question, in a spoken interview on
-# Gemini Live (ADR 0030). He asks for each one through a tool; the API says no
+# Gemini Live (ADR 0031). He asks for each one through a tool; the API says no
 # once the budget is spent. Typed answers have no follow-ups.
 MAX_PROBES = 2
 
@@ -194,7 +194,7 @@ MAX_ANSWER_CHARS = 8_000
 
 class FollowUp(BaseModel):
     """One follow-up Harvey asked during a spoken answer, and what the candidate
-    said to it (ADR 0030). Scored with the answer it followed, as one exchange."""
+    said to it (ADR 0031). Scored with the answer it followed, as one exchange."""
 
     question: str = Field(min_length=1, max_length=1_000)
     answer: str = Field(min_length=1, max_length=MAX_ANSWER_CHARS)

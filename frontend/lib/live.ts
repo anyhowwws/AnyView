@@ -1,4 +1,4 @@
-// Harvey on Gemini Live (ADR 0030): one question as a live conversation.
+// Harvey on Gemini Live (ADR 0031): one question as a live conversation.
 //
 // One WebSocket per question to the API, which holds the Live session (the
 // browser cannot: Vertex accepts only IAM credentials). The microphone streams

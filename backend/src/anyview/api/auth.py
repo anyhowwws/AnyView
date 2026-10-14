@@ -81,7 +81,7 @@ def current_user(
 def user_from_token(token: str, verifier: Verifier, settings: Settings) -> User:
     """The checks behind `current_user`, for a caller that has the token some
     other way: a WebSocket cannot set an Authorization header, so the Live
-    route reads it from its first message (ADR 0030)."""
+    route reads it from its first message (ADR 0031)."""
     try:
         claims = verifier(token)
     except ValueError as exc:  # expired, wrong project, bad signature, malformed

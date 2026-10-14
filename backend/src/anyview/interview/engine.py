@@ -141,7 +141,7 @@ def ask(session: Session, *, spoken: bool = False) -> Iterator[str]:
 def submit_answer(session: Session, answer: Answer) -> Session:
     """ask → answer → (probe → answer)* → next → ask | wrap. Pure: no model call.
 
-    Follow-ups happen inside a spoken Live turn (ADR 0030), where Harvey asks
+    Follow-ups happen inside a spoken Live turn (ADR 0031), where Harvey asks
     for each one and the API holds him to `MAX_PROBES`; they arrive here
     already answered, carried on the `Answer`. The probe transitions are walked
     so the machine stays the one in the brief."""

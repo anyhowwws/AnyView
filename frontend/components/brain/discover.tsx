@@ -1,12 +1,28 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, RotateCcw, Sparkles } from "lucide-react";
+import { motion } from "framer-motion";
+import { ArrowUp, Keyboard, Mic, RotateCcw, Sparkles, Square, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, askDonna, type Citation, type DiscoverTurn } from "@/lib/api";
+import {
+  ApiError,
+  askDonna,
+  transcribeQuestion,
+  uploadAnswerAudio,
+  type Citation,
+  type DiscoverTurn,
+} from "@/lib/api";
 import { blocks, suggestions, type Inline } from "@/lib/discover-text";
 import type { Brain } from "@/lib/types";
+import {
+  donnaVoice,
+  listen,
+  microphoneSupported,
+  QUESTION,
+  releaseMicrophone,
+  type ListenHandle,
+} from "@/lib/voice";
 
 interface Message {
   role: "user" | "donna";
@@ -21,6 +37,11 @@ interface Props {
   onOpen: (id: string) => void;
 }
 
+/** Typing is the default; speaking is chosen per visit, never remembered (ADR 0030). */
+type Mode = "type" | "speak";
+/** The microphone, while a question is being asked out loud. */
+type Mic = "idle" | "listening" | "transcribing";
+
 function newConversationId(): string {
   return crypto.randomUUID();
 }
@@ -33,15 +54,33 @@ export function Discover({ brain, onOpen }: Props) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<{ message: string; question: string } | null>(null);
+  const [mode, setMode] = useState<Mode>("type");
+  // Read by `ask`, which can run from a recording that finished after a switch.
+  const modeRef = useRef<Mode>("type");
+  modeRef.current = mode;
+  const [mic, setMic] = useState<Mic>("idle");
+  const [level, setLevel] = useState(0);
+  const [speaking, setSpeaking] = useState(false);
+  const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const conversation = useRef(newConversationId());
   const controller = useRef<AbortController | null>(null);
+  const listening = useRef<ListenHandle | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
   const titles = useMemo(() => entryTitles(brain), [brain]);
   const empty = titles.size === 0;
   const starters = useMemo(() => suggestions(brain), [brain]);
 
-  useEffect(() => () => controller.current?.abort(), []);
+  // Leaving the garden ends everything: the stream, Donna mid-sentence, the mic.
+  useEffect(
+    () => () => {
+      controller.current?.abort();
+      quiet();
+      listening.current?.cancel();
+      releaseMicrophone();
+    },
+    [],
+  );
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "nearest" });
   }, [messages]);
@@ -59,6 +98,11 @@ export function Discover({ brain, onOpen }: Props) {
     setMessages((prev) => [...prev, { role: "user", text: q }, { role: "donna", text: "" }]);
     const abort = new AbortController();
     controller.current = abort;
+    // In speak mode every answer is spoken, typed question or not. A new
+    // question cuts off whatever Donna was still saying about the last one.
+    const voice = modeRef.current === "speak" ? donnaVoice() : null;
+    voice?.stop();
+    if (voice) voice.onFinished = () => setSpeaking(false);
     try {
       const citations = await askDonna(
         conversation.current,
@@ -66,7 +110,17 @@ export function Discover({ brain, onOpen }: Props) {
         history,
         (chunk) => setMessages((prev) => withLast(prev, (m) => ({ ...m, text: m.text + chunk }))),
         abort.signal,
+        voice
+          ? {
+              onAudio: (b64) => {
+                setSpeaking(true);
+                voice.play(b64);
+              },
+              onVoiceOff: (message) => setVoiceNote(`${message} Donna's answer is on screen.`),
+            }
+          : undefined,
       );
+      voice?.markComplete();
       setMessages((prev) => withLast(prev, (m) => ({ ...m, citations })));
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
@@ -78,8 +132,75 @@ export function Discover({ brain, onOpen }: Props) {
     }
   }
 
+  /** Stop Donna mid-sentence. */
+  function quiet() {
+    const voice = donnaVoice();
+    voice.onFinished = null;
+    voice.stop();
+    setSpeaking(false);
+  }
+
+  function chooseMode(next: Mode) {
+    if (next === mode) return;
+    setVoiceNote(null);
+    if (next === "type") {
+      quiet();
+      listening.current?.cancel();
+      listening.current = null;
+      releaseMicrophone();
+      setMic("idle");
+      setMode("type");
+      return;
+    }
+    if (!microphoneSupported()) {
+      setVoiceNote("This browser can't record audio. Chrome, Edge, Safari and Firefox all can.");
+      return;
+    }
+    // This click is the user gesture that lets the page play Donna at all.
+    donnaVoice()
+      .enable()
+      .then(() => setMode("speak"))
+      .catch(() => setVoiceNote("This browser is blocking audio playback on the page."));
+  }
+
+  /** Ask out loud: record until a pause, write it down, then ask it. */
+  async function speakQuestion() {
+    if (busy || mic !== "idle") return;
+    quiet(); // she must not be talking into the microphone
+    setVoiceNote(null);
+    setLevel(0);
+    setMic("listening");
+    listening.current = await listen({
+      limits: QUESTION,
+      onLevel: setLevel,
+      onError: (message) => {
+        setMic("idle");
+        setVoiceNote(message);
+      },
+      onEnd: async (recording) => {
+        listening.current = null;
+        if (!recording.heardSpeech) {
+          setMic("idle");
+          setVoiceNote("Donna didn't hear anything. Check your microphone, or type your question.");
+          return;
+        }
+        setMic("transcribing");
+        try {
+          const object = await uploadAnswerAudio(recording.blob, recording.contentType);
+          const text = await transcribeQuestion(conversation.current, object);
+          setMic("idle");
+          void ask(text);
+        } catch (err) {
+          setMic("idle");
+          setVoiceNote(err instanceof ApiError ? err.message : "That recording didn't go through. Try again.");
+        }
+      },
+    });
+  }
+
   function reset() {
     controller.current?.abort();
+    quiet();
     conversation.current = newConversationId();
     setMessages([]);
     setError(null);
@@ -101,9 +222,21 @@ export function Discover({ brain, onOpen }: Props) {
           <h2 id="discover-heading" className="text-lg font-semibold">Ask Donna about your garden</h2>
           <p className="mt-1 text-sm text-muted-foreground">She answers from confirmed entries only, and tells you when something isn&apos;t there.</p>
         </div>
-        {messages.length > 0 && (
-          <Button variant="ghost" size="sm" onClick={reset}><RotateCcw size={15} aria-hidden />New conversation</Button>
-        )}
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="answer-mode" role="radiogroup" aria-label="How do you want to ask?">
+            <button type="button" role="radio" aria-checked={mode === "type"} onClick={() => chooseMode("type")}>
+              <Keyboard className="size-3.5" aria-hidden />
+              Type
+            </button>
+            <button type="button" role="radio" aria-checked={mode === "speak"} onClick={() => chooseMode("speak")}>
+              <Mic className="size-3.5" aria-hidden />
+              Speak
+            </button>
+          </div>
+          {messages.length > 0 && (
+            <Button variant="ghost" size="sm" onClick={reset}><RotateCcw size={15} aria-hidden />New conversation</Button>
+          )}
+        </div>
       </header>
 
       <div className="discover-log" role="log" aria-live="polite" aria-busy={busy}>
@@ -132,6 +265,28 @@ export function Discover({ brain, onOpen }: Props) {
         </div>
       )}
 
+      {voiceNote && <p className="text-sm text-muted-foreground" role="status">{voiceNote}</p>}
+
+      {mode === "speak" && speaking && (
+        <div className="flex items-center gap-3 text-sm text-muted-foreground" role="status">
+          <span className="size-2 animate-pulse rounded-full bg-primary" aria-hidden />
+          Donna is speaking
+          <Button variant="ghost" size="sm" onClick={quiet}><VolumeX size={15} aria-hidden />Stop</Button>
+        </div>
+      )}
+
+      {mic === "listening" ? (
+        <QuestionListening level={level} onDone={() => listening.current?.stop()} onCancel={() => {
+          listening.current?.cancel();
+          listening.current = null;
+          setMic("idle");
+        }} />
+      ) : mic === "transcribing" ? (
+        <div className="flex items-center gap-3 text-sm text-muted-foreground" role="status">
+          <span className="size-2 animate-pulse rounded-full bg-primary" aria-hidden />
+          Writing down your question…
+        </div>
+      ) : (
       <form className="discover-compose" onSubmit={(e) => { e.preventDefault(); void ask(draft); }}>
         <label htmlFor="discover-question" className="sr-only">Ask Donna</label>
         <Textarea
@@ -139,7 +294,7 @@ export function Discover({ brain, onOpen }: Props) {
           value={draft}
           maxLength={2000}
           rows={2}
-          placeholder="Which projects have I done with AWS Bedrock?"
+          placeholder={mode === "speak" ? "Press the microphone and ask, or type here" : "Which projects have I done with AWS Bedrock?"}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             // Enter sends; Shift+Enter is a new line.
@@ -149,11 +304,48 @@ export function Discover({ brain, onOpen }: Props) {
             }
           }}
         />
+        {mode === "speak" && (
+          <Button type="button" size="icon" variant="outline" className="discover-mic" disabled={busy} aria-label="Ask out loud" onClick={() => void speakQuestion()}>
+            <Mic size={18} aria-hidden />
+          </Button>
+        )}
         <Button type="submit" size="icon" disabled={busy || !draft.trim()} aria-label="Ask">
           <ArrowUp size={18} aria-hidden />
         </Button>
       </form>
+      )}
     </section>
+  );
+}
+
+/** The open microphone while a question is asked out loud. It closes itself
+ *  after a pause; "Done" is for anyone who would rather not wait for it. */
+function QuestionListening({ level, onDone, onCancel }: {
+  level: number;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  // Scaled generously, as in the interview: an ordinary voice should move it.
+  const loudness = Math.min(1, level * 12);
+  return (
+    <div className="flex flex-wrap items-center gap-4">
+      <span className="relative inline-flex size-11 items-center justify-center">
+        <motion.span
+          className="absolute inset-0 rounded-full bg-primary/20"
+          animate={{ scale: 1 + loudness * 0.6, opacity: 0.35 + loudness * 0.5 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          aria-hidden
+        />
+        <span className="relative inline-flex size-8 items-center justify-center rounded-full bg-primary text-primary-foreground">
+          <Mic className="size-4" aria-hidden />
+        </span>
+      </span>
+      <p className="flex-1 text-sm" role="status">Listening — ask Donna out loud. A pause sends it.</p>
+      <div className="flex gap-2">
+        <Button variant="outline" size="sm" onClick={onDone}><Square className="size-3.5" aria-hidden />Done</Button>
+        <Button variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+      </div>
+    </div>
   );
 }
 

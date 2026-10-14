@@ -5,7 +5,7 @@ Four operations, plain Python in and out:
     generate(...) -> Reply      one complete response, optionally parsed JSON
     stream(...)   -> Iterator   text deltas as they arrive; usage at the end
     speak(...)    -> bytes      one sentence spoken aloud, as a WAV file (ADR 0013)
-    live(...)     -> LiveSession  a two-way spoken conversation on Gemini Live (ADR 0030)
+    live(...)     -> LiveSession  a two-way spoken conversation on Gemini Live (ADR 0031)
 
 Everything else in the app talks in `str`, `dict`, and the small dataclasses
 below. No SDK object leaves this module. This is an indirection layer, not a
@@ -96,7 +96,7 @@ class ModelError(Exception):
         self.retryable = retryable
 
 
-# --- Live (ADR 0030) ----------------------------------------------------------
+# --- Live (ADR 0031) ----------------------------------------------------------
 # What a Live session hands back, as plain data. `kind` says which fields mean
 # something: audio carries `audio` (24 kHz 16-bit mono PCM), the two transcript
 # kinds carry `text`, a tool call carries `call_id`, `name` and `args`.
@@ -334,7 +334,7 @@ class VertexGemini:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for Vertex model access")
         self.model = model
         self.fast_model = fast_model or model
-        # Live models are served from regions, not from `global` (ADR 0030), so
+        # Live models are served from regions, not from `global` (ADR 0031), so
         # they get their own client; it is built on first use.
         self.live_model = live_model or "gemini-live-2.5-flash-native-audio"
         self._project_id = project_id
@@ -518,7 +518,7 @@ class VertexGemini:
             raise ModelError("Harvey's voice is unavailable right now.", retryable=True)
         return wav(blob.data, rate=_rate_from(blob.mime_type))
 
-    # --- Live (ADR 0030) -------------------------------------------------------
+    # --- Live (ADR 0031) -------------------------------------------------------
 
     def live(
         self, *, system: str, tools: list[dict[str, Any]], session_id: str, voice: str = "Charon"
@@ -554,7 +554,7 @@ class VertexGemini:
 
 
 def live_config(*, system: str, tools: list[dict[str, Any]], voice: str) -> types.LiveConnectConfig:
-    """The Live session's settings (ADR 0030). A function of its own so a test
+    """The Live session's settings (ADR 0031). A function of its own so a test
     can build it without credentials."""
     return types.LiveConnectConfig(
         response_modalities=[types.Modality.AUDIO],

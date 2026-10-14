@@ -123,7 +123,7 @@ def test_vertex_client_requires_project_id():
 
 
 def test_live_messages_become_plain_events(caplog):
-    """The SDK's Live message shapes, mapped to LiveEvents (ADR 0030)."""
+    """The SDK's Live message shapes, mapped to LiveEvents (ADR 0031)."""
     from google.genai import types
 
     from anyview.llm.adapter import _VertexLive

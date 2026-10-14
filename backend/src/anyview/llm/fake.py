@@ -118,7 +118,7 @@ class FakeModel:
     def live(
         self, *, system: str, tools: list[dict[str, Any]], session_id: str, voice: str = "Charon"
     ) -> AbstractAsyncContextManager[FakeLive]:
-        """A scripted Live conversation (ADR 0030): see `FakeLive`."""
+        """A scripted Live conversation (ADR 0031): see `FakeLive`."""
         self._record("live", session_id, system, voice)
         session = FakeLive(
             system,
