@@ -56,6 +56,10 @@ resource "google_cloud_run_v2_service" "api" {
         value = var.harvey_voice
       }
       env {
+        name  = "DONNA_VOICE"
+        value = var.donna_voice
+      }
+      env {
         name  = "CORS_ORIGINS"
         value = join(",", var.cors_origins)
       }

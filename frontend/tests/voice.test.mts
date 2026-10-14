@@ -4,6 +4,8 @@ import {
   DEAD_AIR_MS,
   GIVE_UP_AFTER_STALL_MS,
   LISTENING,
+  MAX_QUESTION_MS,
+  QUESTION,
   SILENCE_MS,
   SPEECH_MS,
   UNTIMED,
@@ -145,4 +147,14 @@ test("the recording format keeps its codec and its ticket type apart", () => {
   assert.equal(chrome?.base, "audio/webm");
   assert.equal(pickFormat((t) => t === "audio/mp4")?.base, "audio/mp4");
   assert.equal(pickFormat(() => false), null);
+});
+
+test("asking Donna out loud: eight seconds of nothing closes the microphone", () => {
+  const ticks = (ms: number) => Array(ms / 50 + 1).fill(QUIET);
+  assert.equal(speak(ticks(7_000), QUESTION).ended, null);
+  assert.equal(speak(ticks(8_000), QUESTION).ended, "no-speech");
+});
+
+test("asking Donna out loud: a question is capped at a minute", () => {
+  assert.equal(speak(Array(MAX_QUESTION_MS / 50 + 1).fill(LOUD), QUESTION).ended, "limit");
 });

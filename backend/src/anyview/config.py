@@ -19,6 +19,7 @@ class Settings:
     fast_model_id: str
     tts_model_id: str = "gemini-2.5-flash-preview-tts"
     harvey_voice: str = "Charon"
+    donna_voice: str = "Kore"
     cors_origins: list[str] = field(default_factory=list)
     allowed_emails: frozenset[str] = frozenset()
     upload_bucket: str = ""
@@ -51,6 +52,8 @@ class Settings:
             # it gets its own id; the voice is one of Vertex's prebuilt speakers.
             tts_model_id=os.environ.get("TTS_MODEL_ID", "gemini-2.5-flash-preview-tts"),
             harvey_voice=os.environ.get("HARVEY_VOICE", "Charon"),
+            # Donna speaks only in Discover's speak mode (ADR 0030).
+            donna_voice=os.environ.get("DONNA_VOICE", "Kore"),
             cors_origins=origins or ["http://localhost:3000"],
             allowed_emails=emails,
             upload_bucket=os.environ.get("UPLOAD_BUCKET", ""),

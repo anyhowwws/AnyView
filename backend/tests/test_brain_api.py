@@ -506,3 +506,38 @@ def test_links_must_point_at_your_own_live_entries_of_the_right_kind(client):
         assert client.patch(url, json={"fields": {"role_id": bad}}).status_code == 409
     client.delete(f"/brain/entities/role/{role['id']}")
     assert client.patch(url, json={"fields": {"role_id": role["id"]}}).status_code == 409
+
+
+def test_discover_in_speak_mode_streams_donnas_voice(client):
+    from tests.test_api import _sse_events
+
+    _confirmed(client)
+    fake = FakeModel()
+    app.dependency_overrides[interview.get_model] = lambda: fake
+    r = client.post(
+        "/brain/discover",
+        json={"conversation_id": "conv-12345678", "question": "What have I led?", "voice": True},
+    )
+    assert r.status_code == 200, r.text
+    events = [e for e, _ in _sse_events(r)]
+    assert "audio" in events and events[-2:] == ["citations", "done"]
+    assert {c["system"] for c in fake.calls if c["call"] == "speak"} == {"Kore"}
+
+
+def test_a_question_asked_out_loud_is_transcribed(client, store):
+    from anyview.llm.adapter import wav
+
+    store.put("audio/uid-jordan/q.webm", wav(bytes(2400)))
+    fake = FakeModel()
+    app.dependency_overrides[interview.get_model] = lambda: fake
+    body = {"conversation_id": "conv-12345678", "object_name": "audio/uid-jordan/q.webm"}
+    r = client.post("/brain/discover/transcribe", json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["text"]
+    call = fake.calls[-1]
+    assert call["call"] == "transcribe" and call["session_id"] == "discover-conv-12345678"
+    assert "the candidate's question" in call["user"]
+
+    store.put("audio/uid-someone-else/q.webm", wav(bytes(2400)))
+    body["object_name"] = "audio/uid-someone-else/q.webm"
+    assert client.post("/brain/discover/transcribe", json=body).status_code == 403

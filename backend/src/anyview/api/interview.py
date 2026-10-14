@@ -20,7 +20,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from anyview.api.auth import CurrentUser, current_user, get_settings
 from anyview.api.sse import stream_response, tokens
-from anyview.api.uploads import audio_prefix, get_store, object_prefix
+from anyview.api.uploads import get_store, object_prefix, transcribe_recording
 from anyview.brain.extract import ExtractionFailed, drop_unchanged, propose
 from anyview.config import Settings
 from anyview.db.repository import NotFound
@@ -47,10 +47,8 @@ from anyview.interview.prompts import (
 from anyview.interview.voice import voiced
 from anyview.llm.adapter import Model
 from anyview.uploads.extract import (
-    EXTENSION_TYPES,
     PDF,
     ExtractionError,
-    audio_to_text,
     docx_to_text,
     pdf_to_text,
 )
@@ -514,25 +512,13 @@ class Transcript(BaseModel):
 def transcribe(
     body: TranscribeRequest, user: CurrentUser, model: ModelDep, store: StoreDep
 ) -> Transcript:
-    """A recorded answer, turned into the text the engine already understands.
-
-    The browser uploads the recording straight to the bucket and sends only its
-    object name, the same shape as a resume upload (ADR 0010, 0013)."""
-    # Only the caller's own recordings, by the prefix the ticket route set from
-    # the verified uid. This is the whole authorisation check.
-    if not body.object_name.startswith(audio_prefix(user.uid)):
-        raise HTTPException(403, "That recording isn't yours.")
-    suffix = body.object_name[body.object_name.rfind(".") :]
-    mime = EXTENSION_TYPES.get(suffix)
-    if mime is None:
-        raise HTTPException(415, "That recording format isn't supported.")
-    data = store.read(body.object_name)
-    if data is None:
-        raise HTTPException(404, "The recording wasn't found. Please record it again.")
-    try:
-        return Transcript(text=audio_to_text(data, mime, model=model, session_id=body.session_id))
-    except ExtractionError as exc:
-        raise HTTPException(422, exc.user_message) from exc
+    """A recorded answer, turned into the text the engine already understands
+    (ADR 0013). The checks and the call live in `transcribe_recording`."""
+    return Transcript(
+        text=transcribe_recording(
+            body.object_name, uid=user.uid, store=store, model=model, session_id=body.session_id
+        )
+    )
 
 
 @router.post("/answer", response_model=Session)

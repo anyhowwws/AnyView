@@ -111,12 +111,20 @@ ANSWER_SYSTEM = (
 )
 
 
-def audio_to_text(data: bytes, mime_type: str, *, model: Model, session_id: str) -> str:
-    """A recorded answer, transcribed. The model reads audio the same way it
-    reads a PDF — as an attachment — so this needs no speech API (ADR 0013)."""
+def audio_to_text(
+    data: bytes,
+    mime_type: str,
+    *,
+    model: Model,
+    session_id: str,
+    what: str = "the candidate's answer",
+) -> str:
+    """A recording, transcribed: an interview answer, or a question asked in
+    Discover (`what` says which). The model reads audio the same way it reads a
+    PDF — as an attachment — so this needs no speech API (ADR 0013)."""
     reply = model.generate(
         system=ANSWER_SYSTEM,
-        user="Transcribe the attached recording of the candidate's answer.",
+        user=f"Transcribe the attached recording of {what}.",
         session_id=session_id,
         call="transcribe",
         effort="low",

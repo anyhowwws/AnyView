@@ -26,7 +26,7 @@ writes simple scripts). So:
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
 | LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028); Vertex AI (location `global`) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
-| Voice | **Gemini TTS on Vertex** for Harvey, the interviewer (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`; Donna, the Digital Garden's assistant, has no voice yet); answers recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default**; Harvey's interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016 |
+| Voice | **Gemini TTS on Vertex** for Harvey, the interviewer (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`) and for Donna in Discover's speak mode (`DONNA_VOICE`, default `Kore`, `discover.DONNA_DELIVERY`); answers and spoken questions recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default in an interview; typing is the default in Discover**; Harvey's interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016, 0030 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
@@ -45,8 +45,9 @@ docs, Firestore, scraping Glassdoor/Blind, GKE/HA/multi-region, API keys.
 
 **Donna** is the Digital Garden's assistant: Discover, the review queue, resume and dump extraction.
 **Harvey** is the interviewer: Practice, the pre-flight, the interjections and everything spoken in an
-interview (ADR 0029). Donna's voice is not decided yet. Don't mix them up in copy, prompts or code:
-`DonnaVoice`/`DONNA_VOICE` no longer exist, and `askDonna`/`role: "donna"` are the garden's.
+interview (ADR 0029). Donna speaks only in Discover, when the candidate switches it to Speak (ADR 0030).
+Don't mix them up in copy, prompts or code: `HARVEY_VOICE`/`harveyVoice()` are the interviewer's,
+`DONNA_VOICE`/`donnaVoice()`/`askDonna`/`role: "donna"` are the garden's.
 
 ## Layout
 
@@ -116,6 +117,10 @@ Backend modules:
   garden over `POST /brain/discover` (SSE: tokens, then one `citations` frame). Whole garden in the
   system prompt, no retrieval yet; `discover_context()` is the seam Phase 2 retrieval replaces.
   Read-only, stateless, fast model. Cited labels are checked against the user's label map.
+  Speak mode (ADR 0030): `voice: true` wraps the stream in `interview/voice.py:voiced()` with Donna's voice;
+  `for_speech` strips labels and Markdown from what is synthesised (never from what is shown).
+  `POST /brain/discover/transcribe` turns a spoken question into text via `api/uploads.py:transcribe_recording`,
+  the helper `/interview/transcribe` uses too.
 - `backend/migrations/NNN_*.sql` — the schema. Additive only; the DB enforces provenance, append-only events, the competency taxonomy, one live skill per name.
 
 ## Commands

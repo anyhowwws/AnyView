@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { NO_ANSWER, VoiceAnswer } from "@/components/voice-answer";
 import { ApiError, askQuestion, interjection } from "@/lib/api";
 import { loadVoicePreference, saveVoicePreference } from "@/lib/store";
-import { harveyVoice, microphoneSupported, type HarveyVoice, type ListenEnd } from "@/lib/voice";
+import { harveyVoice, microphoneSupported, type ListenEnd, type VoicePlayer } from "@/lib/voice";
 import type { Session } from "@/lib/types";
 
 interface Props {
@@ -58,7 +58,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   const [remaining, setRemaining] = useState<number | null>(null);
   // One player for the whole interview, shared across these per-question
   // mounts, so a clip from the last question plays out under the next (ADR 0028).
-  const harvey = useRef<HarveyVoice | null>(null);
+  const harvey = useRef<VoicePlayer | null>(null);
   if (harvey.current === null && typeof window !== "undefined") harvey.current = harveyVoice();
 
   useEffect(() => {

@@ -1,4 +1,5 @@
-"""Harvey's side of voice mode: spoken audio interleaved with the text he types.
+"""Spoken audio interleaved with streamed text: Harvey's questions (ADR 0013), and
+Donna's Discover answers when the candidate asks for them out loud (ADR 0030).
 
 The `ask` stream already yields text deltas. Waiting for the whole answer
 before synthesising would put a two-second silence at the top of every
@@ -21,7 +22,7 @@ import base64
 import logging
 import re
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any
 
@@ -80,12 +81,17 @@ def voiced(
     session_id: str,
     voice: str,
     style: str | None = None,
+    for_speech: Callable[[str], str] | None = None,
 ) -> Iterator[Frame]:
-    """Wrap a text stream so it also carries Harvey's voice.
+    """Wrap a text stream so it also carries a spoken voice.
 
     Yields the same token frames as the silent path, plus one audio frame per
     sentence. If synthesis fails, the text keeps streaming and a single
     `voice_off` frame tells the browser to stop waiting for audio.
+
+    `for_speech` rewrites a sentence before it is synthesised, for text written
+    to be read rather than heard (Donna's citation labels and Markdown). A
+    sentence it empties is skipped, so no call is paid for a clip of nothing.
     """
     pending: deque[tuple[int, Future[bytes]]] = deque()
     buffer = ""
@@ -98,6 +104,10 @@ def voiced(
 
         def say(sentence: str) -> None:
             nonlocal spoken
+            if for_speech is not None:
+                sentence = for_speech(sentence)
+                if not sentence:
+                    return
             pending.append(
                 (
                     spoken,

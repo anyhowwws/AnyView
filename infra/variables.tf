@@ -39,6 +39,12 @@ variable "harvey_voice" {
   default     = "Charon"
 }
 
+variable "donna_voice" {
+  description = "Prebuilt Vertex voice for Donna, the Digital Garden's assistant, heard only in Discover's speak mode (ADR 0030). Female-sounding options include Kore (firm), Aoede (breezy), Leda (youthful), Zephyr (bright) and Sulafat (warm). Check a name with a real call before using it: an unknown one is a 400."
+  type        = string
+  default     = "Kore"
+}
+
 variable "answer_audio_retention_days" {
   description = "How long a recorded interview answer stays in the bucket before the lifecycle rule deletes it (ADR 0013)."
   type        = number
