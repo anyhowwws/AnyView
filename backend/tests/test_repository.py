@@ -487,6 +487,8 @@ def _fill(repo: Repository, uid: str) -> None:
     repo.retire_entity(uid, "skill", brain.skills[0].id)
     pending = repo.create_dump(uid, kind="text", text="another dump " * 5, object_name=None)
     repo.create_proposal(uid, dump_id=pending.id, patch=first_patch(), model="fake")
+    job = repo.create_job(uid, text="a queued dump " * 5)  # ADR 0034
+    repo.set_job_dump(job.id, pending.id)
     repo.write_usage(
         {"session_id": f"s-{uid}", "call": "plan", "model": "m", "input_tokens": 1,
          "output_tokens": 1, "thinking_tokens": 0, "cache_read": 0, "latency_ms": 1},

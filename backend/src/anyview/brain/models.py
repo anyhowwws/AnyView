@@ -305,6 +305,27 @@ class Proposal(BaseModel):
     dump_kind: Literal["text", "resume_pdf", "resume_docx"] | None = None
 
 
+JobStatus = Literal["queued", "running", "done", "failed"]
+
+
+class IngestJob(BaseModel):
+    """One dump on its way to a proposal (ADR 0034). The browser polls this;
+    the worker Cloud Tasks calls writes it."""
+
+    id: str
+    source: Literal["text", "upload"]
+    status: JobStatus
+    # The `progress` frames so far (ADR 0019's shapes), oldest first.
+    progress: list[dict] = Field(default_factory=list)
+    attempts: int = 0
+    error: str | None = None
+    error_status: int | None = None
+    # Filled in once the job is done, so the browser needs no second request.
+    proposal: Proposal | None = None
+    created_at: dt.datetime
+    updated_at: dt.datetime
+
+
 class Event(BaseModel):
     id: int
     seq: int

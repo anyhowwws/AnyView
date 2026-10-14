@@ -1,10 +1,14 @@
 // What the upload screen shows while Donna reads a resume (ADR 0019).
 // Pure: the API's `progress` frames go in, a view comes out, so the
 // sequencing is tested without a browser.
+//
+// Since ADR 0034 the frames arrive by polling a queued job, not on a stream:
+// each poll carries every frame so far, and `viewOfJob` rebuilds the view
+// from them. A retry on the worker starts its frames again, and so does the view.
 
-import type { EntityKind } from "./types";
+import type { EntityKind, Proposal } from "./types";
 
-export type Step = "upload" | "read" | "parts" | "tidy" | "link";
+export type Step = "upload" | "queue" | "read" | "parts" | "tidy" | "link";
 
 export interface Part {
   id: number;
@@ -34,8 +38,29 @@ export type ProgressFrame =
   | { stage: "tidying"; skills: number }
   | { stage: "linking"; skills: number };
 
+/** One dump on its way to a proposal, as `GET /brain/jobs/{id}` returns it (ADR 0034). */
+export interface IngestJob {
+  id: string;
+  source: "text" | "upload";
+  status: "queued" | "running" | "done" | "failed";
+  progress: ProgressFrame[];
+  attempts: number;
+  error: string | null;
+  error_status: number | null;
+  proposal: Proposal | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Before anything is handed in: a file still uploading, or text about to be queued. */
 export function startView(fromFile: boolean): IngestView {
-  return { step: fromFile ? "upload" : "parts", parts: [], characters: null };
+  return { step: fromFile ? "upload" : "queue", parts: [], characters: null };
+}
+
+/** The view a queued job's frames add up to. Until the worker reports its
+ *  first frame, the job is waiting in the queue. */
+export function viewOfJob(frames: ProgressFrame[]): IngestView {
+  return frames.reduce(applyProgress, { step: "queue", parts: [], characters: null } as IngestView);
 }
 
 export function applyProgress(view: IngestView, frame: ProgressFrame): IngestView {
@@ -71,6 +96,8 @@ export function headline(view: IngestView): string {
   switch (view.step) {
     case "upload":
       return "Uploading your file";
+    case "queue":
+      return "Handing it to Donna";
     case "read":
       return "Reading your document";
     case "parts": {

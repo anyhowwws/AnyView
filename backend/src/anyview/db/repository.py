@@ -18,7 +18,8 @@ import hashlib
 import json
 import uuid
 from collections.abc import Iterable
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection, Engine
@@ -34,6 +35,7 @@ from anyview.brain.models import (
     EntityKind,
     Event,
     Feedback,
+    IngestJob,
     Language,
     Patch,
     Project,
@@ -71,12 +73,32 @@ ERASE_ORDER = (
     "projects",
     "roles",
     "events",
+    "ingest_jobs",  # points at proposals and raw_dumps, so it goes first
     "proposals",
     "raw_dumps",
     "usage_events",
     "saved_jobs",
     "users",
 )
+
+
+# A queued or running job untouched for this long is reported as failed: its
+# worker died and Cloud Tasks has given up (ADR 0034). Longer than every retry
+# backoff added together, so a job waiting on its next attempt is never caught.
+JOB_STALE = dt.timedelta(minutes=15)
+
+
+@dataclass(frozen=True)
+class JobWork:
+    """What a worker needs to run a claimed job. Not scoped by a signed-in
+    user: the worker is called by Cloud Tasks, and the uid comes from the row."""
+
+    id: str
+    uid: str
+    source: str
+    input_text: str | None
+    object_name: str | None
+    raw_dump_id: str | None
 
 
 class NotFound(Exception):
@@ -383,6 +405,155 @@ class Repository:
         return RawDump(
             id=str(row[0]), kind=row[1], text=row[2], object_name=row[3], created_at=row[4]
         )
+
+    # --- ingestion jobs (ADR 0034) ---------------------------------------------
+    # A plain table like saved_jobs, not event-sourced. The browser reads a job
+    # by its uid-scoped methods; the worker writes it by id alone.
+
+    _INGEST_COLUMNS = (
+        "j.id, j.source, j.status, j.progress, j.attempts, j.error, j.error_status, "
+        "j.proposal_id, j.created_at, j.updated_at, now() - j.updated_at > :stale AS stale"
+    )
+
+    def create_job(
+        self, uid: str, *, text: str | None = None, object_name: str | None = None
+    ) -> IngestJob:
+        """A queued job for typed text or for an uploaded file (exactly one)."""
+        source = "upload" if object_name is not None else "text"
+        job_id = str(uuid.uuid4())
+        with self.engine.begin() as c:
+            c.execute(
+                _q(
+                    "INSERT INTO ingest_jobs (id, user_id, source, input_text, object_name) "
+                    "VALUES (:id, :uid, :source, :text, :obj)"
+                ),
+                {"id": job_id, "uid": uid, "source": source, "text": text, "obj": object_name},
+            )
+        return self.job(uid, job_id)
+
+    def job(self, uid: str, job_id: str) -> IngestJob:
+        if not _is_uuid(job_id):
+            raise NotFound("job")
+        with self.engine.begin() as c:
+            row = c.execute(
+                _q(
+                    f"SELECT {self._INGEST_COLUMNS} FROM ingest_jobs j "
+                    "WHERE j.user_id = :uid AND j.id = :id"
+                ),
+                {"uid": uid, "id": job_id, "stale": JOB_STALE},
+            ).one_or_none()
+        if row is None:
+            raise NotFound("job")
+        return self._job(uid, row)
+
+    def active_jobs(self, uid: str) -> list[IngestJob]:
+        """Jobs still on their way, newest first: what a reloaded page picks up."""
+        with self.engine.begin() as c:
+            rows = c.execute(
+                _q(
+                    f"SELECT {self._INGEST_COLUMNS} FROM ingest_jobs j "
+                    "WHERE j.user_id = :uid AND j.status IN ('queued', 'running') "
+                    "AND now() - j.updated_at <= :stale ORDER BY j.created_at DESC"
+                ),
+                {"uid": uid, "stale": JOB_STALE},
+            ).all()
+        return [self._job(uid, r) for r in rows]
+
+    def _job(self, uid: str, r: Any) -> IngestJob:
+        status, error, error_status = r[2], r[5], r[6]
+        if r[10] and status in ("queued", "running"):
+            # Nothing is coming for this job any more; say so rather than let
+            # the browser wait for ever. The row itself is left as it was.
+            status, error, error_status = (
+                "failed",
+                "Donna stopped before she finished. Please try again.",
+                503,
+            )
+        return IngestJob(
+            id=str(r[0]), source=r[1], status=status, progress=r[3], attempts=r[4],
+            error=error, error_status=error_status,
+            proposal=self.proposal(uid, str(r[7])) if r[7] is not None else None,
+            created_at=r[8], updated_at=r[9],
+        )  # fmt: skip
+
+    def claim_job(
+        self, job_id: str, *, lease: dt.timedelta
+    ) -> JobWork | Literal["missing", "finished", "busy"]:
+        """Take a job for one delivery. A job is free when it is queued, or when
+        it is running but its heartbeat is older than `lease` (that delivery
+        died). Cloud Tasks delivers at least once, so two deliveries of the same
+        task can arrive together; only one of them gets the row."""
+        if not _is_uuid(job_id):
+            return "missing"
+        with self.engine.begin() as c:
+            row = c.execute(
+                _q(
+                    "UPDATE ingest_jobs SET status = 'running', attempts = attempts + 1, "
+                    "progress = '[]'::jsonb, error = NULL, error_status = NULL, updated_at = now() "
+                    "WHERE id = :id AND (status = 'queued' "
+                    "OR (status = 'running' AND now() - updated_at > :lease)) "
+                    "RETURNING user_id, source, input_text, object_name, raw_dump_id"
+                ),
+                {"id": job_id, "lease": lease},
+            ).one_or_none()
+            if row is not None:
+                return JobWork(
+                    id=job_id, uid=row[0], source=row[1], input_text=row[2],
+                    object_name=row[3], raw_dump_id=str(row[4]) if row[4] else None,
+                )  # fmt: skip
+            status = c.execute(
+                _q("SELECT status FROM ingest_jobs WHERE id = :id"), {"id": job_id}
+            ).scalar_one_or_none()
+        if status is None:
+            return "missing"
+        return "busy" if status == "running" else "finished"
+
+    def report_job_progress(self, job_id: str, frame: dict) -> None:
+        """Append one progress frame. Doubles as the heartbeat."""
+        with self.engine.begin() as c:
+            c.execute(
+                _q(
+                    "UPDATE ingest_jobs SET progress = progress || CAST(:frame AS jsonb), "
+                    "updated_at = now() WHERE id = :id AND status = 'running'"
+                ),
+                {"id": job_id, "frame": _json([frame])},
+            )
+
+    def set_job_dump(self, job_id: str, dump_id: str) -> None:
+        with self.engine.begin() as c:
+            c.execute(
+                _q("UPDATE ingest_jobs SET raw_dump_id = :dump, updated_at = now() WHERE id = :id"),
+                {"id": job_id, "dump": dump_id},
+            )
+
+    def finish_job(self, job_id: str, proposal_id: str) -> None:
+        with self.engine.begin() as c:
+            c.execute(
+                _q(
+                    "UPDATE ingest_jobs SET status = 'done', proposal_id = :pid, "
+                    "updated_at = now() WHERE id = :id"
+                ),
+                {"id": job_id, "pid": proposal_id},
+            )
+
+    def fail_job(self, job_id: str, message: str, status: int) -> None:
+        with self.engine.begin() as c:
+            c.execute(
+                _q(
+                    "UPDATE ingest_jobs SET status = 'failed', error = :msg, "
+                    "error_status = :status, updated_at = now() WHERE id = :id"
+                ),
+                {"id": job_id, "msg": message, "status": status},
+            )
+
+    def requeue_job(self, job_id: str) -> None:
+        """This delivery failed in a way worth retrying; Cloud Tasks will call
+        again after its backoff, and the next claim takes the row at once."""
+        with self.engine.begin() as c:
+            c.execute(
+                _q("UPDATE ingest_jobs SET status = 'queued', updated_at = now() WHERE id = :id"),
+                {"id": job_id},
+            )
 
     # --- proposals (the review queue) ----------------------------------------
 

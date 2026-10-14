@@ -114,9 +114,31 @@ def build_repository():
     return Repository(engine)
 
 
+@lru_cache(maxsize=1)
+def build_queue():
+    """Where a queued ingest job goes (ADR 0034): Cloud Tasks on Cloud Run,
+    this process everywhere else (a laptop, the fake model)."""
+    from anyview.tasks import CloudTasksQueue, InlineQueue
+
+    if settings.tasks_queue:
+        return CloudTasksQueue(
+            queue=settings.tasks_queue,
+            worker_url=settings.worker_url,
+            invoker=settings.tasks_invoker,
+        )
+    from anyview.brain.ingest import run_job
+
+    return InlineQueue(
+        lambda job_id: run_job(
+            job_id, repo=build_repository(), model=build_model(), store=build_store(), final=True
+        )
+    )
+
+
 app.dependency_overrides[interview.get_model] = build_model
 app.dependency_overrides[uploads.get_store] = build_store
 app.dependency_overrides[brain.get_repository] = build_repository
+app.dependency_overrides[brain.get_queue] = build_queue
 app.dependency_overrides[interview.get_repository_optional] = lambda: (
     build_repository() if build_engine() is not None else None
 )

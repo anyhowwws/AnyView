@@ -31,6 +31,11 @@ class Settings:
     db_iam_user: str = ""
     database_url: str = ""  # local/test override: a plain postgres:// URL
     signer_service_account: str = ""
+    # Queued ingestion (ADR 0034). An empty queue runs jobs in this process.
+    tasks_queue: str = ""  # projects/<p>/locations/<r>/queues/<name>
+    worker_url: str = ""  # the private worker service Cloud Tasks calls
+    tasks_invoker: str = ""  # the service account Cloud Tasks signs its token as
+    ingest_max_attempts: int = 5  # the queue's max_attempts; the worker's last try fails the job
     use_fake_model: bool = False
 
     @classmethod
@@ -71,5 +76,10 @@ class Settings:
             signer_service_account=os.environ.get(
                 "SIGNER_SERVICE_ACCOUNT", f"anyview-api@{project}.iam.gserviceaccount.com"
             ),
+            tasks_queue=os.environ.get("TASKS_QUEUE", ""),
+            worker_url=os.environ.get("WORKER_URL", ""),
+            tasks_invoker=os.environ.get("TASKS_INVOKER", ""),
+            # Set from the same Terraform variable as the queue's retry_config.
+            ingest_max_attempts=int(os.environ.get("INGEST_MAX_ATTEMPTS", "5")),
             use_fake_model=os.environ.get("ANYVIEW_FAKE_MODEL", "0") == "1",
         )

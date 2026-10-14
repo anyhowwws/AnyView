@@ -3,10 +3,7 @@ allow-listed user; every repository call is scoped by that user's uid."""
 
 from __future__ import annotations
 
-import queue
-import threading
-import uuid
-from collections.abc import Callable, Iterator
+import logging
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -14,18 +11,16 @@ from pydantic import BaseModel, Field
 
 from anyview.api.auth import CurrentUser, current_user
 from anyview.api.interview import ModelDep, SettingsDep, Transcript
-from anyview.api.sse import Frame, stream_response
-from anyview.api.uploads import StoreDep, object_prefix, transcribe_recording
+from anyview.api.sse import stream_response
+from anyview.api.uploads import StoreDep, transcribe_recording
 from anyview.brain.discover import DiscoverRequest, ReadAloudRequest, answer, read_aloud
-from anyview.brain.extract import ExtractionFailed, Progress, drop_unchanged, propose
+from anyview.brain.ingest import IngestFailed, check_upload, propose_for, read_upload
 from anyview.brain.manual import BadEntry, patch_for, source_text
-from anyview.brain.models import Brain, Event, Patch, Proposal, RawDump
+from anyview.brain.models import Brain, Event, IngestJob, Patch, Proposal, RawDump
 from anyview.db.repository import Conflict, NotFound, Repository
-from anyview.uploads.extract import (
-    ExtractionError,
-    docx_to_text,
-    pdf_to_text,
-)
+from anyview.tasks import QueueError, TaskQueue
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/brain", tags=["brain"], dependencies=[Depends(current_user)])
 
@@ -35,6 +30,13 @@ def get_repository() -> Repository:  # overridden in main.py and tests
 
 
 RepoDep = Annotated[Repository, Depends(get_repository)]
+
+
+def get_queue() -> TaskQueue:  # overridden in main.py and tests
+    raise NotImplementedError
+
+
+QueueDep = Annotated[TaskQueue, Depends(get_queue)]
 
 
 class DumpRequest(BaseModel):
@@ -59,79 +61,22 @@ class EventOut(BaseModel):
 
 
 def _propose(
-    repo: Repository,
-    model,
-    user: CurrentUser,
-    *,
-    kind: str,
-    text: str,
-    object_name: str | None,
-    on_progress: Progress | None = None,
+    repo: Repository, model, user: CurrentUser, *, kind: str, text: str, object_name: str | None
 ) -> Proposal:
     repo.ensure_user(user.uid, user.email)
     dump = repo.create_dump(user.uid, kind=kind, text=text, object_name=object_name)
-    index, _ = repo.brain_index(user.uid)
-    brain = repo.brain(user.uid)
     try:
-        patch = propose(
-            text,
-            brain_index=index,
-            model=model,
-            session_id=f"dump-{dump.id[:8]}",
-            garden_skills={k.label: k.name for k in brain.skills},
-            on_progress=on_progress,
-        )
-    except ExtractionFailed as exc:
-        raise HTTPException(502, exc.user_message) from exc
-    if patch.is_empty():
-        raise HTTPException(
-            422,
-            "Donna found nothing about your experience in that. "
-            "Try describing a role, a project, or a story.",
-        )
-    # Drafts that only restate something already confirmed never reach the
-    # queue: a queue of cards the user has already agreed to is a queue that
-    # gets approved unread (ADR 0015).
-    patch = drop_unchanged(patch, brain)
-    if patch.is_empty():
-        raise HTTPException(
-            422, "Nothing new in there — your Digital Garden already has all of it."
-        )
-    return repo.create_proposal(
-        user.uid, dump_id=dump.id, patch=patch, model=getattr(model, "model", "fake")
-    )
-
-
-def _read_upload(
-    body: UploadDumpRequest, user: CurrentUser, model, store, tell: Progress
-) -> tuple[str, str]:
-    """The uploaded file as (dump kind, text)."""
-    if not body.resume_object.startswith(object_prefix(user.uid)):
-        raise HTTPException(403, "That upload isn't yours.")
-    data = store.read(body.resume_object)
-    if data is None:
-        raise HTTPException(404, "The uploaded file wasn't found. Please upload it again.")
-    tell("reading", {"file": body.resume_object.rsplit(".", 1)[-1]})
-    try:
-        if body.resume_object.endswith(".pdf"):
-            kind, text = (
-                "resume_pdf",
-                pdf_to_text(data, model=model, session_id=f"upload-{uuid.uuid4().hex[:8]}"),
-            )
-        elif body.resume_object.endswith(".docx"):
-            kind, text = "resume_docx", docx_to_text(data)
-        else:
-            raise HTTPException(415, "Upload a PDF or Word (.docx) file.")
-    except ExtractionError as exc:
-        raise HTTPException(422, exc.user_message) from exc
-    if len(text.strip()) < 20:
-        raise HTTPException(422, "The file has almost no text in it.")
-    tell("read", {"characters": len(text)})
-    return kind, text
+        return propose_for(repo, model, user.uid, dump)
+    except IngestFailed as exc:
+        raise HTTPException(exc.status, exc.message) from exc
 
 
 def _silent(stage: str, data: dict) -> None:
-    """The non-streaming routes take no progress."""
+    """The synchronous routes take no progress."""
+
+
+# The synchronous routes read a dump inside the request. The browser no longer
+# uses them (it queues a job, below); scripts and tests still do.
 
 
 @router.post("/dumps", response_model=Proposal)
@@ -143,70 +88,61 @@ def create_dump(body: DumpRequest, user: CurrentUser, repo: RepoDep, model: Mode
 def create_dump_from_upload(
     body: UploadDumpRequest, user: CurrentUser, repo: RepoDep, model: ModelDep, store: StoreDep
 ) -> Proposal:
-    kind, text = _read_upload(body, user, model, store, _silent)
+    try:
+        kind, text = read_upload(
+            body.resume_object, user.uid, model=model, store=store, tell=_silent
+        )
+    except IngestFailed as exc:
+        raise HTTPException(exc.status, exc.message) from exc
     return _propose(repo, model, user, kind=kind, text=text, object_name=body.resume_object)
 
 
-@router.post("/dumps/stream")
-def stream_dump(body: DumpRequest, user: CurrentUser, repo: RepoDep, model: ModelDep):
-    """`POST /dumps`, streamed: `progress` frames as each step starts and each
-    section finishes, then one `proposal` frame (ADR 0005 wire format)."""
-    return stream_response(
-        _with_progress(
-            lambda tell: _propose(
-                repo, model, user, kind="text", text=body.text, object_name=None, on_progress=tell
-            )
-        )
-    )
+# --- Queued ingestion (ADR 0034) ----------------------------------------------
+# The browser hands in a dump and gets a job id back at once. Cloud Tasks runs
+# the job on the worker service; the browser polls the job for its progress
+# frames and, at the end, the proposal.
 
 
-@router.post("/dumps/from-upload/stream")
-def stream_dump_from_upload(
-    body: UploadDumpRequest, user: CurrentUser, repo: RepoDep, model: ModelDep, store: StoreDep
-):
-    """`POST /dumps/from-upload`, streamed. An upload takes about a minute;
-    this is what lets the screen show where it is instead of a spinner."""
+class JobRequest(BaseModel):
+    """Typed text, or an uploaded file. Exactly one."""
 
-    def work(tell: Progress) -> Proposal:
-        kind, text = _read_upload(body, user, model, store, tell)
-        return _propose(
-            repo, model, user, kind=kind, text=text, object_name=body.resume_object,
-            on_progress=tell,
-        )  # fmt: skip
-
-    return stream_response(_with_progress(work))
+    text: str | None = Field(default=None, min_length=20, max_length=20_000)
+    resume_object: str | None = Field(default=None, max_length=200)
 
 
-def _with_progress(work: Callable[[Progress], Proposal]) -> Iterator[Frame]:
-    """Run `work` in its own thread and yield its progress as it happens.
-
-    The pipeline reports from several threads at once (one per section), so
-    reports go through a queue; this generator is the one reader. It ends
-    with the proposal, or an `error` frame carrying the same message the
-    non-streaming route would have returned.
-    """
-    reports: queue.Queue[tuple[str, dict] | None] = queue.Queue()
-    outcome: dict[str, Any] = {}
-
-    def run() -> None:
+@router.post("/jobs", response_model=IngestJob, status_code=202)
+def create_job(body: JobRequest, user: CurrentUser, repo: RepoDep, queue: QueueDep) -> IngestJob:
+    if (body.text is None) == (body.resume_object is None):
+        raise HTTPException(422, "Send either some text or an uploaded file.")
+    if body.resume_object is not None:
         try:
-            outcome["proposal"] = work(lambda stage, data: reports.put((stage, data)))
-        except Exception as exc:  # re-raised or reported below, on this side
-            outcome["error"] = exc
-        finally:
-            reports.put(None)
+            check_upload(body.resume_object, user.uid)  # answered now, not after the queue
+        except IngestFailed as exc:
+            raise HTTPException(exc.status, exc.message) from exc
+    repo.ensure_user(user.uid, user.email)
+    job = repo.create_job(user.uid, text=body.text, object_name=body.resume_object)
+    try:
+        queue.enqueue(job.id)
+    except QueueError as exc:
+        log.error("could not queue ingest job %s: %s", job.id, exc)
+        repo.fail_job(job.id, "Donna couldn't start reading. Please try again.", 503)
+        raise HTTPException(503, "Donna couldn't start reading. Please try again.") from exc
+    # An inline queue may already have finished it; read it back either way.
+    return repo.job(user.uid, job.id)
 
-    threading.Thread(target=run, daemon=True).start()
-    while (report := reports.get()) is not None:
-        stage, data = report
-        yield ("progress", {"stage": stage, **data})
-    if "error" in outcome:
-        exc = outcome["error"]
-        if isinstance(exc, HTTPException):
-            yield ("error", {"message": exc.detail, "status": exc.status_code, "retryable": False})
-            return
-        raise exc  # ModelError and the unexpected: sse._events reports them
-    yield ("proposal", outcome["proposal"].model_dump(mode="json"))
+
+@router.get("/jobs", response_model=list[IngestJob])
+def list_active_jobs(user: CurrentUser, repo: RepoDep) -> list[IngestJob]:
+    """Jobs still running: a reloaded page picks its progress view back up."""
+    return repo.active_jobs(user.uid)
+
+
+@router.get("/jobs/{job_id}", response_model=IngestJob)
+def read_job(job_id: str, user: CurrentUser, repo: RepoDep) -> IngestJob:
+    try:
+        return repo.job(user.uid, job_id)
+    except NotFound as exc:
+        raise HTTPException(404, "No such job.") from exc
 
 
 @router.get("/dumps/{dump_id}", response_model=RawDump)
