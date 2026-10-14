@@ -437,8 +437,8 @@ export interface Citation {
 
 /** Asks Donna about the confirmed garden. Streams her words through onToken;
  *  resolves with the entries the answer cites once the server sends `done`. */
-/** Speak mode (ADR 0030): Donna's clips, and the one notice that her voice failed
- *  and the answer carries on as text. */
+/** A spoken answer (ADR 0030, 0033): Donna's clips, and the one notice that her
+ *  voice failed and the answer carries on as text. */
 export interface DonnaSpeech {
   onAudio: (b64: string) => void;
   onVoiceOff: (message: string) => void;
@@ -483,6 +483,45 @@ export async function askDonna(
       throw new ApiError(message, 502, retryable);
     } else if (event === "done") {
       return citations;
+    }
+  }
+  throw new ApiError("The stream ended before Donna finished.", 502, true);
+}
+
+/** Donna reads out an answer already on screen (ADR 0033). Only clips come
+ *  back; the text is the browser's own. Resolves once the last clip is in. */
+export async function readAloud(
+  conversationId: string,
+  text: string,
+  signal: AbortSignal,
+  speech: DonnaSpeech,
+): Promise<void> {
+  const auth = await authHeaders();
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/brain/discover/read-aloud`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...auth },
+      body: JSON.stringify({ conversation_id: conversationId, text }),
+      signal,
+    });
+  } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
+    throw new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
+  }
+  if (!res.ok) throw await toApiError(res);
+  if (!res.body) throw new ApiError("Empty response from the API.", 502, true);
+
+  for await (const { event, data } of readSse(res.body)) {
+    if (event === "audio") {
+      speech.onAudio((data as { b64: string }).b64);
+    } else if (event === "voice_off") {
+      speech.onVoiceOff((data as { message: string }).message);
+    } else if (event === "error") {
+      const { message, retryable } = data as { message: string; retryable: boolean };
+      throw new ApiError(message, 502, retryable);
+    } else if (event === "done") {
+      return;
     }
   }
   throw new ApiError("The stream ended before Donna finished.", 502, true);

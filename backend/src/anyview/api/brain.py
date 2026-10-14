@@ -16,7 +16,7 @@ from anyview.api.auth import CurrentUser, current_user
 from anyview.api.interview import ModelDep, SettingsDep, Transcript
 from anyview.api.sse import Frame, stream_response
 from anyview.api.uploads import StoreDep, object_prefix, transcribe_recording
-from anyview.brain.discover import DiscoverRequest, answer
+from anyview.brain.discover import DiscoverRequest, ReadAloudRequest, answer, read_aloud
 from anyview.brain.extract import ExtractionFailed, Progress, drop_unchanged, propose
 from anyview.brain.manual import BadEntry, patch_for, source_text
 from anyview.brain.models import Brain, Event, Patch, Proposal, RawDump
@@ -300,7 +300,7 @@ def discover(
 ):
     """Ask Donna about the confirmed garden (ADR 0017). Streams token frames,
     then one `citations` frame naming the entries the answer relies on. With
-    `voice: true` (speak mode, ADR 0030) `audio` frames ride beside the tokens."""
+    `voice: true` (a question asked out loud, ADR 0033) `audio` frames ride beside the tokens."""
     repo.ensure_user(user.uid, user.email)
     # Checked before the stream opens, so an empty garden is a plain 422 rather
     # than an error frame inside a 200.
@@ -315,6 +315,13 @@ def discover(
     )
 
 
+@router.post("/discover/read-aloud")
+def discover_read_aloud(body: ReadAloudRequest, model: ModelDep, settings: SettingsDep):
+    """Donna reads out an answer already on screen (ADR 0033): `audio` frames
+    only, one per sentence. Each clip is a usage row like any other."""
+    return stream_response(read_aloud(body, model=model, voice=settings.donna_voice))
+
+
 class DiscoverTranscribeRequest(BaseModel):
     conversation_id: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
     object_name: str = Field(max_length=200)
@@ -324,7 +331,7 @@ class DiscoverTranscribeRequest(BaseModel):
 def discover_transcribe(
     body: DiscoverTranscribeRequest, user: CurrentUser, model: ModelDep, store: StoreDep
 ) -> Transcript:
-    """A question asked out loud in speak mode (ADR 0030), as text. The browser
+    """A question asked out loud (ADR 0030, 0033), as text. The browser
     shows it, then asks it through `/brain/discover` like a typed one."""
     text = transcribe_recording(
         body.object_name,

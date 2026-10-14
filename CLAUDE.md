@@ -26,7 +26,7 @@ writes simple scripts). So:
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
 | LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028). **Gemini Live** (`LIVE_MODEL_ID`, regional: `LIVE_REGION`) runs each spoken question as a conversation with follow-ups (ADR 0031); Vertex AI (location `global` for everything else) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
-| Voice | **Gemini Live** for a spoken interview: one session per question, relayed over `WS /interview/live` (ADR 0031); the turn-based path below is its fallback. **Gemini TTS on Vertex** for Harvey, the interviewer, on that fallback path (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`) and for Donna in Discover's speak mode (`DONNA_VOICE`, default `Kore`, `discover.DONNA_DELIVERY`); answers and spoken questions recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default in an interview; typing is the default in Discover**; Harvey's interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016, 0030, 0031 |
+| Voice | **Gemini Live** for a spoken interview: one session per question, relayed over `WS /interview/live` (ADR 0031); the turn-based path below is its fallback. **Gemini TTS on Vertex** for Harvey, the interviewer, on that fallback path (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`) and for Donna in Discover when a question is asked out loud or an answer read aloud (`DONNA_VOICE`, default `Kore`, `discover.DONNA_DELIVERY`); answers and spoken questions recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default in an interview; typing is the default in Discover**, and a question asked out loud is answered out loud (no mode switch); Harvey's interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016, 0030, 0031, 0033 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
@@ -45,7 +45,7 @@ docs, Firestore, scraping Glassdoor/Blind, GKE/HA/multi-region, API keys.
 
 **Donna** is the Digital Garden's assistant: Discover, the review queue, resume and dump extraction.
 **Harvey** is the interviewer: Practice, the pre-flight, the interjections and everything spoken in an
-interview (ADR 0029). Donna speaks only in Discover, when the candidate switches it to Speak (ADR 0030).
+interview (ADR 0029). Donna speaks only in Discover: to a question asked out loud, or when an answer's Read aloud is pressed (ADR 0030, 0033).
 Don't mix them up in copy, prompts or code: `HARVEY_VOICE`/`harveyVoice()` are the interviewer's,
 `DONNA_VOICE`/`donnaVoice()`/`askDonna`/`role: "donna"` are the garden's.
 
@@ -131,7 +131,8 @@ Backend modules:
   Read-only, stateless, fast model. Cited labels are checked against the user's label map.
   The model sometimes cites a range (`[A1–A11, A13]`) despite the prompt; `group_labels` (and
   `groupLabels` in `lib/discover-text.ts`, same grammar) spell ranges out, so they become chips and are never spoken.
-  Speak mode (ADR 0030): `voice: true` wraps the stream in `interview/voice.py:voiced()` with Donna's voice;
+  Voice (ADR 0030, 0033): the browser sends `voice: true` for a question asked out loud, which wraps the stream in
+  `interview/voice.py:voiced()` with Donna's voice; `POST /brain/discover/read-aloud` voices an answer already on screen;
   `for_speech` strips labels and Markdown from what is synthesised (never from what is shown).
   `POST /brain/discover/transcribe` turns a spoken question into text via `api/uploads.py:transcribe_recording`,
   the helper `/interview/transcribe` uses too.

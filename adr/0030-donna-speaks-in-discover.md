@@ -1,6 +1,6 @@
 # 0030 — Donna speaks in Discover, when asked to
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by 0033 (the Type / Speak switch is gone)
 - **Date:** 2026-10-14
 - **Amends:** 0017 (Discover), 0029 ("her voice is not decided yet")
 

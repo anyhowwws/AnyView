@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowUp, Keyboard, Mic, RotateCcw, Sparkles, Square, VolumeX } from "lucide-react";
+import { ArrowUp, Mic, RotateCcw, Sparkles, Square, Volume2, VolumeX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
   ApiError,
   askDonna,
+  readAloud,
   transcribeQuestion,
   uploadAnswerAudio,
   type Citation,
@@ -29,6 +30,9 @@ interface Message {
   text: string;
   citations?: Citation[];
   failed?: boolean;
+  /** Every clip of this answer, once Donna has said all of it: playing it
+   *  again costs nothing. Unset until a complete reading exists. */
+  clips?: string[];
 }
 
 interface Props {
@@ -37,8 +41,6 @@ interface Props {
   onOpen: (id: string) => void;
 }
 
-/** Typing is the default; speaking is chosen per visit, never remembered (ADR 0030). */
-type Mode = "type" | "speak";
 /** The microphone, while a question is being asked out loud. */
 type Mic = "idle" | "listening" | "transcribing";
 
@@ -48,28 +50,34 @@ function newConversationId(): string {
 
 /** Ask Donna about your own garden (ADR 0017). Read-only: she answers from
  *  confirmed entries and cites them; adding things stays in the capture box.
- *  The conversation lives only in this component — nothing is saved. */
+ *  The conversation lives only in this component — nothing is saved.
+ *
+ *  One composer, no mode (ADR 0033): a typed question gets a written answer,
+ *  a question asked out loud gets the same answer spoken too, and any answer
+ *  can be read aloud afterwards from its own button. */
 export function Discover({ brain, onOpen }: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ message: string; question: string } | null>(null);
-  const [mode, setMode] = useState<Mode>("type");
-  // Read by `ask`, which can run from a recording that finished after a switch.
-  const modeRef = useRef<Mode>("type");
-  modeRef.current = mode;
+  const [error, setError] = useState<{ message: string; question: string; spoken: boolean } | null>(null);
   const [mic, setMic] = useState<Mic>("idle");
   const [level, setLevel] = useState(0);
-  const [speaking, setSpeaking] = useState(false);
+  /** Which answer Donna is saying, by index in `messages`. */
+  const [playing, setPlaying] = useState<number | null>(null);
   const [voiceNote, setVoiceNote] = useState<string | null>(null);
   const conversation = useRef(newConversationId());
   const controller = useRef<AbortController | null>(null);
+  const reading = useRef<AbortController | null>(null);
+  // Bumped whenever Donna is cut off. A clip still arriving for an older
+  // reading checks it and stays silent, so "Stop" really stops her.
+  const utterance = useRef(0);
   const listening = useRef<ListenHandle | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
   const titles = useMemo(() => entryTitles(brain), [brain]);
   const empty = titles.size === 0;
   const starters = useMemo(() => suggestions(brain), [brain]);
+  const canRecord = useMemo(() => microphoneSupported(), []);
 
   // Leaving the garden ends everything: the stream, Donna mid-sentence, the mic.
   useEffect(
@@ -85,7 +93,39 @@ export function Discover({ brain, onOpen }: Props) {
     bottom.current?.scrollIntoView({ block: "nearest" });
   }, [messages]);
 
-  async function ask(question: string) {
+  /** Start a new reading of answer `index`: cuts off whatever Donna was saying.
+   *  Returns the callbacks the stream feeds and a `done` that keeps the clips. */
+  function startReading(index: number) {
+    quiet();
+    const id = utterance.current;
+    const voice = donnaVoice();
+    const clips: string[] = [];
+    let complete = true;
+    setPlaying(index);
+    voice.onFinished = () => setPlaying((p) => (p === index ? null : p));
+    return {
+      speech: {
+        onAudio: (b64: string) => {
+          if (utterance.current !== id) return;
+          clips.push(b64);
+          voice.play(b64);
+        },
+        onVoiceOff: (message: string) => {
+          complete = false;
+          setVoiceNote(`${message} Donna's answer is on screen.`);
+        },
+      },
+      done: () => {
+        if (utterance.current !== id) return;
+        voice.markComplete();
+        if (complete && clips.length > 0) {
+          setMessages((prev) => prev.map((m, i) => (i === index ? { ...m, clips } : m)));
+        }
+      },
+    };
+  }
+
+  async function ask(question: string, { spoken = false } = {}) {
     const q = question.trim();
     if (!q || busy) return;
     // Failed turns are not part of the conversation Donna sees.
@@ -95,14 +135,14 @@ export function Discover({ brain, onOpen }: Props) {
     setDraft("");
     setError(null);
     setBusy(true);
+    // A new question cuts off whatever Donna was still saying about the last one.
+    quiet();
+    const index = messages.length + 1;
     setMessages((prev) => [...prev, { role: "user", text: q }, { role: "donna", text: "" }]);
     const abort = new AbortController();
     controller.current = abort;
-    // In speak mode every answer is spoken, typed question or not. A new
-    // question cuts off whatever Donna was still saying about the last one.
-    const voice = modeRef.current === "speak" ? donnaVoice() : null;
-    voice?.stop();
-    if (voice) voice.onFinished = () => setSpeaking(false);
+    // Asked out loud, answered out loud (ADR 0033). Typed questions stay silent.
+    const reading = spoken ? startReading(index) : null;
     try {
       const citations = await askDonna(
         conversation.current,
@@ -110,21 +150,14 @@ export function Discover({ brain, onOpen }: Props) {
         history,
         (chunk) => setMessages((prev) => withLast(prev, (m) => ({ ...m, text: m.text + chunk }))),
         abort.signal,
-        voice
-          ? {
-              onAudio: (b64) => {
-                setSpeaking(true);
-                voice.play(b64);
-              },
-              onVoiceOff: (message) => setVoiceNote(`${message} Donna's answer is on screen.`),
-            }
-          : undefined,
+        reading?.speech,
       );
-      voice?.markComplete();
+      reading?.done();
       setMessages((prev) => withLast(prev, (m) => ({ ...m, citations })));
     } catch (err) {
       if ((err as Error).name === "AbortError") return;
-      setError({ message: err instanceof ApiError ? err.message : "Donna couldn't answer that.", question: q });
+      quiet();
+      setError({ message: err instanceof ApiError ? err.message : "Donna couldn't answer that.", question: q, spoken });
       // Keep the question on screen, drop Donna's partial reply, and mark the pair failed.
       setMessages((prev) => [...prev.slice(0, -2), { role: "user", text: q, failed: true }]);
     } finally {
@@ -132,35 +165,57 @@ export function Discover({ brain, onOpen }: Props) {
     }
   }
 
+  /** Read one answer aloud, or stop it if that is the one she is saying. */
+  async function toggleReading(index: number) {
+    if (playing === index) {
+      quiet();
+      return;
+    }
+    setVoiceNote(null);
+    const voice = donnaVoice();
+    try {
+      // This click is the user gesture that lets the page play Donna at all.
+      await voice.enable();
+    } catch {
+      setVoiceNote("This browser is blocking audio playback on the page.");
+      return;
+    }
+    const message = messages[index];
+    const { speech, done } = startReading(index);
+    // Heard once already: play it again from memory, no second bill.
+    if (message.clips) {
+      message.clips.forEach((b64) => voice.play(b64));
+      voice.markComplete();
+      return;
+    }
+    const abort = new AbortController();
+    reading.current = abort;
+    try {
+      await readAloud(conversation.current, message.text, abort.signal, speech);
+      done();
+    } catch (err) {
+      if ((err as Error).name === "AbortError") return;
+      quiet();
+      setVoiceNote(err instanceof ApiError ? err.message : "Donna couldn't read that out. Try again.");
+    }
+  }
+
   /** Stop Donna mid-sentence. */
   function quiet() {
+    utterance.current += 1;
+    reading.current?.abort();
+    reading.current = null;
     const voice = donnaVoice();
     voice.onFinished = null;
     voice.stop();
-    setSpeaking(false);
+    setPlaying(null);
   }
 
-  function chooseMode(next: Mode) {
-    if (next === mode) return;
-    setVoiceNote(null);
-    if (next === "type") {
-      quiet();
-      listening.current?.cancel();
-      listening.current = null;
-      releaseMicrophone();
-      setMic("idle");
-      setMode("type");
-      return;
-    }
-    if (!microphoneSupported()) {
-      setVoiceNote("This browser can't record audio. Chrome, Edge, Safari and Firefox all can.");
-      return;
-    }
-    // This click is the user gesture that lets the page play Donna at all.
-    donnaVoice()
-      .enable()
-      .then(() => setMode("speak"))
-      .catch(() => setVoiceNote("This browser is blocking audio playback on the page."));
+  function closeMicrophone() {
+    listening.current = null;
+    // A garden question is a one-off, not a turn in a conversation: don't
+    // leave the browser's recording light on between them.
+    releaseMicrophone();
   }
 
   /** Ask out loud: record until a pause, write it down, then ask it. */
@@ -168,17 +223,26 @@ export function Discover({ brain, onOpen }: Props) {
     if (busy || mic !== "idle") return;
     quiet(); // she must not be talking into the microphone
     setVoiceNote(null);
+    // This click is also what lets the page play her answer. If the browser
+    // refuses, the question still goes through and the answer stays written.
+    let answerAloud = true;
+    try {
+      await donnaVoice().enable();
+    } catch {
+      answerAloud = false;
+    }
     setLevel(0);
     setMic("listening");
     listening.current = await listen({
       limits: QUESTION,
       onLevel: setLevel,
       onError: (message) => {
+        closeMicrophone();
         setMic("idle");
         setVoiceNote(message);
       },
       onEnd: async (recording) => {
-        listening.current = null;
+        closeMicrophone();
         if (!recording.heardSpeech) {
           setMic("idle");
           setVoiceNote("Donna didn't hear anything. Check your microphone, or type your question.");
@@ -189,7 +253,8 @@ export function Discover({ brain, onOpen }: Props) {
           const object = await uploadAnswerAudio(recording.blob, recording.contentType);
           const text = await transcribeQuestion(conversation.current, object);
           setMic("idle");
-          void ask(text);
+          if (!answerAloud) setVoiceNote("This browser is blocking audio playback, so Donna's answer is on screen only.");
+          void ask(text, { spoken: answerAloud });
         } catch (err) {
           setMic("idle");
           setVoiceNote(err instanceof ApiError ? err.message : "That recording didn't go through. Try again.");
@@ -204,6 +269,7 @@ export function Discover({ brain, onOpen }: Props) {
     conversation.current = newConversationId();
     setMessages([]);
     setError(null);
+    setVoiceNote(null);
     setBusy(false);
   }
 
@@ -222,21 +288,9 @@ export function Discover({ brain, onOpen }: Props) {
           <h2 id="discover-heading" className="text-lg font-semibold">Ask Donna about your garden</h2>
           <p className="mt-1 text-sm text-muted-foreground">She answers from confirmed entries only, and tells you when something isn&apos;t there.</p>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <div className="answer-mode" role="radiogroup" aria-label="How do you want to ask?">
-            <button type="button" role="radio" aria-checked={mode === "type"} onClick={() => chooseMode("type")}>
-              <Keyboard className="size-3.5" aria-hidden />
-              Type
-            </button>
-            <button type="button" role="radio" aria-checked={mode === "speak"} onClick={() => chooseMode("speak")}>
-              <Mic className="size-3.5" aria-hidden />
-              Speak
-            </button>
-          </div>
-          {messages.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={reset}><RotateCcw size={15} aria-hidden />New conversation</Button>
-          )}
-        </div>
+        {messages.length > 0 && (
+          <Button variant="ghost" size="sm" onClick={reset}><RotateCcw size={15} aria-hidden />New conversation</Button>
+        )}
       </header>
 
       <div className="discover-log" role="log" aria-live="polite" aria-busy={busy}>
@@ -252,7 +306,15 @@ export function Discover({ brain, onOpen }: Props) {
           m.role === "user" ? (
             <p key={i} className="discover-question" data-failed={m.failed || undefined}>{m.text}</p>
           ) : (
-            <DonnaAnswer key={i} message={m} titles={titles} onOpen={onOpen} pending={busy && i === messages.length - 1} />
+            <DonnaAnswer
+              key={i}
+              message={m}
+              titles={titles}
+              onOpen={onOpen}
+              pending={busy && i === messages.length - 1}
+              playing={playing === i}
+              onReadAloud={() => void toggleReading(i)}
+            />
           ),
         )}
         <div ref={bottom} />
@@ -261,13 +323,13 @@ export function Discover({ brain, onOpen }: Props) {
       {error && (
         <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
           <p>{error.message}</p>
-          <Button variant="outline" size="sm" onClick={() => { setMessages((prev) => prev.slice(0, -1)); void ask(error.question); }}>Try again</Button>
+          <Button variant="outline" size="sm" onClick={() => { setMessages((prev) => prev.slice(0, -1)); void ask(error.question, { spoken: error.spoken }); }}>Try again</Button>
         </div>
       )}
 
       {voiceNote && <p className="text-sm text-muted-foreground" role="status">{voiceNote}</p>}
 
-      {mode === "speak" && speaking && (
+      {playing !== null && (
         <div className="flex items-center gap-3 text-sm text-muted-foreground" role="status">
           <span className="size-2 animate-pulse rounded-full bg-primary" aria-hidden />
           Donna is speaking
@@ -278,7 +340,7 @@ export function Discover({ brain, onOpen }: Props) {
       {mic === "listening" ? (
         <QuestionListening level={level} onDone={() => listening.current?.stop()} onCancel={() => {
           listening.current?.cancel();
-          listening.current = null;
+          closeMicrophone();
           setMic("idle");
         }} />
       ) : mic === "transcribing" ? (
@@ -294,7 +356,7 @@ export function Discover({ brain, onOpen }: Props) {
           value={draft}
           maxLength={2000}
           rows={2}
-          placeholder={mode === "speak" ? "Press the microphone and ask, or type here" : "Which projects have I done with AWS Bedrock?"}
+          placeholder="Which projects have I done with AWS Bedrock?"
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
             // Enter sends; Shift+Enter is a new line.
@@ -304,11 +366,18 @@ export function Discover({ brain, onOpen }: Props) {
             }
           }}
         />
-        {mode === "speak" && (
-          <Button type="button" size="icon" variant="outline" className="discover-mic" disabled={busy} aria-label="Ask out loud" onClick={() => void speakQuestion()}>
-            <Mic size={18} aria-hidden />
-          </Button>
-        )}
+        <Button
+          type="button"
+          size="icon"
+          variant="outline"
+          className="discover-mic"
+          disabled={busy || !canRecord}
+          aria-label="Ask out loud"
+          title={canRecord ? "Ask out loud — Donna answers out loud" : "This browser can't record audio"}
+          onClick={() => void speakQuestion()}
+        >
+          <Mic size={18} aria-hidden />
+        </Button>
         <Button type="submit" size="icon" disabled={busy || !draft.trim()} aria-label="Ask">
           <ArrowUp size={18} aria-hidden />
         </Button>
@@ -349,11 +418,13 @@ function QuestionListening({ level, onDone, onCancel }: {
   );
 }
 
-function DonnaAnswer({ message, titles, onOpen, pending }: {
+function DonnaAnswer({ message, titles, onOpen, pending, playing, onReadAloud }: {
   message: Message;
   titles: Map<string, string>;
   onOpen: (id: string) => void;
   pending: boolean;
+  playing: boolean;
+  onReadAloud: () => void;
 }) {
   const citations = message.citations ?? [];
   const byLabel = new Map(citations.map((c) => [c.label, c]));
@@ -391,6 +462,12 @@ function DonnaAnswer({ message, titles, onOpen, pending }: {
             </li>
           ))}
         </ul>
+      )}
+      {!pending && message.text && (
+        <button type="button" className="discover-read" aria-pressed={playing} onClick={onReadAloud}>
+          {playing ? <Square className="size-3.5" aria-hidden /> : <Volume2 className="size-3.5" aria-hidden />}
+          {playing ? "Stop" : "Read aloud"}
+        </button>
       )}
     </div>
   );
