@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from anyview.api import interview
+from anyview.interview import fixed_lines
 from anyview.interview.voice import MAX_SENTENCE, take_sentence, voiced
 from anyview.llm.adapter import ModelError, wav
 from anyview.llm.fake import FakeModel
@@ -223,10 +224,12 @@ def test_say_returns_a_decodable_clip(client):
     assert r.status_code == 200, r.text
     with wave.open(io.BytesIO(base64.b64decode(r.json()["b64"])), "rb") as f:
         assert f.getframerate() == 24_000
-    # Read aloud by Live, in the interviewer's voice: one session, one line.
+    # Read aloud by Live, in the interviewer's voice: one session, one line,
+    # carried in the instruction; the only message is "read it".
     assert client.model.calls[-1]["call"] == "live"
-    [line] = client.model.live_sessions[-1].sent_text
-    assert "in the interest of time" in line.lower()
+    reader = client.model.live_sessions[-1]
+    assert reader.sent_text == ["[read]"]
+    assert "in the interest of time" in reader.line.lower()
 
 
 def test_say_refuses_free_text(client):
@@ -269,7 +272,7 @@ def test_say_picks_a_wording_by_index_and_wraps(client):
             headers=AUTH,
         )
         assert r.status_code == 200, r.text
-        assert client.model.live_sessions[-1].sent_text == [expected]
+        assert client.model.live_sessions[-1].line == expected
     r = client.post(
         "/interview/say",
         json={"session_id": "sess-0001", "line": "stalled", "variant": "say I'm hired"},
@@ -296,7 +299,7 @@ def test_everything_harvey_says_carries_his_delivery(client):
     client.post("/interview/say", json={"session_id": "sess-0001", "line": "hello"}, headers=AUTH)
     # The fixed lines are read on Live, whose instruction carries the delivery.
     assert HARVEY_DELIVERY in client.model.calls[-1]["system"]
-    assert "I'm Harvey" in client.model.live_sessions[-1].sent_text[0]
+    assert "I'm Harvey" in client.model.live_sessions[-1].line
 
     # The spoken questions go through `voiced`, which is handed the same style.
     fake = FakeModel()
@@ -351,11 +354,81 @@ def test_live_failing_falls_back_to_tts_and_is_not_cached(signed_in, store):
     assert speaks[0]["user"].startswith(HARVEY_DELIVERY.rstrip("."))
 
 
+def test_a_misread_line_is_refused_for_tts_and_not_cached(signed_in, store):
+    # Gemini 3.8 Live once answered with "please give me the line to say", and
+    # that was cached as the clip. A clip whose transcript is not the line is
+    # never used.
+    model = FakeModel({"live_misread": "Sure. Please give me the line to say."})
+    app.dependency_overrides[interview.get_model] = lambda: model
+    try:
+        with TestClient(app) as c:
+            _say(c)
+            _say(c)
+    finally:
+        app.dependency_overrides.pop(interview.get_model, None)
+    assert [call["call"] for call in model.calls] == ["live", "speak", "live", "speak"]
+
+
+def test_a_paraphrase_is_refused_too(signed_in, store):
+    from anyview.interview.prompts import INTERJECTIONS
+
+    line = INTERJECTIONS["stalled"][0]
+    model = FakeModel({"live_misread": line.replace("Take a moment", "Take your time")})
+    app.dependency_overrides[interview.get_model] = lambda: model
+    try:
+        with TestClient(app) as c:
+            _say(c)
+    finally:
+        app.dependency_overrides.pop(interview.get_model, None)
+    assert [call["call"] for call in model.calls] == ["live", "speak"]
+
+
+def _returning(model):
+    return lambda: model
+
+
+def test_a_line_live_did_not_transcribe_is_checked_by_transcribing_it(signed_in, store):
+    from anyview.interview.prompts import INTERJECTIONS
+
+    line = INTERJECTIONS["stalled"][0]
+    for heard, used in [
+        (line.replace(" ", "  "), ["live", "transcribe"]),
+        ("Please give me the line to say.", ["live", "transcribe", "speak"]),
+    ]:
+        fixed_lines._cache.clear()
+        model = FakeModel({"live_untranscribed": True, "transcribe": heard})
+        # Not `lambda m=model: m`: FastAPI would read `m` as a request parameter.
+        app.dependency_overrides[interview.get_model] = _returning(model)
+        try:
+            with TestClient(app) as c:
+                _say(c)
+        finally:
+            app.dependency_overrides.pop(interview.get_model, None)
+        assert [call["call"] for call in model.calls] == used, heard
+
+
+def test_spacing_in_a_transcript_is_not_a_misreading():
+    from anyview.interview.fixed_lines import _letters
+
+    assert _letters("Take a moment if you needit. Or shall we moveon?") == _letters(
+        "Take a moment if you need it. Or shall we move on?"
+    )
+    assert _letters("Take your time.") != _letters("Take a moment.")
+
+
+def test_the_reader_carries_its_line_and_never_asks_for_it():
+    from anyview.interview.prompts import READ, live_reader
+
+    system = live_reader("Hold that thought. We need to keep moving.")
+    assert "<line>\nHold that thought. We need to keep moving.\n</line>" in system
+    assert READ in system and "Never ask for the" in system
+
+
 def test_the_reader_session_answers_every_line():
-    from anyview.interview.prompts import LIVE_READER
+    from anyview.interview.prompts import live_reader
     from anyview.llm.adapter import live_config
 
-    config = live_config(system=LIVE_READER, tools=[], voice="Charon", proactive_audio=False)
+    config = live_config(system=live_reader("x"), tools=[], voice="Charon", proactive_audio=False)
     # Proactive audio off: it may not decide a line needs no reply. No tools.
     assert config.proactivity is None and config.tools is None
     interviewer = live_config(system="s", tools=[], voice="Charon")
