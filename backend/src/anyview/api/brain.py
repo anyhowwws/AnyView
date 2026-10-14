@@ -300,7 +300,7 @@ def discover(
 ):
     """Ask Donna about the confirmed garden (ADR 0017). Streams token frames,
     then one `citations` frame naming the entries the answer relies on. With
-    `voice: true` (a question asked out loud, ADR 0032) `audio` frames ride beside the tokens."""
+    `voice: true` (a question asked out loud, ADR 0033) `audio` frames ride beside the tokens."""
     repo.ensure_user(user.uid, user.email)
     # Checked before the stream opens, so an empty garden is a plain 422 rather
     # than an error frame inside a 200.
@@ -317,7 +317,7 @@ def discover(
 
 @router.post("/discover/read-aloud")
 def discover_read_aloud(body: ReadAloudRequest, model: ModelDep, settings: SettingsDep):
-    """Donna reads out an answer already on screen (ADR 0032): `audio` frames
+    """Donna reads out an answer already on screen (ADR 0033): `audio` frames
     only, one per sentence. Each clip is a usage row like any other."""
     return stream_response(read_aloud(body, model=model, voice=settings.donna_voice))
 
@@ -331,7 +331,7 @@ class DiscoverTranscribeRequest(BaseModel):
 def discover_transcribe(
     body: DiscoverTranscribeRequest, user: CurrentUser, model: ModelDep, store: StoreDep
 ) -> Transcript:
-    """A question asked out loud (ADR 0030, 0032), as text. The browser
+    """A question asked out loud (ADR 0030, 0033), as text. The browser
     shows it, then asks it through `/brain/discover` like a typed one."""
     text = transcribe_recording(
         body.object_name,

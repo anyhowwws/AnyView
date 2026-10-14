@@ -11,7 +11,7 @@ plugs into when a garden outgrows that (ADR 0017 says when).
 Stateless, like the interview: the browser keeps the conversation and posts
 the recent turns with each question.
 
-Voice (ADR 0030, 0032) is per question: a question asked out loud is sent with
+Voice (ADR 0030, 0033) is per question: a question asked out loud is sent with
 `voice=True`, and the same answer also arrives as spoken clips, one per
 sentence, through the interview's own `voiced()` wrapper. The text and the
 citations are unchanged; only what is synthesised is cleaned of labels and
@@ -103,7 +103,7 @@ class DiscoverRequest(BaseModel):
     conversation_id: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
     question: str = Field(min_length=1, max_length=2_000)
     history: list[Turn] = Field(default=[], max_length=100)
-    # Spoken answer (ADR 0032): the browser sets it when the question was asked out loud.
+    # Spoken answer (ADR 0033): the browser sets it when the question was asked out loud.
     voice: bool = False
 
 
@@ -257,7 +257,7 @@ def answer(
 def read_aloud(
     request: ReadAloudRequest, *, model: Model, voice: str
 ) -> Iterator[tuple[str, object]]:
-    """Donna reads out an answer that is already on screen (ADR 0032).
+    """Donna reads out an answer that is already on screen (ADR 0033).
 
     The same sentence splitting, cleaning and voice as a spoken answer, fed the
     whole text at once. The browser has the text, so only `audio` frames (and

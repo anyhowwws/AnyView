@@ -52,7 +52,7 @@ function newConversationId(): string {
  *  confirmed entries and cites them; adding things stays in the capture box.
  *  The conversation lives only in this component — nothing is saved.
  *
- *  One composer, no mode (ADR 0032): a typed question gets a written answer,
+ *  One composer, no mode (ADR 0033): a typed question gets a written answer,
  *  a question asked out loud gets the same answer spoken too, and any answer
  *  can be read aloud afterwards from its own button. */
 export function Discover({ brain, onOpen }: Props) {
@@ -141,7 +141,7 @@ export function Discover({ brain, onOpen }: Props) {
     setMessages((prev) => [...prev, { role: "user", text: q }, { role: "donna", text: "" }]);
     const abort = new AbortController();
     controller.current = abort;
-    // Asked out loud, answered out loud (ADR 0032). Typed questions stay silent.
+    // Asked out loud, answered out loud (ADR 0033). Typed questions stay silent.
     const reading = spoken ? startReading(index) : null;
     try {
       const citations = await askDonna(

@@ -1,4 +1,4 @@
-# 0032 — Discover answers the way you asked
+# 0033 — Discover answers the way you asked
 
 - **Status:** Accepted
 - **Date:** 2026-10-14

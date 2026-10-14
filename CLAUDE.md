@@ -26,7 +26,7 @@ writes simple scripts). So:
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
 | LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028). **Gemini Live** (`LIVE_MODEL_ID`, regional: `LIVE_REGION`) runs each spoken question as a conversation with follow-ups (ADR 0031); Vertex AI (location `global` for everything else) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
-| Voice | **Gemini Live** for a spoken interview: one session per question, relayed over `WS /interview/live` (ADR 0031); the turn-based path below is its fallback. **Gemini TTS on Vertex** for Harvey, the interviewer, on that fallback path (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`) and for Donna in Discover when a question is asked out loud or an answer read aloud (`DONNA_VOICE`, default `Kore`, `discover.DONNA_DELIVERY`); answers and spoken questions recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default in an interview; typing is the default in Discover**, and a question asked out loud is answered out loud (no mode switch); Harvey's interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016, 0030, 0031, 0032 |
+| Voice | **Gemini Live** for a spoken interview: one session per question, relayed over `WS /interview/live` (ADR 0031); the turn-based path below is its fallback. **Gemini TTS on Vertex** for Harvey, the interviewer, on that fallback path (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`) and for Donna in Discover when a question is asked out loud or an answer read aloud (`DONNA_VOICE`, default `Kore`, `discover.DONNA_DELIVERY`); answers and spoken questions recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default in an interview; typing is the default in Discover**, and a question asked out loud is answered out loud (no mode switch); Harvey's interruptions are fixed lines fetched once per run from `/interview/say` | 0013, 0016, 0030, 0031, 0033 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
@@ -45,7 +45,7 @@ docs, Firestore, scraping Glassdoor/Blind, GKE/HA/multi-region, API keys.
 
 **Donna** is the Digital Garden's assistant: Discover, the review queue, resume and dump extraction.
 **Harvey** is the interviewer: Practice, the pre-flight, the interjections and everything spoken in an
-interview (ADR 0029). Donna speaks only in Discover: to a question asked out loud, or when an answer's Read aloud is pressed (ADR 0030, 0032).
+interview (ADR 0029). Donna speaks only in Discover: to a question asked out loud, or when an answer's Read aloud is pressed (ADR 0030, 0033).
 Don't mix them up in copy, prompts or code: `HARVEY_VOICE`/`harveyVoice()` are the interviewer's,
 `DONNA_VOICE`/`donnaVoice()`/`askDonna`/`role: "donna"` are the garden's.
 
@@ -67,13 +67,14 @@ Backend modules:
 - `anyview/config.py` — `Settings` from env vars. Plain `os.environ`, no settings library.
 - `anyview/llm/adapter.py` — the only file that imports `google.genai`. `generate()` (optionally with `output_schema=` → parsed dict), `stream()`, `speak()`, and `live()` (an async session yielding plain `LiveEvent`s). Returns plain Python types. Every call logs one `anyview.usage` JSON line.
 - `anyview/llm/fake.py` — `FakeModel`, same surface, scripted replies. Used by tests and by `ANYVIEW_FAKE_MODEL=1`.
-  `FakeLive` asks the planned question, takes 4 s of microphone audio as an answer, asks one follow-up, then closes.
+  `FakeLive` asks the planned question, takes 4 s of microphone audio as an answer, asks one follow-up, then closes
+  (silently, or with a goodbye on the last question).
 - `anyview/interview/voice.py` — splits the `ask` stream into sentences and synthesises each
   one while the next arrives; emits `audio` / `voice_off` frames beside the token frames.
   The fallback when Live fails (ADR 0031).
 - `anyview/interview/live.py` — `LiveTurn`: one spoken question's rules with no I/O (ADR 0031). The
-  follow-up budget (`MAX_PROBES` = 2, none after a closing cue), the browser's cues (keys only),
-  and the transcript → `Answer` with `follow_ups`. `prompts.live_system` is Harvey's instruction
+  follow-up budget (`MAX_PROBES` = 2, none once the question has ended), how it ended (`end(reason)`:
+  `time_up`/`move_on` are cuts, `manual` is not, ADR 0032), and the transcript → `Answer` with `follow_ups`. `prompts.live_system` is Harvey's instruction
   per question; `prompts.LIVE_TOOLS` are `ask_follow_up` and `finish_question`.
 - `anyview/api/live.py` — `WS /interview/live`: token in the first frame (no headers on a
   WebSocket), `Origin` checked against the CORS list, one Live session per question relayed both
@@ -130,7 +131,7 @@ Backend modules:
   Read-only, stateless, fast model. Cited labels are checked against the user's label map.
   The model sometimes cites a range (`[A1–A11, A13]`) despite the prompt; `group_labels` (and
   `groupLabels` in `lib/discover-text.ts`, same grammar) spell ranges out, so they become chips and are never spoken.
-  Voice (ADR 0030, 0032): the browser sends `voice: true` for a question asked out loud, which wraps the stream in
+  Voice (ADR 0030, 0033): the browser sends `voice: true` for a question asked out loud, which wraps the stream in
   `interview/voice.py:voiced()` with Donna's voice; `POST /brain/discover/read-aloud` voices an answer already on screen;
   `for_speech` strips labels and Markdown from what is synthesised (never from what is shown).
   `POST /brain/discover/transcribe` turns a spoken question into text via `api/uploads.py:transcribe_recording`,
@@ -217,8 +218,10 @@ retrieval test set.
 - **Live (ADR 0031)** is regional (`LIVE_REGION`, default `us-central1`) and its model id
   (`LIVE_MODEL_ID`, default `gemini-live-2.5-flash-native-audio`) must be enabled in Model Garden,
   with proactive audio, before the first real run. If it fails, the socket sends `fallback: true`
-  and the browser uses the turn-based path for the rest of the page. The browser owns the clock
-  (`lib/live-cues.ts`): Live never notices silence on its own. One socket per question; a WebSocket
+  and the browser uses the turn-based path for the rest of the page. The browser owns the clock and
+  the cut-ins (`lib/live-cues.ts`, ADR 0032): barge-in only runs one way (the candidate's speech interrupts Harvey, never the reverse), so the browser plays
+  the fixed `time_up`/`stalled`/`move_on`/`goodbye` clips and sends `end` with a reason. Silence is
+  measured from the last non-filler transcript word, not the mic level. No text cues go to Live. One socket per question; a WebSocket
   is one request to Cloud Run for as long as it is open, so the service timeout is 600 s.
 
 - The API keeps one warm instance (`min_instance_count = 1`, ADR 0023): a cold start took ~66 s and

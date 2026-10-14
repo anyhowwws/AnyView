@@ -280,7 +280,7 @@ const clips = new Map<string, string>();
 
 export async function interjection(
   sessionId: string,
-  line: "time_up" | "stalled" | "hello",
+  line: "time_up" | "stalled" | "move_on" | "goodbye" | "hello",
 ): Promise<string | null> {
   const cached = clips.get(line);
   if (cached !== undefined) return cached;
@@ -437,7 +437,7 @@ export interface Citation {
 
 /** Asks Donna about the confirmed garden. Streams her words through onToken;
  *  resolves with the entries the answer cites once the server sends `done`. */
-/** A spoken answer (ADR 0030, 0032): Donna's clips, and the one notice that her
+/** A spoken answer (ADR 0030, 0033): Donna's clips, and the one notice that her
  *  voice failed and the answer carries on as text. */
 export interface DonnaSpeech {
   onAudio: (b64: string) => void;
@@ -488,7 +488,7 @@ export async function askDonna(
   throw new ApiError("The stream ended before Donna finished.", 502, true);
 }
 
-/** Donna reads out an answer already on screen (ADR 0032). Only clips come
+/** Donna reads out an answer already on screen (ADR 0033). Only clips come
  *  back; the text is the browser's own. Resolves once the last clip is in. */
 export async function readAloud(
   conversationId: string,

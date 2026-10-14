@@ -9,8 +9,10 @@ socket outlives Live's ten-minute connection limit.
 Browser → API
     text    {"token": "<Firebase ID token>", "session": <Session>}   first frame, once
     binary  microphone audio, 16 kHz 16-bit mono PCM                continuously
-    text    {"type": "cue", "name": "silent"|"move_on"|"time_up"}    the browser's clock
-    text    {"type": "end"}                                         give up; close the question
+    text    {"type": "end", "reason": "time_up"|"move_on"|"manual"}  close the question now
+
+The browser owns time and silence (ADR 0032): it plays Harvey's fixed lines
+itself and ends the question. Nothing it sends is ever spoken by Live.
 
 API → browser
     text    {"type": "ready"}                                       Live is open
@@ -44,7 +46,7 @@ from anyview.api.auth import Verifier, get_settings, get_verifier, user_from_tok
 from anyview.api.interview import get_model
 from anyview.config import Settings
 from anyview.interview.engine import EngineError
-from anyview.interview.live import TOOLS, LiveTurn
+from anyview.interview.live import END_REASONS, TOOLS, LiveTurn
 from anyview.interview.models import Session
 from anyview.llm.adapter import LiveSession, Model, ModelError
 
@@ -54,8 +56,6 @@ log = logging.getLogger(__name__)
 # The first frame carries the token and is checked the same way.
 router = APIRouter(prefix="/interview", tags=["interview"])
 
-# Cues the browser may send. `begin` is the API's own.
-BROWSER_CUES = frozenset({"silent", "move_on", "time_up"})
 # 100 ms of 16 kHz 16-bit audio is 3.2 KB; anything far bigger is not a microphone.
 MAX_AUDIO_FRAME = 64 * 1024
 FIRST_FRAME_TIMEOUT_S = 15
@@ -96,7 +96,7 @@ async def live(
             voice=settings.harvey_voice,
         ) as harvey:
             await _send(ws, {"type": "ready"})
-            await harvey.send_text(turn.cue("begin"))
+            await harvey.send_text(turn.begin)
             limit = min(MAX_TURN_S, turn.question.seconds + 240)
             gone = await _relay(ws, harvey, turn, limit=limit)
     except ModelError as exc:
@@ -178,10 +178,9 @@ async def _from_browser(ws: WebSocket, harvey: LiveSession, turn: LiveTurn) -> N
         except ValueError:
             continue
         if data.get("type") == "end":
-            turn.moved_on = True
+            reason = data.get("reason")
+            turn.end(reason if reason in END_REASONS else "manual")
             return
-        if data.get("type") == "cue" and data.get("name") in BROWSER_CUES:
-            await harvey.send_text(turn.cue(data["name"]))
 
 
 async def _from_live(ws: WebSocket, harvey: LiveSession, turn: LiveTurn) -> None:

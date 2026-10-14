@@ -211,6 +211,16 @@ export class VoicePlayer {
     return this.ctx !== null;
   }
 
+  /** When the last queued clip ends, on the shared AudioContext's clock. */
+  get endsAt(): number {
+    return this.nextAt;
+  }
+
+  /** Whether a clip is playing now. */
+  get speaking(): boolean {
+    return this.ctx !== null && this.nextAt > this.ctx.currentTime;
+  }
+
   /** Needs user activation: a browser will not start audio on a page nobody
    *  has clicked. Rejects if the context stays suspended, so the caller can
    *  ask for a click rather than leaving Harvey silently mute. */

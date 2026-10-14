@@ -5,17 +5,21 @@ import { motion } from "framer-motion";
 import { Mic, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LiveQuestion } from "@/lib/live";
+import type { LiveAction } from "@/lib/live-cues";
 import type { Answer, Session } from "@/lib/types";
 
 interface Props {
   session: Session;
   /** The question's clock in seconds, or null when the interview is untimed. */
   seconds: number | null;
-  /** A fragment of Harvey asking the question. What he says after it (nudges,
-   *  follow-ups) is shown here, under the question, instead. */
-  onHarvey: (text: string) => void;
+  /** The interview's last question: the button says "Finish". */
+  last: boolean;
   /** Harvey has finished asking; the clock starts. */
   onAsked: () => void;
+  /** Play one of Harvey's fixed lines: a nudge, or the cut-in that ends the question. */
+  onInterject: (line: LiveAction) => void;
+  /** The candidate ended the question themselves. */
+  onEnd: () => void;
   onAnswer: (answer: Answer) => void;
   /** Live itself failed: carry on with the turn-based voice path. */
   onFallback: (message: string) => void;
@@ -28,8 +32,10 @@ interface Props {
 export function LiveAnswer({
   session,
   seconds,
-  onHarvey,
+  last,
   onAsked,
+  onInterject,
+  onEnd,
   onAnswer,
   onFallback,
   onError,
@@ -39,18 +45,15 @@ export function LiveAnswer({
   const [asked, setAsked] = useState(false);
   const [heard, setHeard] = useState("");
   const [followUps, setFollowUps] = useState(0);
-  // Harvey's latest line after the question: a follow-up, a nudge, a close.
+  // The follow-up Harvey is asking now, as he declared it to the API. His
+  // transcript arrives late and in fragments, so it is never what is shown.
   const [line, setLine] = useState("");
-  const asking = useRef(true);
-  const lastSpeaker = useRef<"harvey" | "candidate">("harvey");
   const conversation = useRef<LiveQuestion | null>(null);
   // The callbacks change on every render of the parent; the socket must not.
-  const props = useRef({ onHarvey, onAsked, onAnswer, onFallback, onError });
-  props.current = { onHarvey, onAsked, onAnswer, onFallback, onError };
+  const props = useRef({ onAsked, onInterject, onAnswer, onFallback, onError });
+  props.current = { onAsked, onInterject, onAnswer, onFallback, onError };
 
   useEffect(() => {
-    asking.current = true;
-    lastSpeaker.current = "harvey";
     setAsked(false);
     setHeard("");
     setLine("");
@@ -58,26 +61,17 @@ export function LiveAnswer({
     const question = new LiveQuestion(
       session,
       {
-        onHarvey: (text) => {
-          if (asking.current) return props.current.onHarvey(text);
-          // A new line once the candidate has spoken since his last one.
-          setLine((prev) => (lastSpeaker.current === "candidate" ? text : prev + text));
-          lastSpeaker.current = "harvey";
-        },
-        onCandidate: (text) => {
-          lastSpeaker.current = "candidate";
-          setHeard((prev) => prev + text);
-        },
+        onCandidate: (text) => setHeard((prev) => prev + text),
         onAsked: () => {
-          asking.current = false;
-          lastSpeaker.current = "candidate";
           setAsked(true);
           props.current.onAsked();
         },
-        onFollowUp: () => {
+        onFollowUp: (asked) => {
           setFollowUps((n) => n + 1);
+          setLine(asked);
           setHeard("");
         },
+        onInterject: (line) => props.current.onInterject(line),
         onLevel: setLevel,
         onDone: (answer) => props.current.onAnswer(answer),
         onError: (message, fallback) =>
@@ -141,12 +135,15 @@ export function LiveAnswer({
         <Button
           variant="outline"
           className="h-10"
-          onClick={() => conversation.current?.end()}
+          onClick={() => {
+            conversation.current?.end("manual");
+            onEnd();
+          }}
           disabled={!asked}
           data-icon="inline-start"
         >
           <Square className="size-3.5" />
-          Next question
+          {last ? "Finish" : "Next question"}
         </Button>
         <Button variant="ghost" className="h-10" onClick={onTypeInstead}>
           Type this one instead

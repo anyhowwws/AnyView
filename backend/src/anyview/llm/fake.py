@@ -153,12 +153,13 @@ def _between(text: str, start: str, end: str) -> str:
 class FakeLive:
     """Harvey on Live, scripted. It asks the question in `<question>` when it
     gets `[begin]`, takes enough microphone audio as an answer, asks for
-    `follow_ups` follow-ups through the tool, then closes the question. Cues
-    behave as the real prompt asks: a nudge for [silent], a close for
-    [move_on] and [time_up]. Audio out is silence of a realistic length."""
+    `follow_ups` follow-ups through the tool, then closes the question: silently,
+    or with a goodbye on the last question, as the real prompt asks (ADR 0032).
+    Audio out is silence of a realistic length."""
 
     def __init__(self, system: str, *, session_id: str, follow_ups: int, answer: str) -> None:
         self.question = _between(system, "<question>", "</question>") or "Tell me about yourself."
+        self.last = "This is the last question" in system
         self.session_id = session_id
         self.follow_ups = follow_ups
         self.answer = answer
@@ -197,20 +198,18 @@ class FakeLive:
             if self._asked < self.follow_ups:
                 await self._call("ask_follow_up", question=FAKE_FOLLOW_UP, reason="no outcome")
             else:
-                await self._say("Okay.")
-                await self._call("finish_question")
+                await self._close()
+
+    async def _close(self) -> None:
+        if self.last:
+            await self._say("That's all my questions. Thanks for your time today.")
+        await self._call("finish_question")
 
     async def send_text(self, text: str) -> None:
         self.sent_text.append(text)
         if text.startswith("[begin]"):
             await self._say(self.question)
             self._listening = True
-        elif text.startswith("[silent]"):
-            await self._say("Take your time. Want me to put that another way?")
-        elif text.startswith(("[move_on]", "[time_up]")):
-            self._listening = False
-            await self._say("In the interest of time, let's move on.")
-            await self._call("finish_question")
 
     async def send_tool_result(self, call_id: str, name: str, result: dict[str, Any]) -> None:
         self.tool_results.append((name, result))
@@ -220,8 +219,7 @@ class FakeLive:
                 await self._say(FAKE_FOLLOW_UP)
                 self._listening = True
             else:
-                await self._say("Okay.")
-                await self._call("finish_question")
+                await self._close()
         elif name == "finish_question":
             await self._queue.put(LiveEvent("turn_complete"))
 
