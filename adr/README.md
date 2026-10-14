@@ -51,4 +51,5 @@ record of having been wrong is the useful part.
 | [0028](0028-preflight-and-fixed-lead-ins.md) | A pre-flight before question one; fixed lead-ins; one microphone per interview | Accepted, amended by 0031 |
 | [0029](0029-harvey-interviews-donna-keeps-the-garden.md) | Harvey interviews; Donna keeps the Digital Garden | Accepted |
 | [0030](0030-donna-speaks-in-discover.md) | Donna speaks in Discover, when asked to | Accepted |
-| [0031](0031-harvey-on-gemini-live.md) | Harvey on Gemini Live: planned questions, a live conversation, follow-ups now | Accepted |
+| [0031](0031-harvey-on-gemini-live.md) | Harvey on Gemini Live: planned questions, a live conversation, follow-ups now | Accepted, amended by 0032 |
+| [0032](0032-the-browser-cuts-in-on-live.md) | On Live, the browser cuts in; Harvey bridges, and closes the interview | Accepted |
