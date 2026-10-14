@@ -19,8 +19,8 @@ one?" heard several times an interview was the most annoying thing in it.
 
 **Live reads the fixed lines aloud.** `/interview/say` opens one short Live session per line
 (`interview/fixed_lines.py`) with the interviewer's voice and delivery direction, and an instruction
-to say the text it is sent word for word and nothing else (`prompts.LIVE_READER`). Proactive audio
-is off for this session, so Live does not decide a line needs no reply. The audio comes back as the
+to say the text it is sent word for word and nothing else (now `prompts.live_reader`; see Consequences). Proactive audio
+is off for this session where the model allows it (3.8 has it always on), so Live does not decide a line needs no reply. The audio comes back as the
 same WAV clip as before, so the browser does not change.
 
 **TTS is the fallback.** If Live fails, says nothing, or takes more than 15 s, the line comes from
@@ -40,8 +40,14 @@ holds them to that.
 ## Consequences
 
 - One voice for Harvey throughout a Live interview, the hearing test included.
-- Live may paraphrase. When the transcript's words differ from the line, it is logged
-  (`live read a fixed line differently`). Check that log after the first real runs.
+- Live may paraphrase. ~~When the transcript's words differ from the line, it is logged.~~
+  **Amended 2026-10-15, after the first runs on Gemini 3.8 Live:** a reader session once answered
+  "please give me the line to say", and that was cached as the clip. Now the line sits in the
+  reader's instruction (`prompts.live_reader`) and the only message is `[read]`, and a clip is kept
+  only when its transcript has the line's letters (spacing and punctuation ignored). 3.8 sometimes
+  sends no transcript of its own speech; the clip is then transcribed by the answer transcriber,
+  once per line per instance. A refused clip falls back to TTS and is not cached
+  (`live misread a fixed line` in the log). All 14 wordings passed against 3.8.
 - A few extra Live sessions per instance lifetime, each a few seconds and each a `live` usage row.
   A nudge fetched mid-question is a second concurrent Live session for that user for a moment.
   Count that against the concurrent-session quota.

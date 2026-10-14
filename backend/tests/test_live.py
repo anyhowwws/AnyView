@@ -131,6 +131,22 @@ def test_each_question_opens_on_the_last_answer_and_closes_silently(session):
     assert "[silent]" not in text and "[time_up]" not in text
 
 
+def test_bridges_change_shape_from_question_to_question(session):
+    # Each question is its own Live session and cannot hear the last bridge;
+    # one fixed shape made every bridge "…sounds like it kept you busy".
+    from anyview.interview.prompts import BRIDGES
+
+    shapes = []
+    for index in range(1, len(session.questions)):
+        answers = [
+            Answer(question_id=q.id, text="I cut costs 38%.") for q in session.questions[:index]
+        ]
+        text = live_system(session.setup, questions=session.questions, answers=answers, index=index)
+        shapes.append(next(shape for shape in BRIDGES if shape in text))
+    assert len(set(shapes)) == len(shapes) == len(BRIDGES)
+    assert "kept you busy" not in "".join(BRIDGES)
+
+
 def test_the_last_question_says_goodbye(session):
     last = len(session.questions) - 1
     text = live_system(session.setup, questions=session.questions, answers=[], index=last)

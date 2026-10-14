@@ -132,6 +132,8 @@ class FakeModel:
             follow_ups=self.replies.get("live_follow_ups", 1),
             answer=str(self.replies.get("live_answer", DEFAULTS["transcribe"])),
         )
+        session.misread = self.replies.get("live_misread")
+        session.untranscribed = bool(self.replies.get("live_untranscribed"))
         self.live_sessions.append(session)
 
         @asynccontextmanager
@@ -166,8 +168,13 @@ class FakeLive:
     def __init__(self, system: str, *, session_id: str, follow_ups: int, answer: str) -> None:
         self.question = _between(system, "<question>", "</question>") or "Tell me about yourself."
         # No question means a session that only reads fixed lines aloud
-        # (`interview/fixed_lines.py`): it says whatever text it is sent.
+        # (`interview/fixed_lines.py`): it says its `<line>` when told to read.
+        # `misread` makes it say something else instead, for tests.
         self.reader = "<question>" not in system
+        self.line = _between(system, "<line>", "</line>")
+        self.misread: str | None = None
+        # As 3.8 sometimes does: speak, and send no transcript of it.
+        self.untranscribed = False
         self.last = "This is the last question" in system
         self.session_id = session_id
         self.follow_ups = follow_ups
@@ -185,7 +192,8 @@ class FakeLive:
         pcm = bytes(2 * int(LIVE_OUTPUT_RATE * seconds))
         for start in range(0, len(pcm), 9_600):  # 200 ms chunks, as Live sends them
             await self._queue.put(LiveEvent("audio", audio=pcm[start : start + 9_600]))
-        await self._queue.put(LiveEvent("harvey_text", text=text))
+        if not self.untranscribed:
+            await self._queue.put(LiveEvent("harvey_text", text=text))
         await self._queue.put(LiveEvent("turn_complete"))
         _log_usage(
             session_id=self.session_id, call="live", model="fake", usage=_FAKE_USAGE, latency_ms=1
@@ -217,7 +225,8 @@ class FakeLive:
     async def send_text(self, text: str) -> None:
         self.sent_text.append(text)
         if self.reader:
-            await self._say(text)
+            if text.startswith("[read]"):
+                await self._say(self.misread or self.line)
             return
         if text.startswith("[begin]"):
             await self._say(self.question)

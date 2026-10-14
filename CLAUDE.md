@@ -73,7 +73,9 @@ Backend modules:
   one while the next arrives; emits `audio` / `voice_off` frames beside the token frames.
   The fallback when Live fails (ADR 0031).
 - `anyview/interview/fixed_lines.py` — Harvey's fixed lines (`INTERJECTIONS`, the pre-flight `hello`) read aloud
-  by one short Live session each (`prompts.LIVE_READER`), cached in memory; TTS if Live fails (ADR 0035).
+  by one short Live session each (`prompts.live_reader`: the line is in the instruction, the message is
+  `[read]`). A clip is kept only if its transcript has the line's letters (Live's own transcript, or the
+  clip transcribed when 3.8 sends none); otherwise TTS, uncached (ADR 0035).
 - `anyview/interview/live.py` — `LiveTurn`: one spoken question's rules with no I/O (ADR 0031). The
   follow-up budget (`MAX_PROBES` = 2, none once the question has ended), how it ended (`end(reason)`:
   `time_up`/`move_on` are cuts, `manual` is not, ADR 0032), and the transcript → `Answer` with `follow_ups`. `prompts.live_system` is Harvey's instruction

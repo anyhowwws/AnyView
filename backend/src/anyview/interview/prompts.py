@@ -346,14 +346,25 @@ INTERJECTIONS: dict[str, tuple[str, ...]] = {
 
 # Harvey's fixed lines are read aloud by Live itself, so they sound like the
 # interviewer rather than like the separate TTS model (`interview/fixed_lines.py`).
-# One short session reads one line; the instruction is only how to sound and
-# to say the text and nothing else.
-LIVE_READER = f"""You are Harvey, a job interviewer, recording one line for a mock interview.
+# One short session reads one line. The line sits in the instruction itself and
+# the only message is READ: when the line was the message, Gemini 3.8 Live (whose
+# proactive audio is always on) once spoke first and asked for "the line to say",
+# and that became the clip.
+READ = "[read]"
+
+
+def live_reader(line: str) -> str:
+    return f"""You are Harvey, a job interviewer, recording one line for a mock interview.
 
 How you sound: {HARVEY_DELIVERY}.
 
-The message you receive is the exact line to say. Say it word for word, once, in your own
-voice, then stop. It is not addressed to you: never answer it, add to it, greet, or comment."""
+<line>
+{line}
+</line>
+
+When you receive {READ}, say the line above word for word, once, in your own voice, then stop.
+Say nothing else, before or after it: no greeting, no question, no comment. Never ask for the
+line; you already have it."""
 
 
 # --- Harvey on Gemini Live (ADR 0031) ---------------------------------------
@@ -411,18 +422,32 @@ def _earlier(questions: list[Question], answers: list[Answer]) -> str:
     return "Earlier in this interview (their words, excerpted):\n\n" + "\n\n".join(lines)
 
 
+# One per question after the first, in order. Neutral on purpose: a bridge
+# names what they said, it never judges it.
+BRIDGES = (
+    '"Okay — <the specific thing>. Got it."',
+    '"Right, so <the specific thing>. Let\'s switch gears."',
+    '"Thanks — that gives me a picture of <the specific thing>."',
+    '"<The specific thing> — noted. Something different now."',
+)
+
+
 def _opening(index: int, previous: Answer | None) -> str:
     if previous is None:
         return "Greet them in one short line, then ask the question."
     if previous.cut_off or previous.text.strip() == NO_ANSWER:
         return "The last question ended with you moving them on, so ask this one straight away."
     # The one acknowledgement between two questions (ADR 0032): the last question
-    # closed without one, so this line carries it, and it must be specific.
+    # closed without one, so this line carries it, and it must be specific. Each
+    # question is its own Live session and cannot hear the last bridge, so given
+    # one shape every bridge came out the same ("…sounds like it kept you busy").
+    # The shape now changes with the question.
+    shape = BRIDGES[(index - 1) % len(BRIDGES)]
     return (
         "Bridge from their last answer in one short sentence that names something specific "
-        "they said in it (a project, a number, a decision), without judging it, in the shape "
-        '"Thanks — <the specific thing> sounds like it kept you busy." Not a generic "thanks '
-        'for that". Then ask the question.'
+        "they said in it (a project, a number, a decision), without judging it. Use your own "
+        f'words, roughly in the shape {shape} Not a generic "thanks for that". Then ask the '
+        "question."
     )
 
 
