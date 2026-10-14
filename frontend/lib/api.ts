@@ -1,6 +1,6 @@
 import { idToken } from "@/lib/auth";
 import { readSse } from "@/lib/sse";
-import type { ProgressFrame } from "@/lib/ingest-progress";
+import type { IngestJob, ProgressFrame } from "@/lib/ingest-progress";
 import type {
   Answer,
   Brain,
@@ -128,49 +128,44 @@ export const createDump = (text: string) => post<Proposal>("/brain/dumps", { tex
 export const createDumpFromUpload = (resumeObject: string) =>
   post<Proposal>("/brain/dumps/from-upload", { resume_object: resumeObject });
 
-/** `createDump`, streamed: reports each step through onProgress (ADR 0019). */
-export const streamDump = (text: string, onProgress: (frame: ProgressFrame) => void) =>
-  streamProposal("/brain/dumps/stream", { text }, onProgress);
+// --- Queued ingestion (ADR 0034) ---------------------------------------------
+// A dump is handed in and a job comes back at once; Cloud Tasks runs it on the
+// worker service, and the browser polls the job. Nothing holds a request open
+// for the minute and a half a resume takes, so a reload or a new API instance
+// loses nothing: the capture box finds the job again with `activeJobs`.
 
-/** `createDumpFromUpload`, streamed. */
-export const streamDumpFromUpload = (resumeObject: string, onProgress: (frame: ProgressFrame) => void) =>
-  streamProposal("/brain/dumps/from-upload/stream", { resume_object: resumeObject }, onProgress);
+export const queueText = (text: string) => post<IngestJob>("/brain/jobs", { text });
+export const queueUpload = (resumeObject: string) =>
+  post<IngestJob>("/brain/jobs", { resume_object: resumeObject });
+/** Jobs still running, newest first: what a reloaded page picks back up. */
+export const activeJobs = () => request<IngestJob[]>("GET", "/brain/jobs");
 
-async function streamProposal(
-  path: string,
-  body: unknown,
-  onProgress: (frame: ProgressFrame) => void,
+const POLL_MS = 1500;
+
+/** Poll a job until it ends. Every poll hands its progress frames to
+ *  onProgress (all of them, not just the new ones); the end is the proposal,
+ *  or an ApiError carrying the message the worker recorded. */
+export async function followJob(
+  job: IngestJob,
+  onProgress: (frames: ProgressFrame[]) => void,
+  signal?: AbortSignal,
 ): Promise<Proposal> {
-  const auth = await authHeaders();
-  let res: Response;
-  try {
-    res = await fetch(`${BASE}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "text/event-stream", ...auth },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    throw new ApiError("Can't reach the server. Check that it's running, then try again.", 0, true);
-  }
-  if (!res.ok) throw await toApiError(res);
-  if (!res.body) throw new ApiError("Empty response from the API.", 502, true);
-
-  let proposal: Proposal | null = null;
-  for await (const { event, data } of readSse(res.body)) {
-    if (event === "progress") {
-      onProgress(data as ProgressFrame);
-    } else if (event === "proposal") {
-      proposal = data as Proposal;
-    } else if (event === "error") {
-      const { message, status, retryable } = data as { message: string; status?: number; retryable: boolean };
-      throw new ApiError(message, status ?? 502, retryable);
-    } else if (event === "done") {
-      if (proposal) return proposal;
-      break;
+  for (;;) {
+    // Leaving the page stops the polling, not the job: it carries on in the
+    // worker and is picked up again on the way back.
+    if (signal?.aborted) throw new DOMException("Stopped following the job.", "AbortError");
+    onProgress(job.progress);
+    if (job.status === "done" && job.proposal) return job.proposal;
+    if (job.status === "failed") {
+      const status = job.error_status ?? 502;
+      throw new ApiError(job.error ?? "Donna couldn't finish reading that.", status, status >= 500);
     }
+    await sleep(POLL_MS);
+    // A GET, so a deploy or a brief outage mid-job is waited out (see `request`).
+    job = await request<IngestJob>("GET", `/brain/jobs/${job.id}`);
   }
-  throw new ApiError("The connection closed before Donna finished. Please try again.", 502, true);
 }
+
 export const confirmProposal = (id: string, patch: Patch) =>
   post<EventOut>(`/brain/proposals/${id}/confirm`, { patch });
 export const discardProposal = (id: string) => post<Brain>(`/brain/proposals/${id}/discard`, {});

@@ -26,13 +26,13 @@ writes simple scripts). So:
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
 | LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028). **Gemini Live** (`LIVE_MODEL_ID`, regional: `LIVE_REGION`) runs each spoken question as a conversation with follow-ups (ADR 0031); Vertex AI (location `global` for everything else) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
 | Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
-| Voice | **Gemini Live** for a spoken interview: one session per question, relayed over `WS /interview/live` (ADR 0031); the turn-based path below is its fallback. **Gemini TTS on Vertex** for Harvey, the interviewer, on that fallback path (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`) and for Donna in Discover when a question is asked out loud or an answer read aloud (`DONNA_VOICE`, default `Kore`, `discover.DONNA_DELIVERY`); answers and spoken questions recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default in an interview; typing is the default in Discover**, and a question asked out loud is answered out loud (no mode switch); Harvey's interruptions are fixed lines from `/interview/say`, read aloud by Live in his interviewer voice (TTS if Live fails), cached per instance, several wordings each, rotated by the browser (ADR 0034) | 0013, 0016, 0030, 0031, 0033, 0034 |
+| Voice | **Gemini Live** for a spoken interview: one session per question, relayed over `WS /interview/live` (ADR 0031); the turn-based path below is its fallback. **Gemini TTS on Vertex** for Harvey, the interviewer, on that fallback path (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`) and for Donna in Discover when a question is asked out loud or an answer read aloud (`DONNA_VOICE`, default `Kore`, `discover.DONNA_DELIVERY`); answers and spoken questions recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default in an interview; typing is the default in Discover**, and a question asked out loud is answered out loud (no mode switch); Harvey's interruptions are fixed lines from `/interview/say`, read aloud by Live in his interviewer voice (TTS if Live fails), cached per instance, several wordings each, rotated by the browser (ADR 0035) | 0013, 0016, 0030, 0031, 0033, 0035 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
 | Frontend | Next.js App Router, TS, Tailwind v4, shadcn/ui, Framer Motion; static export → Firebase Hosting (static files only) | brief |
 | Files | Cloud Storage bucket `<project>-uploads`, `uploads/<uid>/…`, V4 signed PUT URLs (never transit the API); PDF read by the model, DOCX by `python-docx`. Resumes **and** job descriptions take the same path; a job can also be a link the API fetches | 0010, 0014, 0027 |
-| Async | Cloud Tasks | brief |
+| Async | **Cloud Tasks** queue `anyview-ingest` → private Cloud Run service `anyview-worker` (same image, `APP_MODULE=anyview.worker:app`, invoked only by `anyview-tasks` via OIDC). Ingestion is a job row the browser polls | brief, 0034 |
 | Auth | Identity Platform: Google sign-in only, email allow-list (`ALLOWED_EMAILS`), Firebase ID token verified by `google-auth` on every `/interview/*` route | 0009 |
 | Secrets | Secret Manager, Terraform provisions the *parameter*, never the value | brief |
 | IaC | Terraform, everything; console-clicked resources do not exist. The `aws` provider manages **only** Route 53 records for `anyview.anyapps.cloud` | brief, 0008 |
@@ -52,7 +52,7 @@ Don't mix them up in copy, prompts or code: `HARVEY_VOICE`/`harveyVoice()` are t
 ## Layout
 
 ```
-backend/src/anyview/   FastAPI app. main.py is the entry point.
+backend/src/anyview/   FastAPI app. main.py is the API's entry point; worker.py the ingestion worker's (ADR 0034).
 backend/tests/         pytest; pythonpath=src set in pyproject.
 frontend/app/          Next.js App Router. output: "export" → frontend/out.
 frontend/firebase.json Hosting config: static files + SPA fallback + cache headers only. No API rewrite (ADR 0006).
@@ -73,7 +73,7 @@ Backend modules:
   one while the next arrives; emits `audio` / `voice_off` frames beside the token frames.
   The fallback when Live fails (ADR 0031).
 - `anyview/interview/fixed_lines.py` — Harvey's fixed lines (`INTERJECTIONS`, the pre-flight `hello`) read aloud
-  by one short Live session each (`prompts.LIVE_READER`), cached in memory; TTS if Live fails (ADR 0034).
+  by one short Live session each (`prompts.LIVE_READER`), cached in memory; TTS if Live fails (ADR 0035).
 - `anyview/interview/live.py` — `LiveTurn`: one spoken question's rules with no I/O (ADR 0031). The
   follow-up budget (`MAX_PROBES` = 2, none once the question has ended), how it ended (`end(reason)`:
   `time_up`/`move_on` are cuts, `manual` is not, ADR 0032), and the transcript → `Answer` with `follow_ups`. `prompts.live_system` is Harvey's instruction
@@ -127,6 +127,14 @@ Backend modules:
 - Frontend form fields live in `frontend/lib/entry-fields.ts` (labels, hints, required, max lengths, month-precision
   dates, start ≤ end) and render through `components/brain/entry-form.tsx`; the editor, the add form and the review
   queue all use them. A new editable field goes there, not in a component.
+- `anyview/brain/ingest.py` — a dump → a proposal (`read_upload`, `propose_for`), shared by the synchronous
+  `/brain/dumps` routes and the worker; `run_job` is one Cloud Tasks delivery (ADR 0034): claim the
+  `ingest_jobs` row (a 120 s lease renewed by every progress frame, so duplicate deliveries get 409),
+  reuse the job's dump on a retry, and map the result to the status Cloud Tasks reads
+  (204 stop / 503 retry / 409 busy). `IngestFailed` is a failure retrying will not fix.
+- `anyview/tasks.py` — `CloudTasksQueue` (REST via `google-auth`, task named after the job) and
+  `InlineQueue` (this process: a laptop, tests, the fake model, i.e. whenever `TASKS_QUEUE` is unset).
+- `anyview/worker.py` — the worker app: `POST /tasks/ingest` and `/health`, reusing main.py's wiring.
 - `anyview/brain/discover.py` — Discover (ADR 0017): Donna answers questions about the confirmed
   garden over `POST /brain/discover` (SSE: tokens, then one `citations` frame). Whole garden in the
   system prompt, no retrieval yet; `discover_context()` is the seam Phase 2 retrieval replaces.
@@ -185,8 +193,10 @@ terraform plan                                                   # terraform.tfv
 - Every model call writes a usage row. No exceptions, including scoring and `speak` calls.
 - A resume upload is 4 + *n* calls: transcribe (fast model), `segment` (fast model, `generate(fast=True)`), one
   `propose` per section (each job of the experience section is its own; list sections think at `medium`), one
-  `dedupe`, one `link`. About 90 s for a one-page resume. `POST /brain/dumps/stream` and
-  `/brain/dumps/from-upload/stream` send `progress` frames, then `proposal`; the capture box uses them.
+  `dedupe`, one `link`. About 90 s for a one-page resume, so it never runs in a browser's request (ADR 0034):
+  `POST /brain/jobs` (text or `resume_object`) answers 202 with a job; the worker writes `progress` frames into
+  it; the capture box polls `GET /brain/jobs/{id}` and rebuilds the view from all frames (`viewOfJob`), and on
+  mount follows any job `GET /brain/jobs` still lists.
   `api-fake-slow` (launch.json) gives each fake call 2 s so the progress view can be walked through locally. `scripts/extraction_recall.py <file> --expect achievements=14` runs the real
   pipeline on a document you know the answer for; keep real resumes out of the repo.
 - Each question carries its own `seconds` (ADR 0016), chosen by the model when it plans and
@@ -211,11 +221,18 @@ terraform plan                                                   # terraform.tfv
 (0011): capture, review queue, event-sourced projection, coverage heatmap,
 `/brain` screen, Discover (0017), and the brain as an interview source. Setup now describes a
 situation rather than a set of sources (0014), and a replaced resume queues
-only what changed (0015). Phase 2 next: embeddings
-(`gemini-embedding-2`), hybrid retrieval, Cloud Tasks for ingestion, golden
+only what changed (0015). Ingestion runs on Cloud Tasks (0034). Phase 2 next: embeddings
+(`gemini-embedding-2`), hybrid retrieval, golden
 retrieval test set.
 
 ## Gotchas
+
+- **Queued ingestion (ADR 0034).** The worker is private: ingress internal-only plus `run.invoker` for
+  `anyview-tasks` alone, so `curl` from a laptop cannot reach it — read the queue's dispatch logs and the
+  worker's logs instead. `INGEST_MAX_ATTEMPTS` (worker) and the queue's `max_attempts` come from one
+  Terraform variable; keep it that way, or the worker asks for retries that never come. CI deploys the
+  worker **before** the API. A queued/running job with no heartbeat for 15 min reads as failed
+  (`JOB_STALE`). The queue name cannot be reused for ~7 days after deletion.
 
 - **Live (ADR 0031)** is regional (`LIVE_REGION`, default `us-central1`) and its model id
   (`LIVE_MODEL_ID`, default `gemini-live-2.5-flash-native-audio`) must be enabled in Model Garden,

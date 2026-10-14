@@ -12,6 +12,7 @@ permissions:
 env:
   REGION: us-central1
   SERVICE: anyview-api
+  WORKER_SERVICE: anyview-worker
   REPO: anyview
   # Terraform reads TF_VAR_* as input variables, so the git-ignored terraform.tfvars
   # is not needed in CI (ADR 0024). Anything not set here uses the variable's default.
@@ -256,7 +257,19 @@ jobs:
           docker push "$IMAGE"
           echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
 
-      - name: Deploy to Cloud Run
+      # The ingestion worker runs the same image (ADR 0034). Its entry point,
+      # env and private ingress are Terraform's; only the image changes here.
+      # It goes first: the API queues work for it, so it must already
+      # understand what the new API sends.
+      - name: Deploy the worker to Cloud Run
+        run: |
+          gcloud run deploy "$WORKER_SERVICE" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "$REGION" \
+            --image "$IMAGE" \
+            --quiet
+
+      - name: Deploy the API to Cloud Run
         run: |
           gcloud run deploy "$SERVICE" \
             --project "${{ vars.GCP_PROJECT_ID }}" \

@@ -6,11 +6,16 @@ import {
   LIVE_GIVE_UP_MS,
   LIVE_UNTIMED_DEAD_AIR_MS,
   MAX_NUDGES,
+  QUIET_ROOM,
+  VOICE_MS,
+  hearVoice,
   nextCue,
   substantive,
+  voiceThreshold,
   type CueLimits,
   type CueState,
   type LiveAction,
+  type VoiceState,
 } from "../lib/live-cues.ts";
 
 const TIMED: CueLimits = { budgetMs: 120_000 };
@@ -96,4 +101,54 @@ test("an untimed question waits longer and never runs out", () => {
 test("nothing follows the end of a question", () => {
   const { actions } = run(asked, 0, 300_000, TIMED, () => ({ spoke: true }));
   assert.deepEqual(actions, [[120_000, "time_up"]]);
+});
+
+// --- A voice above the room counts as talking -------------------------------------
+
+/** Feed 100 ms microphone frames; returns when `voice` was true. */
+function listen(state: VoiceState, from: number, to: number, level: (t: number) => number) {
+  const voiced: number[] = [];
+  for (let t = from; t < to; t += 100) {
+    const out = hearVoice(state, { now: t, level: level(t) });
+    state = out.state;
+    if (out.voice) voiced.push(t);
+  }
+  return { state, voiced };
+}
+
+test("talking straight through, never transcribed, is not dead air", () => {
+  // The bug: Live sent no transcript until the candidate stopped, so the clock
+  // nudged and then moved them on mid-sentence. 40 s of steady talking, with
+  // the 100 ms gaps between words real speech has, and no transcript at all.
+  const talking = (t: number) => (t % 600 === 0 ? 0.003 : 0.06);
+  let voice = QUIET_ROOM;
+  let cues = asked;
+  const actions: LiveAction[] = [];
+  for (let t = 0; t <= 40_000; t += 100) {
+    const heard = hearVoice(voice, { now: t, level: talking(t) });
+    voice = heard.state;
+    if (t % 250 !== 0) continue; // the clock ticks every 250 ms
+    const out = nextCue(cues, { now: t, spoke: heard.voice, harvey: false }, TIMED);
+    cues = out.state;
+    if (out.action) actions.push(out.action);
+  }
+  assert.deepEqual(actions, []);
+});
+
+test("a breath or a click is not a voice", () => {
+  const { voiced } = listen(QUIET_ROOM, 0, 3_000, (t) =>
+    t >= 1_000 && t < 1_000 + VOICE_MS - 100 ? 0.06 : 0.003,
+  );
+  assert.deepEqual(voiced, []);
+});
+
+test("a quiet room stays silence, so the nudge still comes", () => {
+  const { voiced } = listen(QUIET_ROOM, 0, 20_000, () => 0.008);
+  assert.deepEqual(voiced, []);
+});
+
+test("a steady hum is learned as the room within a few seconds", () => {
+  const { state, voiced } = listen(QUIET_ROOM, 0, 30_000, () => 0.03);
+  assert.ok(voiceThreshold(state.room) > 0.03, `threshold ${voiceThreshold(state.room)}`);
+  assert.ok((voiced.at(-1) ?? 0) < 5_000, `still a voice at ${voiced.at(-1)}`);
 });

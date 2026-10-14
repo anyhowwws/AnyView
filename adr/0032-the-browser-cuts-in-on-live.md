@@ -1,6 +1,6 @@
 # 0032 — On Live, the browser cuts in; Harvey bridges, and closes the interview
 
-- **Status:** Accepted, amended by [0034](0034-harveys-fixed-lines-in-his-live-voice.md) (the clips are read by Live, in several wordings)
+- **Status:** Accepted, amended by [0035](0035-harveys-fixed-lines-in-his-live-voice.md) (the clips are read by Live, in several wordings)
 - **Date:** 2026-10-14
 - **Amends:** 0031 (the cue channel and the closing line), 0016 (how silence is measured on Live)
 
@@ -70,6 +70,10 @@ and the behaviour on Vertex is untested. Worth an experiment against the real mo
 - If Live's input transcription turns out to arrive only at the end of a turn, a candidate
   talking for ten seconds straight would be nudged mid-sentence. The fix then is to accept a mic
   level well above the noise floor as speech as well; watch for it on the next real run.
+  **It happened** (2026-10-14): candidates talking without a pause were nudged and moved on.
+  A level now counts as talking when it is at least 4× the room's own (never under 0.02) for
+  300 ms (`live-cues.ts:hearVoice`). The price is the one this ADR set out to avoid, in a
+  smaller form: a long "ummm" now delays the nudge.
 - Fake mode (`FakeLive`) closes silently, or with a goodbye on the last question, so the walk-
   through matches the real prompt. It sends one transcript per answer, so the nudge path is
   covered by `tests/live-cues.test.mts`, not by the walk-through.

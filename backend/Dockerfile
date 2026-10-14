@@ -25,5 +25,10 @@ RUN useradd --create-home --uid 1000 app
 USER app
 
 # Cloud Run injects $PORT (default 8080). uvicorn must bind 0.0.0.0, not localhost.
+# One image, two services (ADR 0034): APP_MODULE picks the entry point. The API
+# runs the default; the worker service sets anyview.worker:app. An env var
+# rather than a command override, because Terraform creates each service with
+# a placeholder image that would not understand the override.
+ENV APP_MODULE=anyview.main:app
 EXPOSE 8080
-CMD ["sh", "-c", "uvicorn anyview.main:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "-c", "uvicorn ${APP_MODULE} --host 0.0.0.0 --port ${PORT:-8080}"]

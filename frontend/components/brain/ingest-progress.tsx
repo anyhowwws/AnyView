@@ -13,14 +13,17 @@ import {
   type Step,
 } from "@/lib/ingest-progress";
 
+// "Queue" is the job waiting for the worker (ADR 0034): a moment when it is
+// warm, longer when Cloud Run has to start it.
 const FILE_STEPS: { step: Step; label: string }[] = [
   { step: "upload", label: "Upload" },
+  { step: "queue", label: "Queue" },
   { step: "read", label: "Read" },
   { step: "parts", label: "Extract" },
   { step: "tidy", label: "Tidy" },
   { step: "link", label: "Link" },
 ];
-const TEXT_STEPS = FILE_STEPS.slice(2);
+const TEXT_STEPS = FILE_STEPS.filter((s) => s.step !== "upload" && s.step !== "read");
 
 /** Where Donna is while she reads a resume or a capture (ADR 0019). Every
  *  node is a real part of the document and lights up when that part is read:
