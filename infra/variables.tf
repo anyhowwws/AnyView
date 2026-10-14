@@ -36,7 +36,7 @@ variable "tts_model_id" {
 variable "live_model_id" {
   description = "Vertex AI Live model that runs Harvey's spoken interview, follow-ups included (ADR 0031). Native-audio Live models are regional; confirm the id is enabled in Model Garden for the project before relying on it."
   type        = string
-  default     = "gemini-live-2.5-flash-native-audio"
+  default     = "gemini-3.8-live"
 }
 
 variable "live_region" {

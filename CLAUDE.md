@@ -235,8 +235,13 @@ retrieval test set.
   (`JOB_STALE`). The queue name cannot be reused for ~7 days after deletion.
 
 - **Live (ADR 0031)** is regional (`LIVE_REGION`, default `us-central1`) and its model id
-  (`LIVE_MODEL_ID`, default `gemini-live-2.5-flash-native-audio`) must be enabled in Model Garden,
-  with proactive audio, before the first real run. If it fails, the socket sends `fallback: true`
+  (`LIVE_MODEL_ID`, default `gemini-3.8-live`, GA on Vertex in us-central1; the previous model was
+  `gemini-live-2.5-flash-native-audio`, one variable away) must be enabled in Model Garden before
+  the first real run. 3.8 has proactive audio always on and refuses `proactive_audio: false` (the
+  adapter leaves the setting out instead); its tool calls block on Vertex, so `ask_follow_up` still
+  waits for the API's answer. A smoke test before switching: Harvey asked the planned question,
+  waited silently while a follow-up's permission was held for 3 s, honoured a refusal by calling
+  `finish_question`, and read the fixed lines word for word. If it fails, the socket sends `fallback: true`
   and the browser uses the turn-based path for the rest of the page. The browser owns the clock and
   the cut-ins (`lib/live-cues.ts`, ADR 0032): barge-in only runs one way (the candidate's speech interrupts Harvey, never the reverse), so the browser plays
   the fixed `time_up`/`stalled`/`move_on`/`goodbye` clips and sends `end` with a reason. Silence is
