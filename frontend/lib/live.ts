@@ -12,7 +12,16 @@
 // No dependency: an AudioWorklet does the capture and downsampling in ~30 lines.
 
 import { LIVE_URL, signInToken } from "@/lib/api";
-import { FRESH, nextCue, substantive, type CueState, type LiveAction } from "@/lib/live-cues";
+import {
+  FRESH,
+  QUIET_ROOM,
+  hearVoice,
+  nextCue,
+  substantive,
+  type CueState,
+  type LiveAction,
+  type VoiceState,
+} from "@/lib/live-cues";
 import type { Answer, Session } from "@/lib/types";
 import { acquireMicrophone, audioContext, harveyVoice } from "@/lib/voice";
 
@@ -124,8 +133,9 @@ export class LiveQuestion {
   private nextAt = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private cues: CueState = FRESH;
-  /** A real word was heard since the last tick (not "um", not the room). */
+  /** A real word, or a voice clearly above the room, since the last tick. */
   private spoke = false;
+  private voice: VoiceState = QUIET_ROOM;
   /** The browser has ended the question: the mic stops going up and anything
    *  Harvey still sends is not played. */
   private ending = false;
@@ -265,6 +275,10 @@ export class LiveQuestion {
     this.source.connect(this.capture).connect(this.sink).connect(ctx.destination);
     this.capture.port.onmessage = (event: MessageEvent<{ pcm: ArrayBuffer; level: number }>) => {
       this.handlers.onLevel(event.data.level);
+      // Talking counts even before Live has transcribed a word of it.
+      const heard = hearVoice(this.voice, { now: performance.now(), level: event.data.level });
+      this.voice = heard.state;
+      if (heard.voice) this.spoke = true;
       // Once the browser has cut in, Live must not hear "but I wasn't done".
       if (!this.ending && this.ws?.readyState === WebSocket.OPEN) this.ws.send(event.data.pcm);
     };
