@@ -41,11 +41,18 @@ RETRIEVAL_THRESHOLD_CHARS = 400_000
 # the next question, and every turn sent is paid for again.
 MAX_HISTORY_TURNS = 12
 
-# "[P3]" or "[P3, S2]" — the label shapes the prompt asks for.
-_CITATION = re.compile(r"\[([A-Z]\d+(?:\s*,\s*[A-Z]\d+)*)\]")
+# One cited item: a label ("P3"), or a range of one kind ("A1–A11", "A1-11"). The
+# prompt asks for one label per bracket, but the model writes ranges when it
+# cites a long run of certificates, so they are read rather than missed.
+_ITEM = r"[A-Z]\d+(?:\s*[-–—]\s*[A-Z]?\d+)?"
+# "[P3]", "[P3, S2]" or "[A1–A11, A13]".
+_CITATION = re.compile(rf"\[({_ITEM}(?:\s*,\s*{_ITEM})*)\]")
+_RANGE = re.compile(r"([A-Z])(\d+)\s*[-–—]\s*([A-Z]?)(\d+)")
+# A range longer than this is not a citation anyone means; it is ignored.
+_MAX_RANGE = 100
 _KIND_BY_PREFIX = {prefix: kind for kind, prefix in LABEL_PREFIX.items()}
-# The same labels with the space before them, for taking them out of speech.
-_SPOKEN_CITATION = re.compile(r"\s*\[[A-Z]\d+(?:\s*,\s*[A-Z]\d+)*\]")
+# The same groups with the space before them, for taking them out of speech.
+_SPOKEN_CITATION = re.compile(rf"\s*\[{_ITEM}(?:\s*,\s*{_ITEM})*\]")
 # A Markdown list marker or heading at the start of a line: "- ", "* ", "2. ", "## ".
 _LINE_MARKER = re.compile(r"^\s*(?:[-*•]|\d+[.)]|#+)\s+")
 
@@ -159,6 +166,24 @@ def for_speech(sentence: str) -> str:
     return " ".join(lines)
 
 
+def group_labels(group: str) -> list[str]:
+    """The labels inside one bracket, ranges spelled out: "A1–A3, A7" gives
+    A1, A2, A3, A7. A range across kinds ("A1–P3") or backwards keeps only
+    its first label; whether each label exists is the caller's question."""
+    out: list[str] = []
+    for part in (p.strip() for p in group.split(",")):
+        m = _RANGE.fullmatch(part)
+        if m is None:
+            out.append(part)
+            continue
+        prefix, start, end_prefix, end = m.group(1), int(m.group(2)), m.group(3), int(m.group(4))
+        if end_prefix in ("", prefix) and start <= end and end - start < _MAX_RANGE:
+            out.extend(f"{prefix}{n}" for n in range(start, end + 1))
+        else:
+            out.append(f"{prefix}{start}")
+    return out
+
+
 def cited(text: str, labels: dict[str, str]) -> list[dict[str, str]]:
     """Labels the answer cites that really exist, in order of first mention.
 
@@ -167,7 +192,7 @@ def cited(text: str, labels: dict[str, str]) -> list[dict[str, str]]:
     """
     seen: list[str] = []
     for match in _CITATION.finditer(text):
-        for label in (part.strip() for part in match.group(1).split(",")):
+        for label in group_labels(match.group(1)):
             if label in labels and label not in seen:
                 seen.append(label)
     return [
