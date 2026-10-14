@@ -82,6 +82,10 @@ export function AuthShell({ children, pending }: { children: React.ReactNode; pe
         </div>
       </header>
       <main id="main-content" className="workspace-main">{children}</main>
+      <footer className="site-footer">
+        <span>© 2026 AnyApps</span>
+        <Link href="/privacy">Privacy</Link>
+      </footer>
     </MotionConfig>
   );
 }

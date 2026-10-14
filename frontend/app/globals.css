@@ -429,3 +429,14 @@ li[data-state="failed"] .preflight-icon { background: var(--destructive); color:
   /* Score bars are backgrounds; keep them, they carry the score visually. */
   .report-view [aria-hidden] > span { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
+
+/* Privacy policy: plain reading text inside the usual page heading. */
+.policy section { margin-top: 36px; }
+.policy h2 { font-size: 20px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 10px; }
+.policy p, .policy li { color: var(--muted-foreground); font-size: 15px; line-height: 1.7; text-wrap: pretty; }
+.policy p + p, .policy ul + p { margin-top: 12px; }
+.policy ul { list-style: disc; padding-left: 22px; display: grid; gap: 6px; }
+.policy strong { color: var(--foreground); font-weight: 600; }
+.policy a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.site-footer { display: flex; justify-content: center; gap: 16px; padding: 0 24px 32px; font-size: 12px; color: var(--muted-foreground); }
+.site-footer a:hover { color: var(--foreground); }
