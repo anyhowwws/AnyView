@@ -275,25 +275,64 @@ export async function uploadAnswerAudio(blob: Blob, contentType: string): Promis
  *  same "let's move on" is needed up to five times in an interview and the
  *  words never change. The line is a key, not text — the server owns the
  *  words. A failing voice here must not stop the interview, so a failure is
- *  silence rather than an error. */
-const clips = new Map<string, string>();
+ *  silence rather than an error.
+ *
+ *  Lines heard often have several wordings (`INTERJECTIONS` in prompts.py), and
+ *  each use moves to the next one, so Harvey never says the same nudge twice
+ *  in a row. Only the wording due next is fetched ahead; the counts below may
+ *  drift from the server's without harm, because the server wraps the index. */
+export type Interjection = "time_up" | "stalled" | "move_on" | "goodbye" | "hello";
 
-export async function interjection(
-  sessionId: string,
-  line: "time_up" | "stalled" | "move_on" | "goodbye" | "hello",
-): Promise<string | null> {
-  const cached = clips.get(line);
-  if (cached !== undefined) return cached;
-  try {
-    const { b64 } = await post<{ b64: string }>("/interview/say", {
-      session_id: sessionId,
-      line,
-    });
-    clips.set(line, b64);
-    return b64;
-  } catch {
-    return null;
+const WORDINGS: Record<Interjection, number> = {
+  time_up: 4,
+  stalled: 5,
+  move_on: 3,
+  goodbye: 1,
+  hello: 1,
+};
+
+const clips = new Map<string, Promise<string | null>>();
+/** The wording each line uses next. Starts at random, so two interviews in a
+ *  row do not open their nudges the same way. */
+const due = new Map<Interjection, number>();
+
+function dueWording(line: Interjection): number {
+  let variant = due.get(line);
+  if (variant === undefined) {
+    variant = Math.floor(Math.random() * WORDINGS[line]);
+    due.set(line, variant);
   }
+  return variant;
+}
+
+function clip(sessionId: string, line: Interjection, variant: number): Promise<string | null> {
+  const key = `${line}:${variant}`;
+  let pending = clips.get(key);
+  if (!pending) {
+    pending = post<{ b64: string }>("/interview/say", { session_id: sessionId, line, variant })
+      .then(({ b64 }) => b64)
+      .catch(() => {
+        clips.delete(key); // try again next time rather than stay silent all run
+        return null;
+      });
+    clips.set(key, pending);
+  }
+  return pending;
+}
+
+/** Fetch the wording due next, without using it up: the pre-flight does this so
+ *  the first "let's move on" is never queued behind the question after it. */
+export function prefetchInterjection(sessionId: string, line: Interjection): void {
+  void clip(sessionId, line, dueWording(line));
+}
+
+/** The clip to play now. Moves the line on to its next wording and fetches it. */
+export async function interjection(sessionId: string, line: Interjection): Promise<string | null> {
+  const variant = dueWording(line);
+  const next = (variant + 1) % WORDINGS[line];
+  due.set(line, next);
+  if (next !== variant) void clip(sessionId, line, next);
+  return clip(sessionId, line, variant);
 }
 
 /** A question asked out loud in Discover (ADR 0030), as text. The recording is

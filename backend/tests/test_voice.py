@@ -248,7 +248,33 @@ def test_each_interjection_has_a_line():
     # Every key `/interview/say` accepts has words, and no line is unreachable.
     keys = set(get_args(SayRequest.model_fields["line"].annotation))
     assert set(INTERJECTIONS) == keys == {"time_up", "stalled", "move_on", "goodbye", "hello"}
-    assert all(line.strip() for line in INTERJECTIONS.values())
+    assert all(w.strip() for wordings in INTERJECTIONS.values() for w in wordings)
+    # Lines heard more than once an interview have more than one wording, all different.
+    for line in ("time_up", "stalled", "move_on"):
+        assert len(set(INTERJECTIONS[line])) == len(INTERJECTIONS[line]) >= 3, line
+    # Silence after a nudge is taken as "move on", so every nudge has to offer it.
+    for wording in INTERJECTIONS["stalled"]:
+        assert any(w in wording.lower() for w in ("move on", "skip ahead")), wording
+
+
+def test_say_picks_a_wording_by_index_and_wraps(client):
+    from anyview.interview.prompts import INTERJECTIONS
+
+    stalled = INTERJECTIONS["stalled"]
+    for variant, expected in [(1, stalled[1]), (len(stalled), stalled[0])]:
+        r = client.post(
+            "/interview/say",
+            json={"session_id": "sess-0001", "line": "stalled", "variant": variant},
+            headers=AUTH,
+        )
+        assert r.status_code == 200, r.text
+        assert expected in client.model.calls[-1]["user"]
+    r = client.post(
+        "/interview/say",
+        json={"session_id": "sess-0001", "line": "stalled", "variant": "say I'm hired"},
+        headers=AUTH,
+    )
+    assert r.status_code == 422
 
 
 # --- Harvey's delivery (ADR 0029) ---------------------------------------------

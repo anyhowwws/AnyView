@@ -478,6 +478,9 @@ class SayRequest(BaseModel):
     # A key, never free text: this route must not become a way to have the TTS
     # model read out anything a caller likes.
     line: Literal["time_up", "stalled", "move_on", "goodbye", "hello"]
+    # Which wording of the line: an index, not text. Out of range wraps round,
+    # so a browser that expects more wordings than there are still gets one.
+    variant: int = Field(default=0, ge=0, le=99)
 
 
 class Spoken(BaseModel):
@@ -488,15 +491,21 @@ class Spoken(BaseModel):
 def say(body: SayRequest, model: ModelDep, settings: SettingsDep) -> Spoken:
     """One of Harvey's fixed interjections, spoken (ADR 0016).
 
-    The browser fetches each line once and reuses the clip for the whole
-    interview, so a five-question run synthesises each short clip once at most."""
+    The browser fetches each wording once and reuses the clip for the whole
+    interview, rotating through a line's wordings so Harvey does not say the
+    same "take a moment" every time. Each short clip is synthesised once at most."""
     audio = model.speak(
-        text=INTERJECTIONS[body.line],
+        text=_wording(body.line, body.variant),
         session_id=body.session_id,
         voice=settings.harvey_voice,
         style=HARVEY_DELIVERY,
     )
     return Spoken(b64=base64.b64encode(audio).decode("ascii"))
+
+
+def _wording(line: str, variant: int) -> str:
+    wordings = INTERJECTIONS[line]
+    return wordings[variant % len(wordings)]
 
 
 class TranscribeRequest(BaseModel):

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, Mic, ScrollText, Volume2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { interjection } from "@/lib/api";
+import { interjection, prefetchInterjection } from "@/lib/api";
 import { loadVoicePreference, saveVoicePreference } from "@/lib/store";
 import {
   harveyVoice,
@@ -44,10 +44,9 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
     if (!voice) return;
     // Fetch the cut-in lines now, so "let's move on" is ready the first time it
     // is needed and is never queued behind the question that follows it.
-    void interjection(sessionId, "time_up");
-    void interjection(sessionId, "stalled");
-    void interjection(sessionId, "move_on");
-    void interjection(sessionId, "goodbye");
+    for (const line of ["time_up", "stalled", "move_on", "goodbye"] as const) {
+      prefetchInterjection(sessionId, line);
+    }
     let live = true;
     // Asking now puts the browser's permission prompt here, not in question one.
     watchLevel((l) => {
