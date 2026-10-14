@@ -10,9 +10,29 @@
 // the caller posts like any other.
 //
 // No dependency: an AudioWorklet does the capture and downsampling in ~30 lines.
+//
+// Manual turns (LIVE_TURNS=manual, an experiment: docs/live-manual-turns.md):
+// the `ready` frame says so, and then the browser also marks where each of the
+// candidate's turns starts and ends (live-turns.ts), sending the microphone only
+// inside them. Time-up and move-on are then Harvey's own cut-ins, in his Live
+// voice: the browser ends the question and lets him speak instead of playing a
+// fixed clip.
 
 import { LIVE_URL, signInToken } from "@/lib/api";
-import { FRESH, nextCue, substantive, type CueState, type LiveAction } from "@/lib/live-cues";
+import {
+  FRESH,
+  nextCue,
+  substantive,
+  wordsIn,
+  type CueState,
+  type LiveAction,
+} from "@/lib/live-cues";
+import {
+  PRE_ROLL_FRAMES,
+  QUIET_FLOOR,
+  nextFloor,
+  type FloorState,
+} from "@/lib/live-turns";
 import type { Answer, Session } from "@/lib/types";
 import { acquireMicrophone, audioContext, harveyVoice } from "@/lib/voice";
 
@@ -66,7 +86,9 @@ let workletLoaded: Promise<void> | null = null;
 
 function loadWorklet(ctx: AudioContext): Promise<void> {
   if (!workletLoaded) {
-    const url = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: "text/javascript" }));
+    const url = URL.createObjectURL(
+      new Blob([CAPTURE_WORKLET], { type: "text/javascript" }),
+    );
     workletLoaded = ctx.audioWorklet.addModule(url).catch((err) => {
       workletLoaded = null;
       throw err;
@@ -108,7 +130,8 @@ export interface LiveHandlers {
 }
 
 type Frame =
-  | { type: "ready" | "turn_complete" | "interrupted" }
+  | { type: "ready"; turns?: "auto" | "manual" }
+  | { type: "turn_complete" | "interrupted" }
   | { type: "harvey" | "candidate"; text: string }
   | { type: "follow_up"; question: string; allowed: boolean }
   | { type: "done"; answer: Answer }
@@ -130,6 +153,16 @@ export class LiveQuestion {
    *  Harvey still sends is not played. */
   private ending = false;
   private finished = false;
+  /** Who ends the candidate's turns: Live itself, or this browser. */
+  private turns: "auto" | "manual" = "auto";
+  private floor: FloorState = QUIET_FLOOR;
+  /** Microphone frames from just before a turn starts (manual turns). */
+  private preRoll: ArrayBuffer[] = [];
+  /** What Live transcribed since the last microphone frame (manual turns). */
+  private words: "real" | "filler" | null = null;
+  /** Manual turns: the browser has ended the question and Harvey is saying his
+   *  cut-in line, so his audio keeps playing. */
+  private cuttingIn = false;
 
   constructor(
     private session: Session,
@@ -156,7 +189,8 @@ export class LiveQuestion {
     this.ws = ws;
     ws.onopen = () => ws.send(JSON.stringify({ token, session: this.session }));
     ws.onmessage = (event) => {
-      if (typeof event.data === "string") this.frame(JSON.parse(event.data) as Frame);
+      if (typeof event.data === "string")
+        this.frame(JSON.parse(event.data) as Frame);
       else this.play(event.data as ArrayBuffer);
     };
     ws.onerror = () => this.fail("Lost the connection to Harvey.", true);
@@ -184,29 +218,45 @@ export class LiveQuestion {
     this.ws = null;
   }
 
-  private send(data: { type: "end"; reason: EndReason }): void {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(data));
+  private send(
+    data:
+      | { type: "end"; reason: EndReason }
+      | { type: "activity"; state: "start" | "end" },
+  ): void {
+    if (this.ws?.readyState === WebSocket.OPEN)
+      this.ws.send(JSON.stringify(data));
   }
 
   private frame(frame: Frame): void {
     switch (frame.type) {
       case "ready":
+        this.turns = frame.turns === "manual" ? "manual" : "auto";
         void this.startCapture();
         break;
       case "harvey":
         break; // the screen shows the planned question, not his transcript
       case "candidate":
         if (substantive(frame.text)) this.spoke = true;
+        // A real word beats a filler heard in the same frame.
+        if (this.words !== "real")
+          this.words = wordsIn(frame.text) ?? this.words;
         this.handlers.onCandidate(frame.text);
         break;
       case "turn_complete":
         if (this.cues.askedAt === null) {
           // The first turn is the question itself: the clock starts when it
           // has been heard, so wait for the audio still queued.
-          const wait = Math.max(0, (this.nextAt - (this.ctx?.currentTime ?? 0)) * 1000);
+          const wait = Math.max(
+            0,
+            (this.nextAt - (this.ctx?.currentTime ?? 0)) * 1000,
+          );
           setTimeout(() => {
             if (this.finished || this.cues.askedAt !== null) return;
-            this.cues = { ...this.cues, askedAt: performance.now(), lastSoundAt: performance.now() };
+            this.cues = {
+              ...this.cues,
+              askedAt: performance.now(),
+              lastSoundAt: performance.now(),
+            };
             this.handlers.onAsked();
           }, wait);
         }
@@ -224,7 +274,10 @@ export class LiveQuestion {
         this.stopCapture();
         if (this.timer) clearInterval(this.timer);
         this.timer = null;
-        const wait = Math.max(0, (this.nextAt - (this.ctx?.currentTime ?? 0)) * 1000);
+        const wait = Math.max(
+          0,
+          (this.nextAt - (this.ctx?.currentTime ?? 0)) * 1000,
+        );
         setTimeout(() => {
           this.handlers.onDone(frame.answer);
           this.close();
@@ -252,7 +305,10 @@ export class LiveQuestion {
     try {
       stream = await acquireMicrophone();
     } catch {
-      this.fail("The microphone is blocked. Allow it in your browser, or type your answer.", false);
+      this.fail(
+        "The microphone is blocked. Allow it in your browser, or type your answer.",
+        false,
+      );
       return;
     }
     if (this.finished) return;
@@ -262,13 +318,53 @@ export class LiveQuestion {
     // keeps it connected without playing the microphone back.
     this.sink = ctx.createGain();
     this.sink.gain.value = 0;
-    this.source.connect(this.capture).connect(this.sink).connect(ctx.destination);
-    this.capture.port.onmessage = (event: MessageEvent<{ pcm: ArrayBuffer; level: number }>) => {
+    this.source
+      .connect(this.capture)
+      .connect(this.sink)
+      .connect(ctx.destination);
+    this.capture.port.onmessage = (
+      event: MessageEvent<{ pcm: ArrayBuffer; level: number }>,
+    ) => {
       this.handlers.onLevel(event.data.level);
       // Once the browser has cut in, Live must not hear "but I wasn't done".
-      if (!this.ending && this.ws?.readyState === WebSocket.OPEN) this.ws.send(event.data.pcm);
+      if (this.ending || this.ws?.readyState !== WebSocket.OPEN) return;
+      if (this.turns === "manual")
+        this.manualFrame(event.data.pcm, event.data.level);
+      else this.ws.send(event.data.pcm);
     };
     this.timer = setInterval(() => this.tick(), TICK_MS);
+  }
+
+  /** Manual turns: decide whether the candidate holds the floor, tell Live
+   *  when that changes, and send audio only while they do. */
+  private manualFrame(pcm: ArrayBuffer, level: number): void {
+    const out = nextFloor(this.floor, {
+      now: performance.now(),
+      level,
+      words: this.words,
+      harvey: this.harveyAudible(),
+    });
+    this.words = null;
+    this.floor = out.state;
+    if (out.action === "start") {
+      this.send({ type: "activity", state: "start" });
+      for (const frame of this.preRoll) this.ws?.send(frame);
+      this.preRoll = [];
+    }
+    if (this.floor.speaking || out.action === "end") {
+      this.ws?.send(pcm);
+    } else {
+      this.preRoll.push(pcm);
+      if (this.preRoll.length > PRE_ROLL_FRAMES) this.preRoll.shift();
+    }
+    if (out.action === "end") this.send({ type: "activity", state: "end" });
+  }
+
+  private harveyAudible(): boolean {
+    return (
+      (!!this.ctx && this.nextAt > this.ctx.currentTime) ||
+      harveyVoice().speaking
+    );
   }
 
   private stopCapture(): void {
@@ -281,11 +377,14 @@ export class LiveQuestion {
 
   private tick(): void {
     // Harvey is audible on Live, or one of his fixed lines is playing.
-    const harvey =
-      (!!this.ctx && this.nextAt > this.ctx.currentTime) || harveyVoice().speaking;
+    const harvey = this.harveyAudible();
+    // With manual turns, an open turn is the candidate talking even before Live
+    // has transcribed a word of it (it may only transcribe once the turn ends).
+    const spoke =
+      this.spoke || (this.turns === "manual" && this.floor.speaking);
     const out = nextCue(
       this.cues,
-      { now: performance.now(), spoke: this.spoke, harvey },
+      { now: performance.now(), spoke, harvey },
       { budgetMs: this.budgetMs },
     );
     this.spoke = false;
@@ -293,6 +392,14 @@ export class LiveQuestion {
     if (!out.action || this.ending) return;
     if (out.action === "stalled") {
       this.handlers.onInterject("stalled");
+      return;
+    }
+    if (this.turns === "manual") {
+      // Harvey cuts in himself: the API ends the candidate's turn with the cue
+      // in it, he says his line, and `done` follows. The mic stops going up.
+      this.cuttingIn = true;
+      this.ending = true;
+      this.send({ type: "end", reason: out.action });
       return;
     }
     // Time is up, or the silence said "move on". Live cannot cut in (the
@@ -305,7 +412,7 @@ export class LiveQuestion {
 
   private play(data: ArrayBuffer): void {
     const ctx = this.ctx;
-    if (!ctx || this.finished || this.ending) return;
+    if (!ctx || this.finished || (this.ending && !this.cuttingIn)) return;
     const samples = new Int16Array(data);
     const buffer = ctx.createBuffer(1, samples.length, OUTPUT_RATE);
     const channel = buffer.getChannelData(0);
@@ -315,7 +422,11 @@ export class LiveQuestion {
     source.connect(ctx.destination);
     // Chunks arrive faster than real time; each one starts where the last ends,
     // and the first waits for a fixed line still playing ("let's move on").
-    const startAt = Math.max(ctx.currentTime + 0.05, this.nextAt, harveyVoice().endsAt);
+    const startAt = Math.max(
+      ctx.currentTime + 0.05,
+      this.nextAt,
+      harveyVoice().endsAt,
+    );
     source.start(startAt);
     this.nextAt = startAt + buffer.duration;
     this.playing.add(source);
