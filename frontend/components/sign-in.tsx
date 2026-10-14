@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { signInWithGoogle } from "@/lib/auth";
 
@@ -17,6 +18,7 @@ export function SignIn({ configured }: Props) {
   return (
     <div className="workspace-panel mx-auto mt-12 flex w-full max-w-lg flex-col gap-7 text-center">
       <header className="space-y-2">
+        <Image src="/brand-mark.svg" alt="AnyView" width={64} height={64} className="mx-auto mb-5" priority />
         <p className="eyebrow">AnyView · Your career, connected</p>
         <h1 className="py-4 text-4xl font-semibold tracking-tight">Good stories.<br />Better conversations.</h1>
         <p className="text-sm text-muted-foreground">

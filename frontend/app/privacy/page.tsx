@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Brain } from "lucide-react";
+import { BrandLogo } from "@/components/brand-logo";
 
 export const metadata: Metadata = {
   title: "Privacy · AnyView",
@@ -17,7 +17,7 @@ export default function Privacy() {
   return (
     <>
       <header className="workspace-header">
-        <Link href="/" className="wordmark" aria-label="AnyView home"><span className="brand-mark"><Brain size={20} aria-hidden /></span>anyview<span className="brand-dot">.</span></Link>
+        <BrandLogo />
       </header>
       <main id="main-content" className="workspace-main">
         <article className="policy mx-auto w-full max-w-3xl">

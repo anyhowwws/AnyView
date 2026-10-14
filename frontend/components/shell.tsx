@@ -5,10 +5,11 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { MotionConfig } from "framer-motion";
 import { SignIn } from "@/components/sign-in";
+import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
 import { getBrain } from "@/lib/api";
 import { signOut, useAuth } from "@/lib/auth";
-import { Brain, AudioLines, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 /** `useLinkStatus` only works inside a child of the `Link` it reports on, so
  *  the spinner has to be its own component rather than inlined above. Without
@@ -51,7 +52,10 @@ export function AuthShell({ children, pending }: { children: React.ReactNode; pe
       aria-current={pathname === href || (href === "/" && pathname === "/brain") ? "page" : undefined}
       className={`workspace-nav-link ${pathname === href || (href === "/" && pathname === "/brain") ? "is-active" : ""}`}
     >
-      {href === "/" || href === "/brain" ? <Brain size={16} aria-hidden /> : <AudioLines size={16} aria-hidden />}
+      <span
+        className={`workspace-nav-icon ${href === "/practice" ? "workspace-nav-icon--practice" : "workspace-nav-icon--garden"}`}
+        aria-hidden="true"
+      />
       {label}
       {count ? (
         <span className="ml-1.5 rounded-full bg-primary px-1.5 text-xs text-primary-foreground tabular-nums">
@@ -66,7 +70,7 @@ export function AuthShell({ children, pending }: { children: React.ReactNode; pe
     <MotionConfig reducedMotion="user">
       <a href="#main-content" className="skip-link">Skip to content</a>
       <header className="workspace-header">
-        <Link href="/" className="wordmark" aria-label="AnyView home"><span className="brand-mark"><Brain size={20} aria-hidden /></span>anyview<span className="brand-dot">.</span></Link>
+        <BrandLogo />
         <nav className="flex items-center gap-1" aria-label="Sections">
           {link("/", "Digital Garden", badge)}
           {link("/practice", "Interview Practice")}
