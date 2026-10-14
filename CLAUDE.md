@@ -55,7 +55,7 @@ Don't mix them up in copy, prompts or code: `HARVEY_VOICE`/`harveyVoice()` are t
 backend/src/anyview/   FastAPI app. main.py is the API's entry point; worker.py the ingestion worker's (ADR 0034).
 backend/tests/         pytest; pythonpath=src set in pyproject.
 frontend/app/          Next.js App Router. output: "export" → frontend/out.
-frontend/firebase.json Hosting config: static files + SPA fallback + cache headers only. No API rewrite (ADR 0006).
+frontend/firebase.json Hosting config: static files + cache headers only; unknown paths get 404.html. No API rewrite (ADR 0006).
 infra/bootstrap/       State bucket only. Local state. Run once.
 infra/                 Main GCP stack. GCS backend, bucket via -backend-config. No AWS credentials needed (ADR 0012).
 infra/dns/              The one AWS resource (Route 53 CNAME). Own state, own `aws login`. Applied rarely (ADR 0012).
@@ -320,8 +320,9 @@ retrieval test set.
   `/_next/static/**` is `immutable` for a year (hashed names). Firebase's default is `max-age=3600` on
   everything, which kept the old page in browsers for up to an hour after a deploy.
 - The static export writes each route as a flat file (`out/practice.html`). `cleanUrls: true` in
-  `firebase.json` is what maps `/practice` to it; without it a refresh or a pasted link falls
-  through the `**` rewrite to `index.html` (the garden) while the URL still says `/practice`.
+  `firebase.json` is what maps `/practice` to it; without it a refresh or a pasted link gets the 404 page.
+  There is no `**` rewrite on purpose: every route is a file, and an unknown path must reach
+  `out/404.html` (`app/not-found.tsx`) with a real 404 status. A new route needs no hosting change.
 - Don't run `next build` while `next dev` is up — both use `frontend/.next/` and the
   dev server then throws `__webpack_modules__[moduleId] is not a function`. Stop
   dev, build, restart dev (or `rm -rf frontend/.next`).
