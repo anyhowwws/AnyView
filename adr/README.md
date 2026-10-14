@@ -50,5 +50,6 @@ record of having been wrong is the useful part.
 | [0027](0027-job-posting-from-a-link.md) | A job posting can come from a link, fetched by the API | Accepted |
 | [0028](0028-preflight-and-fixed-lead-ins.md) | A pre-flight before question one; fixed lead-ins; one microphone per interview | Accepted, amended by 0031 |
 | [0029](0029-harvey-interviews-donna-keeps-the-garden.md) | Harvey interviews; Donna keeps the Digital Garden | Accepted |
-| [0030](0030-donna-speaks-in-discover.md) | Donna speaks in Discover, when asked to | Accepted |
+| [0030](0030-donna-speaks-in-discover.md) | Donna speaks in Discover, when asked to | Accepted, amended by 0032 |
 | [0031](0031-harvey-on-gemini-live.md) | Harvey on Gemini Live: planned questions, a live conversation, follow-ups now | Accepted |
+| [0032](0032-discover-answers-the-way-you-asked.md) | Discover answers the way you asked: no Type / Speak switch | Accepted |

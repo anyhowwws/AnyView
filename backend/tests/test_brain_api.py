@@ -524,6 +524,24 @@ def test_discover_in_speak_mode_streams_donnas_voice(client):
     assert {c["system"] for c in fake.calls if c["call"] == "speak"} == {"Kore"}
 
 
+def test_an_answer_on_screen_is_read_aloud_without_its_labels(client):
+    from tests.test_api import _sse_events
+
+    fake = FakeModel()
+    app.dependency_overrides[interview.get_model] = lambda: fake
+    text = "You led the landing zone rebuild [P1].\n- **Terraform** across twelve accounts [K2, K3]"
+    r = client.post(
+        "/brain/discover/read-aloud", json={"conversation_id": "conv-12345678", "text": text}
+    )
+    assert r.status_code == 200, r.text
+    events = [e for e, _ in _sse_events(r)]
+    assert "audio" in events and "token" not in events and events[-1] == "done"
+    spoken = [c for c in fake.calls if c["call"] == "speak"]
+    assert {c["system"] for c in spoken} == {"Kore"}
+    assert all("[" not in c["user"] and "**" not in c["user"] for c in spoken)
+    assert {c["session_id"] for c in spoken} == {"discover-conv-12345678"}
+
+
 def test_a_question_asked_out_loud_is_transcribed(client, store):
     from anyview.llm.adapter import wav
 

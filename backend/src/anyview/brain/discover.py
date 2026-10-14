@@ -11,10 +11,11 @@ plugs into when a garden outgrows that (ADR 0017 says when).
 Stateless, like the interview: the browser keeps the conversation and posts
 the recent turns with each question.
 
-Voice (ADR 0030) is opt-in per question: `voice=True` makes the same answer
-also arrive as spoken clips, one per sentence, through the interview's own
-`voiced()` wrapper. The text and the citations are unchanged; only what is
-synthesised is cleaned of labels and Markdown (`for_speech`).
+Voice (ADR 0030, 0032) is per question: a question asked out loud is sent with
+`voice=True`, and the same answer also arrives as spoken clips, one per
+sentence, through the interview's own `voiced()` wrapper. The text and the
+citations are unchanged; only what is synthesised is cleaned of labels and
+Markdown (`for_speech`). `read_aloud` voices an answer already on screen.
 """
 
 from __future__ import annotations
@@ -102,8 +103,14 @@ class DiscoverRequest(BaseModel):
     conversation_id: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
     question: str = Field(min_length=1, max_length=2_000)
     history: list[Turn] = Field(default=[], max_length=100)
-    # Speak mode (ADR 0030). Off unless the candidate switched it on.
+    # Spoken answer (ADR 0032): the browser sets it when the question was asked out loud.
     voice: bool = False
+
+
+class ReadAloudRequest(BaseModel):
+    conversation_id: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
+    # An answer Donna already wrote; the same cap as a turn in the history.
+    text: str = Field(min_length=1, max_length=8_000)
 
 
 def discover_context(garden: str) -> str:
@@ -245,3 +252,24 @@ def answer(
         for chunk in chunks():
             yield ("token", {"text": chunk})
     yield ("citations", {"entities": cited("".join(written), labels)})
+
+
+def read_aloud(
+    request: ReadAloudRequest, *, model: Model, voice: str
+) -> Iterator[tuple[str, object]]:
+    """Donna reads out an answer that is already on screen (ADR 0032).
+
+    The same sentence splitting, cleaning and voice as a spoken answer, fed the
+    whole text at once. The browser has the text, so only `audio` frames (and
+    at most one `voice_off`) are sent; the token frames are dropped.
+    """
+    for frame in voiced(
+        iter([request.text]),
+        model=model,
+        session_id=f"discover-{request.conversation_id}",
+        voice=voice,
+        style=DONNA_DELIVERY,
+        for_speech=for_speech,
+    ):
+        if frame[0] != "token":
+            yield frame

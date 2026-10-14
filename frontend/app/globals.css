@@ -165,6 +165,8 @@
 .discover-sources { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--border); list-style: none !important; padding-left: 0 !important; }
 .discover-sources button { min-height: 32px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; cursor: pointer; }
 .discover-sources button:hover { border-color: var(--primary); }
+.discover-read { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; min-height: 32px; padding: 4px 8px; border-radius: 8px; color: var(--muted-foreground); font-size: 12px; cursor: pointer; }
+.discover-read:hover, .discover-read[aria-pressed="true"] { color: var(--primary); }
 .discover-compose { display: flex; align-items: flex-end; gap: 10px; }
 .discover-compose textarea { flex: 1; min-height: 52px; resize: vertical; font-size: 15px; line-height: 1.6; }
 .discover-compose button[type=submit], .discover-compose .discover-mic { width: 44px; height: 44px; border-radius: 12px; }
