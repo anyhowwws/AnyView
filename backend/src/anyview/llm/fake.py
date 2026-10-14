@@ -116,13 +116,20 @@ class FakeModel:
         return wav(bytes(2 * int(PCM_SAMPLE_RATE * seconds)))
 
     def live(
-        self, *, system: str, tools: list[dict[str, Any]], session_id: str, voice: str = "Charon"
+        self,
+        *,
+        system: str,
+        tools: list[dict[str, Any]],
+        session_id: str,
+        voice: str = "Charon",
+        manual_turns: bool = False,
     ) -> AbstractAsyncContextManager[FakeLive]:
         """A scripted Live conversation (ADR 0031): see `FakeLive`."""
         self._record("live", session_id, system, voice)
         session = FakeLive(
             system,
             session_id=session_id,
+            manual_turns=manual_turns,
             follow_ups=self.replies.get("live_follow_ups", 1),
             answer=str(self.replies.get("live_answer", DEFAULTS["transcribe"])),
         )
@@ -155,14 +162,33 @@ class FakeLive:
     gets `[begin]`, takes enough microphone audio as an answer, asks for
     `follow_ups` follow-ups through the tool, then closes the question: silently,
     or with a goodbye on the last question, as the real prompt asks (ADR 0032).
-    Audio out is silence of a realistic length."""
+    Audio out is silence of a realistic length.
 
-    def __init__(self, system: str, *, session_id: str, follow_ups: int, answer: str) -> None:
+    With `manual_turns` (docs/live-manual-turns.md) it behaves as Live does with
+    its own detection off: it hears audio and text only inside an
+    `activity_start`/`activity_end` pair, answers when the turn ends rather
+    than after four seconds, and cuts in on `[time_up]`/`[move_on]`. Activity
+    marks sent to it without manual turns raise, as Vertex is documented to
+    refuse them. `signals` records the order of marks and text for tests."""
+
+    def __init__(
+        self,
+        system: str,
+        *,
+        session_id: str,
+        follow_ups: int,
+        answer: str,
+        manual_turns: bool = False,
+    ) -> None:
         self.question = _between(system, "<question>", "</question>") or "Tell me about yourself."
         self.last = "This is the last question" in system
         self.session_id = session_id
         self.follow_ups = follow_ups
         self.answer = answer
+        self.manual_turns = manual_turns
+        self.signals: list[str] = []
+        self._active = False
+        self._pending_cue: str | None = None
         self.sent_text: list[str] = []
         self.tool_results: list[tuple[str, dict[str, Any]]] = []
         self._queue: asyncio.Queue[LiveEvent | None] = asyncio.Queue()
@@ -188,17 +214,37 @@ class FakeLive:
         )
 
     async def send_audio(self, pcm: bytes) -> None:
-        if not self._listening:
-            return
+        if not self._listening or (self.manual_turns and not self._active):
+            return  # with manual turns, audio outside a turn is not input
         self._heard += len(pcm)
-        if self._heard >= FAKE_ANSWER_BYTES:
-            self._listening = False
-            self._heard = 0
-            await self._queue.put(LiveEvent("candidate_text", text=self.answer))
-            if self._asked < self.follow_ups:
-                await self._call("ask_follow_up", question=FAKE_FOLLOW_UP, reason="no outcome")
-            else:
-                await self._close()
+        if not self.manual_turns and self._heard >= FAKE_ANSWER_BYTES:
+            await self._answered()
+
+    async def _answered(self) -> None:
+        self._listening = False
+        self._heard = 0
+        await self._queue.put(LiveEvent("candidate_text", text=self.answer))
+        if self._asked < self.follow_ups:
+            await self._call("ask_follow_up", question=FAKE_FOLLOW_UP, reason="no outcome")
+        else:
+            await self._close()
+
+    async def activity_start(self) -> None:
+        if not self.manual_turns:
+            raise ModelError("activity_start sent with automatic activity detection on")
+        self.signals.append("start")
+        self._active = True
+
+    async def activity_end(self) -> None:
+        if not self.manual_turns:
+            raise ModelError("activity_end sent with automatic activity detection on")
+        self.signals.append("end")
+        self._active = False
+        cue, self._pending_cue = self._pending_cue, None
+        if cue is not None:
+            await self._cue(cue)
+        elif self._listening and self._heard > 0:
+            await self._answered()
 
     async def _close(self) -> None:
         if self.last:
@@ -207,9 +253,27 @@ class FakeLive:
 
     async def send_text(self, text: str) -> None:
         self.sent_text.append(text)
+        if not self.manual_turns:
+            await self._cue(text)
+            return
+        self.signals.append("text:" + text.split("]")[0] + "]")
+        # Manual turns: text is part of the turn, answered when the turn ends.
+        if self._active:
+            self._pending_cue = text
+
+    async def _cue(self, text: str) -> None:
         if text.startswith("[begin]"):
             await self._say(self.question)
             self._listening = True
+        elif self.manual_turns and text.startswith(("[time_up]", "[move_on]")):
+            self._listening = False
+            line = (
+                "That's all my questions. Thanks for your time today."
+                if self.last
+                else "Let me stop you there — we need to keep moving."
+            )
+            await self._say(line)
+            await self._call("finish_question")
 
     async def send_tool_result(self, call_id: str, name: str, result: dict[str, Any]) -> None:
         self.tool_results.append((name, result))

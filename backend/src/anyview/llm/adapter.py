@@ -131,6 +131,12 @@ class LiveSession(Protocol):
 
     async def send_tool_result(self, call_id: str, name: str, result: dict[str, Any]) -> None: ...
 
+    # Manual turn-taking only (`manual_turns=True`): the caller marks where the
+    # candidate's turn starts and ends, because Live's own detection is off.
+    async def activity_start(self) -> None: ...
+
+    async def activity_end(self) -> None: ...
+
     def events(self) -> AsyncIterator[LiveEvent]: ...
 
 
@@ -169,7 +175,13 @@ class Model(Protocol):
     ) -> bytes: ...
 
     def live(
-        self, *, system: str, tools: list[dict[str, Any]], session_id: str, voice: str
+        self,
+        *,
+        system: str,
+        tools: list[dict[str, Any]],
+        session_id: str,
+        voice: str,
+        manual_turns: bool = False,
     ) -> AbstractAsyncContextManager[LiveSession]: ...
 
 
@@ -521,20 +533,27 @@ class VertexGemini:
     # --- Live (ADR 0031) -------------------------------------------------------
 
     def live(
-        self, *, system: str, tools: list[dict[str, Any]], session_id: str, voice: str = "Charon"
+        self,
+        *,
+        system: str,
+        tools: list[dict[str, Any]],
+        session_id: str,
+        voice: str = "Charon",
+        manual_turns: bool = False,
     ) -> AbstractAsyncContextManager[LiveSession]:
         """Open a spoken conversation. Use as `async with model.live(...) as session:`.
 
         Harvey speaks in a prebuilt voice and hears through the session's own
-        voice-activity detection. `tools` are plain JSON-schema function
-        declarations; the caller answers each call with `send_tool_result`.
-        Both sides are transcribed, so the caller gets text without a second
-        model call."""
+        voice-activity detection, or, with `manual_turns`, through the
+        `activity_start`/`activity_end` marks the caller sends. `tools` are
+        plain JSON-schema function declarations; the caller answers each call
+        with `send_tool_result`. Both sides are transcribed, so the caller gets
+        text without a second model call."""
         if self._live_client is None:
             self._live_client = genai.Client(
                 vertexai=True, project=self._project_id, location=self._live_region
             )
-        config = live_config(system=system, tools=tools, voice=voice)
+        config = live_config(system=system, tools=tools, voice=voice, manual_turns=manual_turns)
         return self._live_session(config, session_id=session_id)
 
     @asynccontextmanager
@@ -553,9 +572,30 @@ class VertexGemini:
             raise _translate(exc) from exc
 
 
-def live_config(*, system: str, tools: list[dict[str, Any]], voice: str) -> types.LiveConnectConfig:
+def live_config(
+    *, system: str, tools: list[dict[str, Any]], voice: str, manual_turns: bool = False
+) -> types.LiveConnectConfig:
     """The Live session's settings (ADR 0031). A function of its own so a test
     can build it without credentials."""
+    if manual_turns:
+        # Experimental (docs/live-manual-turns.md): Live's own detection is off,
+        # so it treats nothing as the candidate's turn until the caller sends
+        # `activity_start`, and answers the moment it sends `activity_end`.
+        # Barge-in stays on: a new `activity_start` still cuts Harvey off.
+        turns = types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(disabled=True)
+        )
+    else:
+        # Interview answers are full of thinking pauses. A low end-of-speech
+        # sensitivity and a long silence before "they stopped" keep Harvey
+        # from jumping in mid-thought; proactive audio lets him stay quiet
+        # when a pause does end a turn.
+        turns = types.RealtimeInputConfig(
+            automatic_activity_detection=types.AutomaticActivityDetection(
+                end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
+                silence_duration_ms=1_200,
+            )
+        )
     return types.LiveConnectConfig(
         response_modalities=[types.Modality.AUDIO],
         system_instruction=system,
@@ -578,16 +618,7 @@ def live_config(*, system: str, tools: list[dict[str, Any]], voice: str) -> type
         ],
         input_audio_transcription=types.AudioTranscriptionConfig(),
         output_audio_transcription=types.AudioTranscriptionConfig(),
-        # Interview answers are full of thinking pauses. A low end-of-speech
-        # sensitivity and a long silence before "they stopped" keep Harvey
-        # from jumping in mid-thought; proactive audio lets him stay quiet
-        # when a pause does end a turn.
-        realtime_input_config=types.RealtimeInputConfig(
-            automatic_activity_detection=types.AutomaticActivityDetection(
-                end_of_speech_sensitivity=types.EndSensitivity.END_SENSITIVITY_LOW,
-                silence_duration_ms=1_200,
-            )
-        ),
+        realtime_input_config=turns,
         proactivity=types.ProactivityConfig(proactive_audio=True),
     )
 
@@ -615,6 +646,12 @@ class _VertexLive:
         await self._session.send_tool_response(
             function_responses=[types.FunctionResponse(id=call_id, name=name, response=result)]
         )
+
+    async def activity_start(self) -> None:
+        await self._session.send_realtime_input(activity_start=types.ActivityStart())
+
+    async def activity_end(self) -> None:
+        await self._session.send_realtime_input(activity_end=types.ActivityEnd())
 
     async def events(self) -> AsyncIterator[LiveEvent]:
         # `receive()` yields one model turn and stops at its end, so it is read

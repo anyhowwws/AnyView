@@ -29,7 +29,7 @@ from anyview.interview.models import (
     Session,
     State,
 )
-from anyview.interview.prompts import BEGIN, LIVE_TOOLS, live_system
+from anyview.interview.prompts import BEGIN, CUT_INS, LIVE_TOOLS, live_system
 
 TOOLS = LIVE_TOOLS
 
@@ -57,7 +57,7 @@ class _Part:
 
 
 class LiveTurn:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, manual_turns: bool = False) -> None:
         engine.require_state(session, State.ASK)
         question = session.current_question
         if question is None:
@@ -68,12 +68,17 @@ class LiveTurn:
             questions=session.questions,
             answers=session.answers,
             index=session.current,
+            manual_turns=manual_turns,
         )
+        self.manual_turns = manual_turns
         self.parts: list[_Part] = [_Part(asked=None)]
         self.harvey: list[str] = []
         self.finished = False
         self.time_up = False
         self.moved_on = False
+        # Manual turns only: the browser has ended the question and Harvey is
+        # saying his cut-in line (docs/live-manual-turns.md).
+        self.cutting_in = False
 
     # --- What happened ---------------------------------------------------------
 
@@ -94,6 +99,16 @@ class LiveTurn:
             self.time_up = True
         if reason in ("time_up", "move_on"):
             self.moved_on = True
+
+    def cut_in(self, reason: str) -> str | None:
+        """With manual turns, a cut-in is Harvey's to say: end the question for
+        `reason` and return the cue to send Live, or None when there is none
+        (the candidate's own "next question" closes at once, as on auto)."""
+        self.end(reason)
+        if not self.manual_turns or reason not in CUT_INS:
+            return None
+        self.cutting_in = True
+        return CUT_INS[reason]
 
     @property
     def follow_ups_used(self) -> int:

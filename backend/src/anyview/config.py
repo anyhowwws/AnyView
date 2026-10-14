@@ -23,6 +23,11 @@ class Settings:
     # Harvey on Gemini Live (ADR 0031). Live models are regional, not `global`.
     live_model_id: str = "gemini-live-2.5-flash-native-audio"
     live_region: str = "us-central1"
+    # Who decides when the candidate's turn ends on Live: "auto" (Live's own
+    # voice-activity detection, ADR 0031) or "manual" (the browser marks it, so
+    # Harvey can cut in on time-up in his own voice). An experiment: see
+    # docs/live-manual-turns.md. Anything else counts as "auto".
+    live_turns: str = "auto"
     cors_origins: list[str] = field(default_factory=list)
     allowed_emails: frozenset[str] = frozenset()
     upload_bucket: str = ""
@@ -59,6 +64,7 @@ class Settings:
             donna_voice=os.environ.get("DONNA_VOICE", "Kore"),
             live_model_id=os.environ.get("LIVE_MODEL_ID", "gemini-live-2.5-flash-native-audio"),
             live_region=os.environ.get("LIVE_REGION", "us-central1"),
+            live_turns="manual" if os.environ.get("LIVE_TURNS", "auto") == "manual" else "auto",
             cors_origins=origins or ["http://localhost:3000"],
             allowed_emails=emails,
             upload_bucket=os.environ.get("UPLOAD_BUCKET", ""),

@@ -10,12 +10,20 @@ Browser → API
     text    {"token": "<Firebase ID token>", "session": <Session>}   first frame, once
     binary  microphone audio, 16 kHz 16-bit mono PCM                continuously
     text    {"type": "end", "reason": "time_up"|"move_on"|"manual"}  close the question now
+    text    {"type": "activity", "state": "start"|"end"}            manual turns only
 
 The browser owns time and silence (ADR 0032): it plays Harvey's fixed lines
 itself and ends the question. Nothing it sends is ever spoken by Live.
 
+Manual turns (`LIVE_TURNS=manual`, an experiment: docs/live-manual-turns.md):
+Live's own voice detection is off. The browser marks where each of the
+candidate's turns starts and ends with `activity` frames, and sends microphone
+audio only inside them. A `time_up` or `move_on` end does not close the socket
+at once: the API ends the candidate's turn with a fixed cue in it, Harvey cuts
+in in his own voice, and `done` follows once he has finished.
+
 API → browser
-    text    {"type": "ready"}                                       Live is open
+    text    {"type": "ready", "turns": "auto"|"manual"}             Live is open
     binary  Harvey's voice, 24 kHz 16-bit mono PCM
     text    {"type": "harvey"|"candidate", "text": "..."}           transcripts, in fragments
     text    {"type": "turn_complete"}                               Harvey stopped talking
@@ -63,6 +71,9 @@ FIRST_FRAME_TIMEOUT_S = 15
 FINISH_GRACE_S = 4.0
 # Live drops a connection at about ten minutes. A question is over well before.
 MAX_TURN_S = 9 * 60
+# Manual turns: how long Harvey has to say his cut-in line before the question
+# closes anyway.
+CUT_IN_GRACE_S = 12.0
 
 
 @router.websocket("/live")
@@ -81,8 +92,9 @@ async def live(
         return
     await ws.accept()
 
+    manual = settings.live_turns == "manual"
     try:
-        turn, session = await _open(ws, verifier, settings)
+        turn, session = await _open(ws, verifier, settings, manual=manual)
     except _Refused as refused:
         await _send(ws, {"type": "error", "message": refused.message, "fallback": False})
         await ws.close(code=1008)
@@ -94,11 +106,13 @@ async def live(
             tools=TOOLS,
             session_id=session.session_id,
             voice=settings.harvey_voice,
+            manual_turns=manual,
         ) as harvey:
-            await _send(ws, {"type": "ready"})
-            await harvey.send_text(turn.begin)
+            floor = _Floor(harvey, manual=manual)
+            await _send(ws, {"type": "ready", "turns": "manual" if manual else "auto"})
+            await floor.say(turn.begin)
             limit = min(MAX_TURN_S, turn.question.seconds + 240)
-            gone = await _relay(ws, harvey, turn, limit=limit)
+            gone = await _relay(ws, harvey, turn, floor, limit=limit)
     except ModelError as exc:
         log.warning("live session failed for %s: %s", session.session_id, exc.user_message)
         await _send(ws, {"type": "error", "message": exc.user_message, "fallback": True})
@@ -117,7 +131,44 @@ class _Refused(Exception):
         self.message = message
 
 
-async def _open(ws: WebSocket, verifier: Verifier, settings: Settings) -> tuple[LiveTurn, Session]:
+class _Floor:
+    """Who holds the floor, for manual turns: whether the candidate's turn is
+    open on Live. With automatic detection every method is a plain pass-through,
+    so the default path sends Live exactly what it always did.
+
+    Live never sees a stray `activity_end` or a second `activity_start`: the
+    browser's frames and the API's own cues both go through here."""
+
+    def __init__(self, harvey: LiveSession, *, manual: bool) -> None:
+        self.harvey = harvey
+        self.manual = manual
+        self.open = False
+
+    async def start(self) -> None:
+        if self.manual and not self.open:
+            self.open = True
+            await self.harvey.activity_start()
+
+    async def end(self) -> None:
+        if self.manual and self.open:
+            self.open = False
+            await self.harvey.activity_end()
+
+    async def say(self, text: str) -> None:
+        """Send a fixed cue. With manual turns, text is input like speech: it
+        needs a turn around it, or Live never answers it. A candidate turn that
+        is still open (they are mid-sentence at time-up) carries it and ends."""
+        if not self.manual:
+            await self.harvey.send_text(text)
+            return
+        await self.start()
+        await self.harvey.send_text(text)
+        await self.end()
+
+
+async def _open(
+    ws: WebSocket, verifier: Verifier, settings: Settings, *, manual: bool
+) -> tuple[LiveTurn, Session]:
     """Read the first frame: who is calling, and which question this is."""
     try:
         first = json.loads(await asyncio.wait_for(ws.receive_text(), FIRST_FRAME_TIMEOUT_S))
@@ -129,16 +180,18 @@ async def _open(ws: WebSocket, verifier: Verifier, settings: Settings) -> tuple[
         raise _Refused("The connection closed.") from exc
     try:
         user_from_token(token, verifier, settings)
-        return LiveTurn(session), session
+        return LiveTurn(session, manual_turns=manual), session
     except HTTPException as exc:
         raise _Refused(str(exc.detail)) from exc
     except EngineError as exc:
         raise _Refused(exc.user_message) from exc
 
 
-async def _relay(ws: WebSocket, harvey: LiveSession, turn: LiveTurn, *, limit: float) -> bool:
+async def _relay(
+    ws: WebSocket, harvey: LiveSession, turn: LiveTurn, floor: _Floor, *, limit: float
+) -> bool:
     """Pump both directions until the question is over. True if the browser left."""
-    upstream = asyncio.create_task(_from_browser(ws, harvey, turn))
+    upstream = asyncio.create_task(_from_browser(ws, harvey, turn, floor))
     downstream = asyncio.create_task(_from_live(ws, harvey, turn))
     done, pending = await asyncio.wait(
         {upstream, downstream}, timeout=limit, return_when=asyncio.FIRST_COMPLETED
@@ -164,7 +217,7 @@ async def _relay(ws: WebSocket, harvey: LiveSession, turn: LiveTurn, *, limit: f
     return False
 
 
-async def _from_browser(ws: WebSocket, harvey: LiveSession, turn: LiveTurn) -> None:
+async def _from_browser(ws: WebSocket, harvey: LiveSession, turn: LiveTurn, floor: _Floor) -> None:
     while True:
         message = await ws.receive()
         if message["type"] == "websocket.disconnect":
@@ -177,9 +230,21 @@ async def _from_browser(ws: WebSocket, harvey: LiveSession, turn: LiveTurn) -> N
             data = json.loads(message.get("text") or "")
         except ValueError:
             continue
-        if data.get("type") == "end":
+        if data.get("type") == "activity" and floor.manual:
+            if data.get("state") == "start":
+                await floor.start()
+            elif data.get("state") == "end":
+                await floor.end()
+        elif data.get("type") == "end":
             reason = data.get("reason")
-            turn.end(reason if reason in END_REASONS else "manual")
+            cue = turn.cut_in(reason if reason in END_REASONS else "manual")
+            if cue is None:
+                return
+            # Manual turns: Harvey cuts in himself. The candidate's turn ends
+            # with the cue in it; `_from_live` closes the question once he has
+            # said his line, and this task becomes the deadline for that.
+            await floor.say(cue)
+            await asyncio.sleep(CUT_IN_GRACE_S)
             return
 
 
@@ -187,6 +252,9 @@ async def _from_live(ws: WebSocket, harvey: LiveSession, turn: LiveTurn) -> None
     loop = asyncio.get_running_loop()
     events = aiter(harvey.events())
     finish_by: float | None = None
+    # Manual turns: Harvey has started speaking since the browser cut in, so
+    # the next `turn_complete` is the end of his cut-in line.
+    cut_in_spoken = False
     while True:
         wait = None if finish_by is None else max(0.0, finish_by - loop.time())
         try:
@@ -194,6 +262,7 @@ async def _from_live(ws: WebSocket, harvey: LiveSession, turn: LiveTurn) -> None
         except (TimeoutError, StopAsyncIteration):
             return
         if event.kind == "audio":
+            cut_in_spoken = cut_in_spoken or turn.cutting_in
             await ws.send_bytes(event.audio)
         elif event.kind == "harvey_text":
             turn.said(event.text)
@@ -204,7 +273,7 @@ async def _from_live(ws: WebSocket, harvey: LiveSession, turn: LiveTurn) -> None
         elif event.kind == "interrupted":
             await _send(ws, {"type": "interrupted"})
         elif event.kind == "turn_complete":
-            if turn.finished:
+            if turn.finished or cut_in_spoken:
                 return
             # Harvey has stopped talking: the browser starts the clock here.
             await _send(ws, {"type": "turn_complete"})
