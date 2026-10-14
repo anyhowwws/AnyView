@@ -13,9 +13,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from anyview.api.auth import CurrentUser, current_user
-from anyview.api.interview import ModelDep
+from anyview.api.interview import ModelDep, SettingsDep, Transcript
 from anyview.api.sse import Frame, stream_response
-from anyview.api.uploads import StoreDep, object_prefix
+from anyview.api.uploads import StoreDep, object_prefix, transcribe_recording
 from anyview.brain.discover import DiscoverRequest, answer
 from anyview.brain.extract import ExtractionFailed, Progress, drop_unchanged, propose
 from anyview.brain.manual import BadEntry, patch_for, source_text
@@ -295,9 +295,12 @@ def retire_entity(kind: Kind, entity_id: str, user: CurrentUser, repo: RepoDep) 
 
 
 @router.post("/discover")
-def discover(body: DiscoverRequest, user: CurrentUser, repo: RepoDep, model: ModelDep):
+def discover(
+    body: DiscoverRequest, user: CurrentUser, repo: RepoDep, model: ModelDep, settings: SettingsDep
+):
     """Ask Donna about the confirmed garden (ADR 0017). Streams token frames,
-    then one `citations` frame naming the entries the answer relies on."""
+    then one `citations` frame naming the entries the answer relies on. With
+    `voice: true` (speak mode, ADR 0030) `audio` frames ride beside the tokens."""
     repo.ensure_user(user.uid, user.email)
     # Checked before the stream opens, so an empty garden is a plain 422 rather
     # than an error frame inside a 200.
@@ -307,7 +310,31 @@ def discover(body: DiscoverRequest, user: CurrentUser, repo: RepoDep, model: Mod
             422, "Your Digital Garden is empty. Capture something first, then ask Donna about it."
         )
     garden = repo.brain_context(user.uid)
-    return stream_response(answer(body, garden=garden, labels=labels, model=model))
+    return stream_response(
+        answer(body, garden=garden, labels=labels, model=model, voice=settings.donna_voice)
+    )
+
+
+class DiscoverTranscribeRequest(BaseModel):
+    conversation_id: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
+    object_name: str = Field(max_length=200)
+
+
+@router.post("/discover/transcribe", response_model=Transcript)
+def discover_transcribe(
+    body: DiscoverTranscribeRequest, user: CurrentUser, model: ModelDep, store: StoreDep
+) -> Transcript:
+    """A question asked out loud in speak mode (ADR 0030), as text. The browser
+    shows it, then asks it through `/brain/discover` like a typed one."""
+    text = transcribe_recording(
+        body.object_name,
+        uid=user.uid,
+        store=store,
+        model=model,
+        session_id=f"discover-{body.conversation_id}",
+        what="the candidate's question",
+    )
+    return Transcript(text=text)
 
 
 @router.get("/events", response_model=list[Event])

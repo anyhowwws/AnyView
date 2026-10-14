@@ -10,6 +10,11 @@ plugs into when a garden outgrows that (ADR 0017 says when).
 
 Stateless, like the interview: the browser keeps the conversation and posts
 the recent turns with each question.
+
+Voice (ADR 0030) is opt-in per question: `voice=True` makes the same answer
+also arrive as spoken clips, one per sentence, through the interview's own
+`voiced()` wrapper. The text and the citations are unchanged; only what is
+synthesised is cleaned of labels and Markdown (`for_speech`).
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from anyview.brain.models import LABEL_PREFIX
+from anyview.interview.voice import voiced
 from anyview.llm.adapter import Model
 
 log = logging.getLogger(__name__)
@@ -38,6 +44,25 @@ MAX_HISTORY_TURNS = 12
 # "[P3]" or "[P3, S2]" — the label shapes the prompt asks for.
 _CITATION = re.compile(r"\[([A-Z]\d+(?:\s*,\s*[A-Z]\d+)*)\]")
 _KIND_BY_PREFIX = {prefix: kind for kind, prefix in LABEL_PREFIX.items()}
+# The same labels with the space before them, for taking them out of speech.
+_SPOKEN_CITATION = re.compile(r"\s*\[[A-Z]\d+(?:\s*,\s*[A-Z]\d+)*\]")
+# A Markdown list marker or heading at the start of a line: "- ", "* ", "2. ", "## ".
+_LINE_MARKER = re.compile(r"^\s*(?:[-*•]|\d+[.)]|#+)\s+")
+
+# How Donna sounds, as direction for the TTS model (ADR 0030). The same rule as
+# Harvey's (ADR 0029): ONE short, positive clause. Longer direction, or any
+# negation, gets read out loud. A clip far longer than its line means it is.
+DONNA_DELIVERY = (
+    "Say in a warm, confident voice with a quick, knowing smile, "
+    "crisp and friendly, at a natural brisk conversational pace"
+)
+
+# Added to the question when the answer will be heard. It rides in the user turn,
+# not the system prompt, so the garden stays the cached prefix either way.
+SPOKEN_NOTE = (
+    "(The candidate asked this out loud and will hear your answer read aloud as well as "
+    "see it. Keep it short: two or three sentences, or a brief list of names.)"
+)
 
 DISCOVER_SYSTEM = """You are Donna, the candidate's own career assistant. They are asking you
 about their Digital Garden: the record of their roles, projects, stories, skills, achievements,
@@ -70,6 +95,8 @@ class DiscoverRequest(BaseModel):
     conversation_id: str = Field(pattern=r"^[A-Za-z0-9-]{8,64}$")
     question: str = Field(min_length=1, max_length=2_000)
     history: list[Turn] = Field(default=[], max_length=100)
+    # Speak mode (ADR 0030). Off unless the candidate switched it on.
+    voice: bool = False
 
 
 def discover_context(garden: str) -> str:
@@ -91,13 +118,15 @@ def system_prompt(garden: str) -> str:
     return f"{DISCOVER_SYSTEM}\n\n<digital_garden>\n{garden.strip()}\n</digital_garden>"
 
 
-def user_prompt(history: list[Turn], question: str) -> str:
+def user_prompt(history: list[Turn], question: str, *, spoken: bool = False) -> str:
     """The conversation so far, then the new question, as one user turn.
 
     The adapter takes one system and one user message; flattening the history
     into the user turn keeps it that way, and keeps the garden (system) as the
     cacheable prefix.
     """
+    if spoken:
+        question = f"{question}\n\n{SPOKEN_NOTE}"
     recent = history[-MAX_HISTORY_TURNS:]
     if not recent:
         return question
@@ -108,6 +137,26 @@ def user_prompt(history: list[Turn], question: str) -> str:
         + "\n</conversation_so_far>\n\n"
         + f"The candidate now asks: {question}"
     )
+
+
+def for_speech(sentence: str) -> str:
+    """What the TTS model is given for one sentence of an answer.
+
+    The answer is written to be read: "[P3]" labels, **bold** and list markers.
+    Read aloud they would be "open bracket P three". Each line loses its marker
+    and gains a full stop if it had none, so a list is heard as a list.
+    """
+    lines: list[str] = []
+    for line in sentence.splitlines():
+        line = _SPOKEN_CITATION.sub("", line)
+        line = _LINE_MARKER.sub("", line)
+        line = line.replace("**", "").replace("`", "").strip()
+        if not line:
+            continue
+        if line[-1] not in ".!?:;…":
+            line += "."
+        lines.append(line)
+    return " ".join(lines)
 
 
 def cited(text: str, labels: dict[str, str]) -> list[dict[str, str]]:
@@ -127,18 +176,47 @@ def cited(text: str, labels: dict[str, str]) -> list[dict[str, str]]:
 
 
 def answer(
-    request: DiscoverRequest, *, garden: str, labels: dict[str, str], model: Model
+    request: DiscoverRequest,
+    *,
+    garden: str,
+    labels: dict[str, str],
+    model: Model,
+    voice: str | None = None,
 ) -> Iterator[tuple[str, object]]:
-    """Token frames as Donna writes, then one `citations` frame."""
+    """Token frames as Donna writes, then one `citations` frame.
+
+    With `request.voice` and a `voice` name, `audio` frames (and at most one
+    `voice_off`) are interleaved with the tokens, as in the interview.
+    """
+    session_id = f"discover-{request.conversation_id}"
+    spoken = request.voice and voice is not None
     written: list[str] = []
-    for chunk in model.stream(
-        system=system_prompt(discover_context(garden)),
-        user=user_prompt(request.history, request.question),
-        session_id=f"discover-{request.conversation_id}",
-        call="discover",
-        effort="low",
-        max_tokens=2048,
-    ):
-        written.append(chunk)
-        yield ("token", {"text": chunk})
+
+    # A generator inside a generator: it records every chunk on its way past,
+    # so the citations can be read from the whole answer at the end whichever
+    # path below consumed it.
+    def chunks() -> Iterator[str]:
+        for chunk in model.stream(
+            system=system_prompt(discover_context(garden)),
+            user=user_prompt(request.history, request.question, spoken=spoken),
+            session_id=session_id,
+            call="discover",
+            effort="low",
+            max_tokens=2048,
+        ):
+            written.append(chunk)
+            yield chunk
+
+    if spoken and voice is not None:
+        yield from voiced(
+            chunks(),
+            model=model,
+            session_id=session_id,
+            voice=voice,
+            style=DONNA_DELIVERY,
+            for_speech=for_speech,
+        )
+    else:
+        for chunk in chunks():
+            yield ("token", {"text": chunk})
     yield ("citations", {"entities": cited("".join(written), labels)})

@@ -1,11 +1,14 @@
 """Discover's pure parts: prompts, history trimming, citation filtering. No DB."""
 
 from anyview.brain.discover import (
+    DONNA_DELIVERY,
     MAX_HISTORY_TURNS,
+    SPOKEN_NOTE,
     DiscoverRequest,
     Turn,
     answer,
     cited,
+    for_speech,
     system_prompt,
     user_prompt,
 )
@@ -54,3 +57,40 @@ def test_answer_streams_tokens_then_citations():
     assert [c["label"] for c in frames[-1][1]["entities"]] == ["P1", "S1"]  # …links do not
     call = fake.calls[0]
     assert call["call"] == "discover" and call["session_id"] == "discover-conv-12345678"
+
+
+# --- speak mode (ADR 0030) ----------------------------------------------------
+
+
+def test_for_speech_drops_labels_and_markdown():
+    assert for_speech("The billing migration [P1] and **on-call** [P1, S1].") == (
+        "The billing migration and on-call."
+    )
+    assert for_speech("- Terraform [K1]\n- Cloud Run\n2. GKE") == "Terraform. Cloud Run. GKE."
+    assert for_speech("[P1]") == ""  # nothing left to say: no clip is paid for
+
+
+def test_a_typed_question_is_never_spoken():
+    fake = FakeModel()
+    request = DiscoverRequest(conversation_id="conv-12345678", question="What have I led?")
+    frames = list(answer(request, garden="G", labels=LABELS, model=fake, voice="Kore"))
+    assert "audio" not in {e for e, _ in frames}
+    assert [c["call"] for c in fake.calls] == ["discover"]
+    assert SPOKEN_NOTE not in fake.calls[0]["user"]
+
+
+def test_speak_mode_adds_clips_in_donnas_voice_without_the_labels():
+    fake = FakeModel()
+    request = DiscoverRequest(
+        conversation_id="conv-12345678", question="What have I led?", voice=True
+    )
+    frames = list(answer(request, garden="G", labels=LABELS, model=fake, voice="Kore"))
+    events = [e for e, _ in frames]
+    assert "audio" in events and events[-1] == "citations"
+    assert [c["label"] for c in frames[-1][1]["entities"]] == ["P1", "S1"]  # unchanged
+    assert fake.calls[0]["user"].endswith(SPOKEN_NOTE)
+    spoken = [c for c in fake.calls if c["call"] == "speak"]
+    assert spoken and all(c["system"] == "Kore" for c in spoken)
+    for c in spoken:
+        assert c["user"].startswith(DONNA_DELIVERY)
+        assert "[" not in c["user"]

@@ -23,11 +23,15 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 from anyview.api.auth import CurrentUser, current_user
+from anyview.llm.adapter import Model
 from anyview.uploads.extract import (
     ALLOWED_TYPES,
     AUDIO_TYPES,
+    EXTENSION_TYPES,
     MAX_UPLOAD_BYTES,
     SIGNED_URL_TTL_SECONDS,
+    ExtractionError,
+    audio_to_text,
 )
 from anyview.uploads.store import MemoryUploadStore, UploadStore
 
@@ -63,6 +67,37 @@ def audio_prefix(uid: str) -> str:
 
 def prefix_for(content_type: str, uid: str) -> str:
     return audio_prefix(uid) if content_type in AUDIO_TYPES else object_prefix(uid)
+
+
+def transcribe_recording(
+    object_name: str,
+    *,
+    uid: str,
+    store: UploadStore,
+    model: Model,
+    session_id: str,
+    what: str = "the candidate's answer",
+) -> str:
+    """A recording the browser uploaded, as the words that were said.
+
+    Shared by an interview answer (ADR 0013) and a question asked out loud in
+    Discover (ADR 0030). The browser uploads straight to the bucket and sends
+    only the object name, the same shape as a resume upload (ADR 0010)."""
+    # Only the caller's own recordings, by the prefix the ticket route set from
+    # the verified uid. This is the whole authorisation check.
+    if not object_name.startswith(audio_prefix(uid)):
+        raise HTTPException(403, "That recording isn't yours.")
+    suffix = object_name[object_name.rfind(".") :]
+    mime = EXTENSION_TYPES.get(suffix)
+    if mime is None:
+        raise HTTPException(415, "That recording format isn't supported.")
+    data = store.read(object_name)
+    if data is None:
+        raise HTTPException(404, "The recording wasn't found. Please record it again.")
+    try:
+        return audio_to_text(data, mime, model=model, session_id=session_id, what=what)
+    except ExtractionError as exc:
+        raise HTTPException(422, exc.user_message) from exc
 
 
 @router.post("", response_model=UploadTicket)
