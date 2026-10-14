@@ -1,11 +1,11 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, streamDump, streamDumpFromUpload, uploadResume } from "@/lib/api";
-import { applyProgress, startView, type IngestView } from "@/lib/ingest-progress";
+import { ApiError, activeJobs, followJob, queueText, queueUpload, uploadResume } from "@/lib/api";
+import { startView, viewOfJob, type IngestView, type ProgressFrame } from "@/lib/ingest-progress";
 import { IngestProgress } from "@/components/brain/ingest-progress";
 import { MonthPicker } from "@/components/brain/entry-form";
 import { monthOf, thisMonth } from "@/lib/entry-fields";
@@ -29,10 +29,12 @@ export function CaptureBox({ onProposal }: Props) {
   const [formatted, setFormatted] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [stage, setStage] = useState<"idle" | "uploading" | "reading">("idle");
-  // What Donna is doing right now, from the stream's progress frames (ADR 0019).
+  // What Donna is doing right now, from the queued job's progress frames (ADR 0019, 0034).
   const [progress, setProgress] = useState<{ view: IngestView; fromFile: boolean } | null>(null);
-  const report = (frame: Parameters<typeof applyProgress>[1]) =>
-    setProgress((p) => (p ? { ...p, view: applyProgress(p.view, frame) } : p));
+  const report = (frames: ProgressFrame[]) =>
+    setProgress((p) => (p ? { ...p, view: viewOfJob(frames) } : p));
+  // Polling stops when the garden screen goes away; the job does not.
+  const leaving = useRef(new AbortController());
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const busy = stage !== "idle";
@@ -49,12 +51,32 @@ export function CaptureBox({ onProposal }: Props) {
       setText("");
       setFields({});
     } catch (err) {
+      if (leaving.current.signal.aborted) return;
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
-      setStage("idle");
-      setProgress(null);
+      if (!leaving.current.signal.aborted) {
+        setStage("idle");
+        setProgress(null);
+      }
     }
   }
+
+  // A job still running from before a reload (or from another tab) is shown
+  // and followed as if it had just been handed in.
+  useEffect(() => {
+    const controller = new AbortController();
+    leaving.current = controller;
+    activeJobs()
+      .then(([job]) => {
+        if (!job || controller.signal.aborted) return;
+        setStage("reading");
+        setProgress({ view: viewOfJob(job.progress), fromFile: job.source === "upload" });
+        void run(() => followJob(job, report, controller.signal));
+      })
+      .catch(() => {}); // nothing to pick up is the usual case; a failure here is not worth a message
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per mount
+  }, []);
 
   return (
     <section className="capture-panel">
@@ -65,7 +87,8 @@ export function CaptureBox({ onProposal }: Props) {
           if (!valid || busy) return;
           setStage("reading");
           setProgress({ view: startView(false), fromFile: false });
-          void run(() => streamDump(formatted ? formatCapture(template, fields, text) : text, report));
+          const dump = formatted ? formatCapture(template, fields, text) : text;
+          void run(async () => followJob(await queueText(dump), report, leaving.current.signal));
         }}
       >
         <label className="text-sm font-medium" htmlFor="dump">
@@ -180,7 +203,8 @@ export function CaptureBox({ onProposal }: Props) {
               void run(async () => {
                 const object = await uploadResume(f);
                 setStage("reading");
-                return streamDumpFromUpload(object, report);
+                setProgress({ view: viewOfJob([]), fromFile: true }); // uploaded: now in the queue
+                return followJob(await queueUpload(object), report, leaving.current.signal);
               });
             }}
           />

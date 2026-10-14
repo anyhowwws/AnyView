@@ -18,6 +18,7 @@ locals {
     "firebasehosting.googleapis.com",
     "identitytoolkit.googleapis.com", # Identity Platform (sign-in)
     "sqladmin.googleapis.com",        # Cloud SQL (instance admin + connector)
+    "cloudtasks.googleapis.com",      # the ingest queue (ADR 0034)
   ]
 }
 

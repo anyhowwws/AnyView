@@ -5,10 +5,12 @@ the repository, the fake verifier for sign-in. Two users, to prove isolation."""
 import pytest
 from fastapi.testclient import TestClient
 
-from anyview.api import brain, interview
+from anyview.api import brain, interview, uploads
+from anyview.brain.ingest import run_job
 from anyview.db.repository import Repository
 from anyview.llm.fake import FakeModel
 from anyview.main import app
+from anyview.tasks import InlineQueue
 from tests.conftest import RESUME
 from tests.test_uploads import _docx_bytes
 
@@ -23,10 +25,19 @@ DUMP = (
 @pytest.fixture
 def client(db, signed_in):
     repo = Repository(db)
+
+    def run_now(job_id):
+        # Resolved per job, so a test that swaps the model mid-way is honoured.
+        model = app.dependency_overrides[interview.get_model]()
+        store = app.dependency_overrides[uploads.get_store]()
+        run_job(job_id, repo=repo, model=model, store=store, final=True)
+
     app.dependency_overrides[brain.get_repository] = lambda: repo
+    app.dependency_overrides[brain.get_queue] = lambda: InlineQueue(run_now, background=False)
     app.dependency_overrides[interview.get_model] = lambda: FakeModel()
     yield TestClient(app, headers={"Authorization": "Bearer good"})
     app.dependency_overrides.pop(brain.get_repository, None)
+    app.dependency_overrides.pop(brain.get_queue, None)
     app.dependency_overrides.pop(interview.get_model, None)
 
 
@@ -318,50 +329,103 @@ def test_discover_rejects_a_bad_conversation_id(client):
     assert r.status_code == 422
 
 
-# --- Streamed ingestion (ADR 0019) --------------------------------------------
+# --- Queued ingestion (ADR 0034) -----------------------------------------------
+# The client fixture's queue runs each job on the spot, as the worker would, so
+# a job is finished by the time POST /brain/jobs answers.
 
-from tests.test_api import _sse_events  # noqa: E402
 
-
-def test_a_streamed_upload_reports_each_step_then_the_proposal(client, store):
+def test_an_upload_job_reports_each_step_then_the_proposal(client, store):
     name = "uploads/uid-jordan/x.docx"
     store.put(name, _docx_bytes(RESUME.splitlines()))
-    with client.stream(
-        "POST", "/brain/dumps/from-upload/stream", json={"resume_object": name}
-    ) as r:
-        assert r.status_code == 200
-        events = _sse_events(r)
-    stages = [data["stage"] for event, data in events if event == "progress"]
+    r = client.post("/brain/jobs", json={"resume_object": name})
+    assert r.status_code == 202, r.text
+    job = client.get(f"/brain/jobs/{r.json()['id']}").json()
+    assert job["status"] == "done" and job["source"] == "upload" and job["attempts"] == 1
+    stages = [frame["stage"] for frame in job["progress"]]
     assert stages == ["reading", "read", "sections", "section_done", "tidying", "linking"]
-    done = next(d for e, d in events if e == "progress" and d["stage"] == "section_done")
+    done = next(f for f in job["progress"] if f["stage"] == "section_done")
     assert done["names"][0] == "Senior Cloud Architect, Acme Corp"  # the role leads
     assert "Terraform" in done["names"] and len(done["names"]) == done["found"]
-    sections = next(d for e, d in events if e == "progress" and d["stage"] == "sections")
-    assert sections["sections"] == [{"id": 0, "kind": "document", "label": ""}]
-    kinds = [event for event, _ in events]
-    assert kinds[-2:] == ["proposal", "done"]
-    assert events[-2][1]["dump_kind"] == "resume_docx"
+    assert job["proposal"]["dump_kind"] == "resume_docx"
     assert client.get("/brain").json()["pending_proposals"] == 1
+    assert client.get("/brain/jobs").json() == []  # nothing left running
 
 
-def test_a_streamed_failure_is_an_error_frame_with_the_same_message(client, store):
-    with client.stream(
-        "POST",
-        "/brain/dumps/from-upload/stream",
-        json={"resume_object": "uploads/uid-other/x.docx"},
-    ) as r:
-        events = _sse_events(r)
-    assert events[-2:] == [
-        ("error", {"message": "That upload isn't yours.", "status": 403, "retryable": False}),
-        ("done", {}),
-    ]
+def test_a_text_job_ends_in_the_same_proposal_shape(client):
+    job = client.post("/brain/jobs", json={"text": DUMP}).json()
+    assert job["status"] == "done"
+    assert job["proposal"]["patch"]["roles"][0]["company"] == "Acme Corp"
 
 
-def test_a_streamed_text_dump_ends_in_the_same_proposal_shape(client):
-    with client.stream("POST", "/brain/dumps/stream", json={"text": DUMP}) as r:
-        events = _sse_events(r)
-    proposal = next(d for e, d in events if e == "proposal")
-    assert proposal["patch"]["roles"][0]["company"] == "Acme Corp"
+def test_someone_elses_upload_is_refused_before_anything_is_queued(client):
+    r = client.post("/brain/jobs", json={"resume_object": "uploads/uid-other/x.docx"})
+    assert r.status_code == 403 and r.json()["detail"] == "That upload isn't yours."
+    r = client.post("/brain/jobs", json={"resume_object": "uploads/uid-jordan/x.png"})
+    assert r.status_code == 415
+
+
+def test_a_job_needs_exactly_one_input(client):
+    assert client.post("/brain/jobs", json={}).status_code == 422
+    both = {"text": DUMP, "resume_object": "uploads/uid-jordan/x.docx"}
+    assert client.post("/brain/jobs", json=both).status_code == 422
+
+
+def test_a_job_that_cannot_succeed_fails_with_the_old_routes_message(client):
+    job = client.post("/brain/jobs", json={"resume_object": "uploads/uid-jordan/gone.pdf"}).json()
+    assert job["status"] == "failed" and job["error_status"] == 404
+    assert job["error"] == "The uploaded file wasn't found. Please upload it again."
+    fake = FakeModel(
+        {"propose": {"roles": [], "projects": [], "stories": [], "skills": [], "achievements": []}}
+    )
+    app.dependency_overrides[interview.get_model] = lambda: fake
+    job = client.post("/brain/jobs", json={"text": "Weather was nice; I had a sandwich."}).json()
+    assert job["status"] == "failed" and "nothing about your experience" in job["error"]
+
+
+def test_jobs_are_scoped_to_the_signed_in_user(client, db):
+    job = client.post("/brain/jobs", json={"text": DUMP}).json()
+    Repository(db).ensure_user("uid-other", "other@example.com")
+    from tests.conftest import FAKE_TOKENS
+
+    FAKE_TOKENS["other"] = {
+        "sub": "uid-other",
+        "email": "jordan@example.com",
+        "email_verified": True,
+    }
+    try:
+        other = TestClient(app, headers={"Authorization": "Bearer other"})
+        assert other.get(f"/brain/jobs/{job['id']}").status_code == 404
+    finally:
+        del FAKE_TOKENS["other"]
+    assert client.get("/brain/jobs/not-a-uuid").status_code == 404
+
+
+class _Parked:
+    """A queue that accepts jobs and runs none: Cloud Tasks before delivery."""
+
+    def enqueue(self, job_id):
+        pass
+
+
+class _Broken:
+    def enqueue(self, job_id):
+        from anyview.tasks import QueueError
+
+        raise QueueError("Cloud Tasks answered 403")
+
+
+def test_a_reloaded_page_finds_the_job_still_running(client):
+    app.dependency_overrides[brain.get_queue] = lambda: _Parked()
+    job = client.post("/brain/jobs", json={"text": DUMP}).json()
+    assert job["status"] == "queued" and job["proposal"] is None
+    assert [j["id"] for j in client.get("/brain/jobs").json()] == [job["id"]]
+
+
+def test_a_job_the_queue_refused_fails_at_once(client):
+    app.dependency_overrides[brain.get_queue] = lambda: _Broken()
+    r = client.post("/brain/jobs", json={"text": DUMP})
+    assert r.status_code == 503
+    assert client.get("/brain/jobs").json() == []  # failed, not left queued
 
 
 def test_an_entry_added_by_hand_is_confirmed_with_its_form_as_source(client):

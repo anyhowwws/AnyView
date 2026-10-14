@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { applyProgress, entriesLabel, headline, partName, startView } from "../lib/ingest-progress.ts";
+import { applyProgress, entriesLabel, headline, partName, startView, viewOfJob } from "../lib/ingest-progress.ts";
 
 test("an upload walks upload → read → parts → tidy → link, naming what it is doing", () => {
   let view = startView(true);
@@ -30,9 +30,10 @@ test("an upload walks upload → read → parts → tidy → link, naming what i
   assert.equal(view.characters, 5415);
 });
 
-test("a typed capture starts at the reading step and reads as one part", () => {
+test("a typed capture starts in the queue and reads as one part", () => {
   let view = startView(false);
-  assert.equal(headline(view), "Finding the sections");
+  assert.equal(view.step, "queue");
+  assert.equal(headline(view), "Handing it to Donna");
   view = applyProgress(view, { stage: "sections", sections: [{ id: 0, kind: "document", label: "" }] });
   assert.equal(headline(view), "Reading what you wrote");
   assert.equal(partName(view.parts[0]), "Your text");
@@ -43,4 +44,20 @@ test("an unknown stage from a newer API leaves the view as it was", () => {
   assert.deepEqual(applyProgress(view, { stage: "someday" } as never), view);
   assert.equal(entriesLabel(1), "1 entry");
   assert.equal(entriesLabel(0), "0 entries");
+});
+
+test("a polled job's frames rebuild the same view the stream used to build", () => {
+  assert.equal(viewOfJob([]).step, "queue"); // waiting for the worker
+  const frames = [
+    { stage: "reading", file: "pdf" },
+    { stage: "read", characters: 812 },
+    { stage: "sections", sections: [{ id: 0, kind: "document", label: "" }] },
+    { stage: "section_done", id: 0, found: 3, names: ["Acme Corp"] },
+  ] as const;
+  const view = viewOfJob([...frames]);
+  assert.equal(view.step, "parts");
+  assert.equal(view.characters, 812);
+  assert.deepEqual(view.parts.map((p) => [p.done, p.found]), [[true, 3]]);
+  // A retry on the worker sends its frames from the start again.
+  assert.deepEqual(viewOfJob([frames[0]]).parts, []);
 });

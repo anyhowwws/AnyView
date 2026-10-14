@@ -39,7 +39,7 @@ record of having been wrong is the useful part.
 | [0016](0016-voice-first-and-the-clock.md) | Speaking by default; a per-question clock and an opener | Accepted |
 | [0017](0017-discover-whole-garden-before-retrieval.md) | Discover: ask Donna about the garden, whole garden before retrieval | Accepted |
 | [0018](0018-erasing-an-account.md) | Erasing an account: the one delete the event log allows | Accepted |
-| [0019](0019-sectioned-extraction-and-evidenced-links.md) | Sectioned extraction, evidenced skill links, and roles that carry responsibilities | Accepted |
+| [0019](0019-sectioned-extraction-and-evidenced-links.md) | Sectioned extraction, evidenced skill links, and roles that carry responsibilities | Accepted, amended by 0034 |
 | [0020](0020-certifications-evidence-skills.md) | Certifications evidence skills | Accepted |
 | [0021](0021-near-duplicate-skills.md) | Near-duplicate skills are folded by a checked model call | Accepted |
 | [0022](0022-entries-added-by-hand.md) | Entries added by hand skip the model and the review queue | Accepted |
@@ -54,3 +54,4 @@ record of having been wrong is the useful part.
 | [0031](0031-harvey-on-gemini-live.md) | Harvey on Gemini Live: planned questions, a live conversation, follow-ups now | Accepted, amended by 0032 |
 | [0032](0032-the-browser-cuts-in-on-live.md) | On Live, the browser cuts in; Harvey bridges, and closes the interview | Accepted |
 | [0033](0033-discover-answers-the-way-you-asked.md) | Discover answers the way you asked: no Type / Speak switch | Accepted |
+| [0034](0034-queued-ingestion-on-cloud-tasks.md) | Ingestion runs as a queued job: Cloud Tasks and a private worker | Accepted |
