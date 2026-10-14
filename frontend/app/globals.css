@@ -167,7 +167,7 @@
 .discover-sources button:hover { border-color: var(--primary); }
 .discover-compose { display: flex; align-items: flex-end; gap: 10px; }
 .discover-compose textarea { flex: 1; min-height: 52px; resize: vertical; font-size: 15px; line-height: 1.6; }
-.discover-compose button[type=submit] { width: 44px; height: 44px; border-radius: 12px; }
+.discover-compose button[type=submit], .discover-compose .discover-mic { width: 44px; height: 44px; border-radius: 12px; }
 .entity-card.is-cited { outline: 2px solid var(--primary); outline-offset: 2px; transition: outline-color .4s; }
 @media (max-width: 640px) { .discover-question, .discover-answer { max-width: 100%; } .view-switch button { padding-inline: 6px; gap: 5px; font-size: 12px; } }
 /* Account: erasing your data (ADR 0018). */
