@@ -64,7 +64,9 @@ def _words(text: str) -> list[str]:
 async def _read_on_live(model: Model, *, text: str, session_id: str, voice: str) -> bytes:
     pcm = bytearray()
     said: list[str] = []
-    # Proactive audio off: Live may otherwise decide a line needs no reply.
+    # Proactive audio off where the model allows it, so Live never decides a line
+    # needs no reply. Gemini 3.8 Live has it always on and still read every line
+    # word for word when tried (2026-10-14).
     async with model.live(
         system=LIVE_READER, tools=[], session_id=session_id, voice=voice, proactive_audio=False
     ) as reader:

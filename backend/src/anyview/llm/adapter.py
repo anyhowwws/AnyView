@@ -342,7 +342,7 @@ class VertexGemini:
         self.fast_model = fast_model or model
         # Live models are served from regions, not from `global` (ADR 0031), so
         # they get their own client; it is built on first use.
-        self.live_model = live_model or "gemini-live-2.5-flash-native-audio"
+        self.live_model = live_model or "gemini-3.8-live"
         self._project_id = project_id
         self._live_region = live_region or "us-central1"
         self._live_client: genai.Client | None = None
@@ -541,8 +541,10 @@ class VertexGemini:
         voice-activity detection. `tools` are plain JSON-schema function
         declarations; the caller answers each call with `send_tool_result`.
         Both sides are transcribed, so the caller gets text without a second
-        model call. `proactive_audio` off makes Live answer every input, which
-        a session that only reads lines aloud needs (`interview/fixed_lines.py`)."""
+        model call. `proactive_audio` off leaves the setting out of the session
+        rather than sending false: Gemini 3.8 Live always has it on and refuses
+        a false. Older Live models then answer every input, which a session that
+        only reads lines aloud needs (`interview/fixed_lines.py`)."""
         if self._live_client is None:
             self._live_client = genai.Client(
                 vertexai=True, project=self._project_id, location=self._live_region
@@ -607,6 +609,7 @@ def live_config(
                 silence_duration_ms=1_200,
             )
         ),
+        # Left out, never sent as false: Gemini 3.8 Live returns an error for that.
         proactivity=types.ProactivityConfig(proactive_audio=True) if proactive_audio else None,
     )
 
