@@ -64,10 +64,7 @@ export const QUIET_FLOOR: FloorState = {
 };
 
 export function speechThreshold(noise: number, harvey: boolean): number {
-  const base = Math.min(
-    MAX_THRESHOLD,
-    Math.max(MIN_THRESHOLD, noise * FLOOR_MULTIPLE),
-  );
+  const base = Math.min(MAX_THRESHOLD, Math.max(MIN_THRESHOLD, noise * FLOOR_MULTIPLE));
   return harvey ? base * ECHO_MULTIPLE : base;
 }
 
@@ -100,8 +97,7 @@ export function nextFloor(
   const rate = level < state.noise ? FLOOR_FALL : FLOOR_RISE;
   next.noise = state.noise + (level - state.noise) * rate;
   // `words` is `wordsIn` (live-cues.ts) of what Live transcribed since the last frame.
-  if (words === "real")
-    next = { ...next, lastSoundAt: now, trailingFiller: false };
+  if (words === "real") next = { ...next, lastSoundAt: now, trailingFiller: false };
   if (words === "filler") next = { ...next, trailingFiller: true };
 
   if (!next.speaking) {

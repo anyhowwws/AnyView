@@ -23,12 +23,7 @@ type Frame = {
 
 /** Feed 100 ms frames from `from` to `to`; `at(t)` describes each. Returns the
  *  final state and the time of every start/end. */
-function run(
-  state: FloorState,
-  from: number,
-  to: number,
-  at: (t: number) => Frame,
-) {
+function run(state: FloorState, from: number, to: number, at: (t: number) => Frame) {
   const actions: [string, number][] = [];
   for (let now = from; now < to; now += FRAME_MS) {
     const f = at(now);

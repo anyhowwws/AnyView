@@ -81,27 +81,21 @@ export function nextCue(
   if (spoke && next.nudgedAt !== null) next = { ...next, nudgedAt: null };
   if (next.askedAt === null) return { state: next, action: null };
 
-  const end = (action: LiveAction) => ({
-    state: { ...next, ended: true },
-    action,
-  });
+  const end = (action: LiveAction) => ({ state: { ...next, ended: true }, action });
 
   // The clock beats everything: a timed question ends when it ends, even
   // mid-sentence.
-  if (limits.budgetMs !== null && now - next.askedAt >= limits.budgetMs)
-    return end("time_up");
+  if (limits.budgetMs !== null && now - next.askedAt >= limits.budgetMs) return end("time_up");
 
   if (next.nudgedAt !== null) {
     // Nudged, and the candidate has not said a word since. The nudge counts as
     // sound, so the silence is measured from when it stopped playing.
-    if (now - Math.max(next.lastSoundAt, next.nudgedAt) >= LIVE_GIVE_UP_MS)
-      return end("move_on");
+    if (now - Math.max(next.lastSoundAt, next.nudgedAt) >= LIVE_GIVE_UP_MS) return end("move_on");
     return { state: next, action: null };
   }
 
   const quietFor = now - Math.max(next.lastSoundAt, next.askedAt);
-  const deadAir =
-    limits.budgetMs === null ? LIVE_UNTIMED_DEAD_AIR_MS : LIVE_DEAD_AIR_MS;
+  const deadAir = limits.budgetMs === null ? LIVE_UNTIMED_DEAD_AIR_MS : LIVE_DEAD_AIR_MS;
   if (quietFor >= deadAir) {
     if (next.nudges >= MAX_NUDGES) return end("move_on");
     next = { ...next, nudges: next.nudges + 1, nudgedAt: now };
