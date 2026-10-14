@@ -96,6 +96,18 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
     setVoice(false);
   }
 
+  /** The way back from "type instead". The choice is remembered across
+   *  interviews (ADR 0013), so without this a single click on "type" made every
+   *  later pre-flight a typed one. */
+  function speakInstead() {
+    unlockAudio(); // this click lets the page play Harvey's voice later
+    saveVoicePreference(true);
+    setMic("asking");
+    setLevel(0);
+    setSpeaker("idle");
+    setVoice(true);
+  }
+
   const checksDone = !voice || ((mic === "on" || mic === "heard") && (speaker === "ok" || speaker === "failed"));
 
   return (
@@ -202,6 +214,15 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
             onClick={typeInstead}
           >
             Answer by typing instead
+          </button>
+        )}
+        {!voice && microphoneSupported() && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground underline underline-offset-4"
+            onClick={speakInstead}
+          >
+            Answer by speaking instead
           </button>
         )}
         <button
