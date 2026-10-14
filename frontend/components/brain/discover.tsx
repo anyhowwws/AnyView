@@ -15,6 +15,7 @@ import {
   type DiscoverTurn,
 } from "@/lib/api";
 import { blocks, suggestions, type Inline } from "@/lib/discover-text";
+import { holdText } from "@/lib/hold-text";
 import type { Brain } from "@/lib/types";
 import {
   donnaVoice,
@@ -40,6 +41,10 @@ interface Props {
   /** Show one entry in the Entries view. */
   onOpen: (id: string) => void;
 }
+
+/** How long a spoken answer's text waits for her first clip before it is
+ *  shown anyway (ADR 0033). A slow voice must never hide the answer. */
+const HOLD_TEXT_MS = 4000;
 
 /** The microphone, while a question is being asked out loud. */
 type Mic = "idle" | "listening" | "transcribing";
@@ -71,6 +76,8 @@ export function Discover({ brain, onOpen }: Props) {
   // Bumped whenever Donna is cut off. A clip still arriving for an older
   // reading checks it and stays silent, so "Stop" really stops her.
   const utterance = useRef(0);
+  // Shows the latest answer's held-back text now (`holdText`); a no-op once shown.
+  const holding = useRef<(() => void) | null>(null);
   const listening = useRef<ListenHandle | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
 
@@ -143,18 +150,41 @@ export function Discover({ brain, onOpen }: Props) {
     controller.current = abort;
     // Asked out loud, answered out loud (ADR 0033). Typed questions stay silent.
     const reading = spoken ? startReading(index) : null;
+
+    // Her text waits for her voice, so she isn't talking over something already
+    // half read (ADR 0033); the "looking through your garden" line covers the wait.
+    const text = holdText(
+      (chunk) => setMessages((prev) => withLast(prev, (m) => ({ ...m, text: m.text + chunk }))),
+      reading ? HOLD_TEXT_MS : null,
+    );
+    // Stop releases it too: an answer she was stopped before starting is shown, not lost.
+    holding.current = text.release;
+
     try {
       const citations = await askDonna(
         conversation.current,
         q,
         history,
-        (chunk) => setMessages((prev) => withLast(prev, (m) => ({ ...m, text: m.text + chunk }))),
+        text.add,
         abort.signal,
-        reading?.speech,
+        reading
+          ? {
+              onAudio: (b64) => {
+                reading.speech.onAudio(b64);
+                text.release();
+              },
+              onVoiceOff: (message) => {
+                reading.speech.onVoiceOff(message);
+                text.release();
+              },
+            }
+          : undefined,
       );
+      text.release();
       reading?.done();
       setMessages((prev) => withLast(prev, (m) => ({ ...m, citations })));
     } catch (err) {
+      text.discard();
       if ((err as Error).name === "AbortError") return;
       quiet();
       setError({ message: err instanceof ApiError ? err.message : "Donna couldn't answer that.", question: q, spoken });
@@ -202,6 +232,8 @@ export function Discover({ brain, onOpen }: Props) {
 
   /** Stop Donna mid-sentence. */
   function quiet() {
+    // Stopped before she started: the answer is shown, just not heard.
+    holding.current?.();
     utterance.current += 1;
     reading.current?.abort();
     reading.current = null;

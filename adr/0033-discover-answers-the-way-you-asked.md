@@ -20,6 +20,15 @@ The switch was also a second click before the first spoken question.
   gets a written answer, as before. A question asked out loud gets the same answer spoken too:
   the browser sends `voice: true` to `POST /brain/discover` for that question only. Typing stays
   the default and Donna still speaks only when asked; pressing the microphone is the asking.
+- **A spoken answer's text waits for her voice.** The text streams in a second or two before her
+  first clip is synthesised (one TTS call, a fixed cost no server tuning removes). Shown at once,
+  it is half read by the time she talks over it. So the browser holds the text back, behind
+  "Donna is looking through your garden…", until the first clip arrives, then shows it and lets
+  the rest stream (`lib/hold-text.ts`). Her voice failing, Stop, the end of the stream, or
+  `HOLD_TEXT_MS` (4 s) with no clip all release it, so a slow or broken voice never hides the
+  answer. Revealing each sentence as it is spoken was rejected for now: it needs the server to
+  say which text each clip covers (label-only sentences have none), and makes a fast reader wait
+  on her every sentence.
 - **The microphone click unlocks audio.** It is the user gesture `VoicePlayer.enable()` needs, so
   there is no separate step. If the browser still blocks playback, the question goes through and
   the answer stays on screen, with a note saying why.
@@ -37,6 +46,8 @@ The switch was also a second click before the first spoken question.
 
 - One click to ask out loud instead of two, and the header carries only the title and
   "New conversation".
+- A spoken answer appears a second or two later than its text could have; the wait reads as
+  Donna thinking rather than as a lag between what is shown and what is heard.
 - Losing the mode loses one case: typing every question and hearing every answer. Read aloud
   covers it at one click per answer.
 - `/brain/discover/read-aloud` synthesises text the browser sends, not text the server just
