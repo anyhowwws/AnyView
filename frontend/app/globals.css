@@ -86,9 +86,12 @@
 /* The brain map is the signature surface; shared controls stay quiet. */
 .workspace-header { min-height: 88px; padding: 18px max(24px, calc((100vw - 1280px) / 2)); display: flex; align-items: center; justify-content: space-between; gap: 24px; background: var(--card); border-bottom: 1px solid var(--border); }
 .wordmark { display: inline-flex; align-items: center; font-size: 25px; font-weight: 650; letter-spacing: -1.2px; }
-.brand-mark { display: grid; place-items: center; width: 36px; height: 36px; margin-right: 10px; background: var(--primary); color: white; border-radius: 11px; }
+.brand-mark { display: block; flex: none; width: 36px; height: 36px; margin-right: 10px; }
 .brand-dot { color: var(--primary); }
 .workspace-nav-link { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 16px; border-radius: 10px; color: var(--muted-foreground); font-size: 14px; transition: background 160ms; }
+.workspace-nav-icon { display: inline-block; flex: none; width: 20px; height: 20px; background: currentColor; -webkit-mask-size: contain; mask-size: contain; -webkit-mask-position: center; mask-position: center; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+.workspace-nav-icon--garden { -webkit-mask-image: url("/digital-garden-icon.svg"); mask-image: url("/digital-garden-icon.svg"); }
+.workspace-nav-icon--practice { -webkit-mask-image: url("/interview-practice-icon.svg"); mask-image: url("/interview-practice-icon.svg"); }
 .workspace-nav-link:hover, .workspace-nav-link.is-active { background: var(--muted); color: var(--foreground); }
 .workspace-nav-link.is-active { font-weight: 600; }
 .workspace-main { min-height: calc(100dvh - 88px); padding: 44px 24px 80px; }
@@ -429,3 +432,14 @@ li[data-state="failed"] .preflight-icon { background: var(--destructive); color:
   /* Score bars are backgrounds; keep them, they carry the score visually. */
   .report-view [aria-hidden] > span { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
 }
+
+/* Privacy policy: plain reading text inside the usual page heading. */
+.policy section { margin-top: 36px; }
+.policy h2 { font-size: 20px; font-weight: 600; letter-spacing: -.02em; margin-bottom: 10px; }
+.policy p, .policy li { color: var(--muted-foreground); font-size: 15px; line-height: 1.7; text-wrap: pretty; }
+.policy p + p, .policy ul + p { margin-top: 12px; }
+.policy ul { list-style: disc; padding-left: 22px; display: grid; gap: 6px; }
+.policy strong { color: var(--foreground); font-weight: 600; }
+.policy a { color: var(--primary); text-decoration: underline; text-underline-offset: 3px; }
+.site-footer { display: flex; justify-content: center; gap: 16px; padding: 0 24px 32px; font-size: 12px; color: var(--muted-foreground); }
+.site-footer a:hover { color: var(--foreground); }

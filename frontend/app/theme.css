@@ -36,7 +36,6 @@ html:root, html.dark {
 }
 
 html body { background: radial-gradient(ellipse at 50% 0, #163438 0, transparent 45rem), var(--background); }
-html .brand-mark { color: var(--primary-foreground); }
 html .workspace-nav-link.is-active { background: var(--accent); color: var(--primary); box-shadow: inset 0 -2px var(--primary); }
 html .workspace-panel, html .setup-workspace { box-shadow: 0 12px 40px #03121635; }
 html .capture-template-row select, html .formatted-toggle, html .formatted-capture, html .upload-area { background: var(--background); border-color: var(--input); color: var(--foreground); }

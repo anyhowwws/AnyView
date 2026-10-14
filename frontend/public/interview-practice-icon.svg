@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title"><title id="title">Interview Practice suited silhouette</title>
+<defs><mask id="jacket-cutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+<rect width="64" height="64" fill="white"/>
+<path d="M26 40 32 46 38 40l-2.3 16L32 59l-3.7-3Z" fill="black"/>
+<path d="m20.5 40-2.2 5 3.7 2.3-3.3 2.7L27 57m16.5-17 2.2 5-3.7 2.3 3.3 2.7L37 57" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="miter"/>
+</mask></defs>
+<path d="M21 39 11 44Q9 45 9 48l-1 7q-.4 4 3.5 4h41q3.9 0 3.5-4l-1-7q0-3-2-4L43 39Z" fill="#83DFCC" mask="url(#jacket-cutouts)"/>
+<path d="M20.8 25.4C19.1 20.7 19.7 15.4 22.7 12.2c1.4-1.5 3-2.2 3.9-3.5l1-2.9 1.7 2.4 2.3-3 1.8 2.3 2.3-1.4 1.6 2.8c4.5 1.1 7.2 5.2 7.2 11.2l-1.3 8.4c-.4 5.8-3.4 10.3-6 11.3q-5 1.6-10 0c-2.6-1-5.6-5.5-6-11.3Z" fill="#83DFCC"/>
+<path d="M21.3 23.4q-3.5-1.8-4.1 1-.3 4 4.5 6.8m21-7.8q3.5-1.8 4.1 1 .3 4-4.5 6.8" fill="#83DFCC"/>
+<path d="m30 46 2-1.5 2 1.5-.7 2 1.7 6.8-3 3-3-3 1.7-6.8Z" fill="#83DFCC"/>
+</svg>
