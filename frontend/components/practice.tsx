@@ -64,8 +64,6 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   // mounts, so a clip from the last question plays out under the next (ADR 0028).
   const harvey = useRef<VoicePlayer | null>(null);
   if (harvey.current === null && typeof window !== "undefined") harvey.current = harveyVoice();
-  // What Harvey has said on Live so far for this question, for `onSpoken`.
-  const liveText = useRef("");
   // Which (question, attempt) the Live conversation was opened for.
   const liveKey = useRef<string | null>(null);
 
@@ -105,8 +103,9 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
       if (liveKey.current === key) return;
       liveKey.current = key;
       reask.current = false;
-      liveText.current = "";
-      setText("");
+      // The planned question, not Live's transcript of it: that arrives late
+      // and in fragments, and its tail used to land in the follow-up line.
+      setText(question.text);
       setStreaming(true);
       setStreamError(null);
       setTurn("live");
@@ -229,8 +228,18 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remaining]);
 
-  async function interject(line: "time_up" | "stalled") {
+  // The last question closes the interview, so a cut-in there is a goodbye,
+  // not "let's move on" (ADR 0032). Once per interview.
+  const last = session.current + 1 === total;
+  const saidGoodbye = useRef(false);
+
+  async function interject(line: "time_up" | "stalled" | "move_on" | "goodbye") {
     if (!wantsVoice.current) return;
+    if (last && (line === "time_up" || line === "move_on")) line = "goodbye";
+    if (line === "goodbye") {
+      if (saidGoodbye.current) return;
+      saidGoodbye.current = true;
+    }
     const clip = await interjection(session.session_id, line);
     if (clip) harvey.current?.play(clip);
   }
@@ -240,6 +249,8 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     if (!trimmed || busy) return;
     return onAnswer(trimmed, cutOff).then((saved) => {
       if (!saved) return;
+      // Turn-based voice has no Harvey to close the interview himself.
+      if (last) void interject("goodbye");
       setAnswer("");
       setTurn(voiceOn ? "listening" : "typing");
     });
@@ -286,6 +297,12 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
       if (!saved) return;
       setAnswer("");
     });
+  }
+
+  /** The candidate pressed "Next question" (or "Finish") on Live. On the last
+   *  question Harvey never got to say goodbye, so the fixed line does. */
+  function onLiveEnd() {
+    if (last) void interject("goodbye");
   }
 
   /** Live failed for a reason of its own: carry on with the turn-based voice
@@ -437,14 +454,13 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
         <LiveAnswer
           session={session}
           seconds={timed ? question.seconds : null}
-          onHarvey={(fragment) => {
-            liveText.current += fragment;
-            setText(liveText.current.trim());
-          }}
+          last={last}
           onAsked={() => {
             setStreaming(false);
-            onSpoken(question.id, liveText.current.trim());
+            onSpoken(question.id, question.text);
           }}
+          onInterject={(line) => void interject(line)}
+          onEnd={onLiveEnd}
           onAnswer={onLiveAnswer}
           onFallback={onLiveFallback}
           onError={(message) => {

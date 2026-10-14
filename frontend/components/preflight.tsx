@@ -46,6 +46,8 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
     // is needed and is never queued behind the question that follows it.
     void interjection(sessionId, "time_up");
     void interjection(sessionId, "stalled");
+    void interjection(sessionId, "move_on");
+    void interjection(sessionId, "goodbye");
     let live = true;
     // Asking now puts the browser's permission prompt here, not in question one.
     watchLevel((l) => {

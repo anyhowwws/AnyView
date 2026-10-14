@@ -1,6 +1,6 @@
 # 0031 — Harvey on Gemini Live: planned questions, a live conversation, follow-ups now
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by [0032](0032-the-browser-cuts-in-on-live.md) (the cue channel and closing line are gone)
 - **Date:** 2026-10-14
 - **Amends:** 0005 (a WebSocket beside SSE), 0013 (voice in and out), 0014 (what each room knows),
   0028 (the agentic loop it rejected for now)

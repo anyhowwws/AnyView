@@ -240,9 +240,14 @@ def test_say_refuses_free_text(client):
 
 
 def test_each_interjection_has_a_line():
+    from typing import get_args
+
+    from anyview.api.interview import SayRequest
     from anyview.interview.prompts import INTERJECTIONS
 
-    assert set(INTERJECTIONS) == {"time_up", "stalled", "hello"}
+    # Every key `/interview/say` accepts has words, and no line is unreachable.
+    keys = set(get_args(SayRequest.model_fields["line"].annotation))
+    assert set(INTERJECTIONS) == keys == {"time_up", "stalled", "move_on", "goodbye", "hello"}
     assert all(line.strip() for line in INTERJECTIONS.values())
 
 

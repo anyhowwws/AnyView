@@ -4,23 +4,25 @@
 // browser cannot: Vertex accepts only IAM credentials). The microphone streams
 // up as 16 kHz PCM the whole time; Harvey's voice streams down as 24 kHz PCM and
 // is scheduled on the shared AudioContext. Live decides when the candidate has
-// finished and whether to follow up. The browser keeps the clock (live-cues.ts)
-// and tells Harvey when to step in. The question ends with a `done` frame
-// carrying the Answer, which the caller posts like any other.
+// finished and whether to follow up. The browser keeps the clock (live-cues.ts):
+// it plays Harvey's fixed nudge and cut-in lines and ends the question itself
+// (ADR 0032). The question ends with a `done` frame carrying the Answer, which
+// the caller posts like any other.
 //
 // No dependency: an AudioWorklet does the capture and downsampling in ~30 lines.
 
 import { LIVE_URL, signInToken } from "@/lib/api";
-import { FRESH, nextCue, type CueState, type LiveCue } from "@/lib/live-cues";
+import { FRESH, nextCue, substantive, type CueState, type LiveAction } from "@/lib/live-cues";
 import type { Answer, Session } from "@/lib/types";
-import { acquireMicrophone, audioContext } from "@/lib/voice";
+import { acquireMicrophone, audioContext, harveyVoice } from "@/lib/voice";
 
 const INPUT_RATE = 16_000;
 const OUTPUT_RATE = 24_000;
-/** Level above which the candidate counts as talking, for the dead-air clock.
- *  Noise suppression is on, so a fixed bar is enough for "is anyone there". */
-const SPEAKING_LEVEL = 0.02;
 const TICK_MS = 250;
+
+/** Why the browser ended a question. `manual` is the candidate's "Next question",
+ *  which is finishing, not being cut off. */
+export type EndReason = "time_up" | "move_on" | "manual";
 
 // Runs on the audio thread. Averages each run of input samples down to one
 // 16 kHz sample (a crude low-pass, plenty for speech), converts to 16-bit, and
@@ -92,13 +94,13 @@ export const markLiveBroken = () => {
 };
 
 export interface LiveHandlers {
-  /** A fragment of what Harvey says, transcribed. */
-  onHarvey: (text: string) => void;
   /** A fragment of what the candidate says, transcribed. */
   onCandidate: (text: string) => void;
   /** Harvey has finished asking: the clock starts. */
   onAsked: () => void;
   onFollowUp: (question: string) => void;
+  /** Play one of Harvey's fixed lines now: a nudge, or the cut-in that ends the question. */
+  onInterject: (line: LiveAction) => void;
   onLevel: (level: number) => void;
   onDone: (answer: Answer) => void;
   /** `fallback`: Live itself failed, so use the turn-based voice path. */
@@ -122,7 +124,11 @@ export class LiveQuestion {
   private nextAt = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
   private cues: CueState = FRESH;
-  private level = 0;
+  /** A real word was heard since the last tick (not "um", not the room). */
+  private spoke = false;
+  /** The browser has ended the question: the mic stops going up and anything
+   *  Harvey still sends is not played. */
+  private ending = false;
   private finished = false;
 
   constructor(
@@ -159,9 +165,12 @@ export class LiveQuestion {
     };
   }
 
-  /** Close the question now, keeping what was said ("I'm done"). */
-  end(): void {
-    this.send({ type: "end" });
+  /** Close the question now, keeping what was said. */
+  end(reason: EndReason = "manual"): void {
+    if (this.ending || this.finished) return;
+    this.ending = true;
+    this.silence();
+    this.send({ type: "end", reason });
   }
 
   /** Tear everything down: the question changed, or the candidate left. */
@@ -175,7 +184,7 @@ export class LiveQuestion {
     this.ws = null;
   }
 
-  private send(data: { type: "cue"; name: LiveCue } | { type: "end" }): void {
+  private send(data: { type: "end"; reason: EndReason }): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(data));
   }
 
@@ -185,9 +194,9 @@ export class LiveQuestion {
         void this.startCapture();
         break;
       case "harvey":
-        this.handlers.onHarvey(frame.text);
-        break;
+        break; // the screen shows the planned question, not his transcript
       case "candidate":
+        if (substantive(frame.text)) this.spoke = true;
         this.handlers.onCandidate(frame.text);
         break;
       case "turn_complete":
@@ -208,11 +217,20 @@ export class LiveQuestion {
       case "follow_up":
         if (frame.allowed) this.handlers.onFollowUp(frame.question);
         break;
-      case "done":
+      case "done": {
+        // Let Harvey's last words play out ("thanks for your time") before the
+        // next question takes over the screen. Nothing more is coming.
         this.finished = true;
-        this.handlers.onDone(frame.answer);
-        this.close();
+        this.stopCapture();
+        if (this.timer) clearInterval(this.timer);
+        this.timer = null;
+        const wait = Math.max(0, (this.nextAt - (this.ctx?.currentTime ?? 0)) * 1000);
+        setTimeout(() => {
+          this.handlers.onDone(frame.answer);
+          this.close();
+        }, wait);
         break;
+      }
       case "error":
         this.fail(frame.message, frame.fallback);
         break;
@@ -246,9 +264,9 @@ export class LiveQuestion {
     this.sink.gain.value = 0;
     this.source.connect(this.capture).connect(this.sink).connect(ctx.destination);
     this.capture.port.onmessage = (event: MessageEvent<{ pcm: ArrayBuffer; level: number }>) => {
-      this.level = event.data.level;
       this.handlers.onLevel(event.data.level);
-      if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(event.data.pcm);
+      // Once the browser has cut in, Live must not hear "but I wasn't done".
+      if (!this.ending && this.ws?.readyState === WebSocket.OPEN) this.ws.send(event.data.pcm);
     };
     this.timer = setInterval(() => this.tick(), TICK_MS);
   }
@@ -262,22 +280,32 @@ export class LiveQuestion {
   }
 
   private tick(): void {
-    const harvey = !!this.ctx && this.nextAt > this.ctx.currentTime;
+    // Harvey is audible on Live, or one of his fixed lines is playing.
+    const harvey =
+      (!!this.ctx && this.nextAt > this.ctx.currentTime) || harveyVoice().speaking;
     const out = nextCue(
       this.cues,
-      { now: performance.now(), candidate: this.level >= SPEAKING_LEVEL, harvey },
+      { now: performance.now(), spoke: this.spoke, harvey },
       { budgetMs: this.budgetMs },
     );
+    this.spoke = false;
     this.cues = out.state;
-    if (out.cue) this.send({ type: "cue", name: out.cue });
-    if (out.end) this.end();
+    if (!out.action || this.ending) return;
+    if (out.action === "stalled") {
+      this.handlers.onInterject("stalled");
+      return;
+    }
+    // Time is up, or the silence said "move on". Live cannot cut in (the
+    // candidate's speech barges in on him), so the browser does: his line, then the end.
+    this.end(out.action);
+    this.handlers.onInterject(out.action);
   }
 
   // --- Harvey's voice ---------------------------------------------------------
 
   private play(data: ArrayBuffer): void {
     const ctx = this.ctx;
-    if (!ctx || this.finished) return;
+    if (!ctx || this.finished || this.ending) return;
     const samples = new Int16Array(data);
     const buffer = ctx.createBuffer(1, samples.length, OUTPUT_RATE);
     const channel = buffer.getChannelData(0);
@@ -285,8 +313,9 @@ export class LiveQuestion {
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(ctx.destination);
-    // Chunks arrive faster than real time; each one starts where the last ends.
-    const startAt = Math.max(ctx.currentTime + 0.05, this.nextAt);
+    // Chunks arrive faster than real time; each one starts where the last ends,
+    // and the first waits for a fixed line still playing ("let's move on").
+    const startAt = Math.max(ctx.currentTime + 0.05, this.nextAt, harveyVoice().endsAt);
     source.start(startAt);
     this.nextAt = startAt + buffer.duration;
     this.playing.add(source);
