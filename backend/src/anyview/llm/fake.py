@@ -1,10 +1,10 @@
 """A scripted stand-in for the real model.
 
-Same four methods as `VertexGemini`, no network, no tokens. Tests use it to
+Same methods as `VertexGemini`, no network, no tokens. Tests use it to
 drive the engine and the API deterministically; `ANYVIEW_FAKE_MODEL=1` runs the
 whole app on it for a browser walk-through that costs nothing.
 
-Replies are keyed by the `call` name (`plan`, `ask`, `score`, `ideal`,
+Replies are keyed by the `call` name (`plan`, `adapt`, `ask`, `score`, `ideal`,
 `parse_job`, `transcribe`, `discover`, `segment`, `dedupe`, `link`) so a test can script
 one kind of call without caring about the others. `speak` returns silence of a
 plausible length instead of a reply, and `live` a scripted conversation (`FakeLive`).
@@ -13,13 +13,17 @@ plausible length instead of a reply, and `live` a scripted conversation (`FakeLi
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import math
+import re
 import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
 from anyview.llm.adapter import (
+    EMBEDDING_DIMENSIONS,
     LIVE_INPUT_RATE,
     LIVE_OUTPUT_RATE,
     PCM_SAMPLE_RATE,
@@ -80,6 +84,8 @@ class FakeModel:
         if attachment is not None:
             self.calls[-1]["attachment"] = (len(attachment[0]), attachment[1])
         reply = self.replies.get(call, DEFAULTS[call])
+        if call == "adapt" and call not in self.replies:
+            reply = _fake_adapt(user)
         if isinstance(reply, dict):
             return Reply(
                 text=json.dumps(reply), stop_reason="end_turn", usage=_FAKE_USAGE, data=reply
@@ -114,6 +120,21 @@ class FakeModel:
         self._record("speak", session_id, voice, spoken_prompt(text, style))
         seconds = min(len(text) / SPOKEN_CHARS_PER_SECOND, 30)
         return wav(bytes(2 * int(PCM_SAMPLE_RATE * seconds)))
+
+    def embed(self, texts: list[str], *, session_id: str, call: str = "embed") -> list[list[float]]:
+        """A bag of words as a unit vector: texts that share words come out
+        close, so retrieval can be tested without a model (ADR 0038)."""
+        vectors = []
+        for text in texts:
+            self._record(call, session_id, "", text)
+            vector = [0.0] * EMBEDDING_DIMENSIONS
+            for word in re.findall(r"[a-z0-9]+", text.lower()):
+                if len(word) > 2:
+                    digest = hashlib.sha256(word.encode()).digest()
+                    vector[int.from_bytes(digest[:4], "big") % EMBEDDING_DIMENSIONS] += 1.0
+            norm = math.sqrt(sum(x * x for x in vector)) or 1.0
+            vectors.append([x / norm for x in vector])
+        return vectors
 
     def live(
         self,
@@ -176,6 +197,9 @@ class FakeLive:
         # As 3.8 sometimes does: speak, and send no transcript of it.
         self.untranscribed = False
         self.last = "This is the last question" in system
+        # At Panel, read the first entry of the garden index before following up (ADR 0037).
+        index = _between(system, "<garden_index>\n", "</garden_index>")
+        self.labels = [index.split("]", 1)[0].lstrip("[")] if index.startswith("[") else []
         self.session_id = session_id
         self.follow_ups = follow_ups
         self.answer = answer
@@ -213,7 +237,10 @@ class FakeLive:
             self._heard = 0
             await self._queue.put(LiveEvent("candidate_text", text=self.answer))
             if self._asked < self.follow_ups:
-                await self._call("ask_follow_up", question=FAKE_FOLLOW_UP, reason="no outcome")
+                args: dict[str, Any] = {"question": FAKE_FOLLOW_UP, "reason": "no outcome"}
+                if self.labels:
+                    args["labels"] = self.labels
+                await self._call("ask_follow_up", **args)
             else:
                 await self._close()
 
@@ -249,6 +276,33 @@ class FakeLive:
             yield event
 
 
+def _fake_adapt(user: str) -> dict[str, Any]:
+    """The planner between questions (ADR 0036), scripted so a walk-through shows
+    both outcomes: a note of the last answer's opening words every time, and
+    question 3 reworded around the earlier answers. Every other question is kept."""
+    upcoming = re.search(r'<next_question n="(\d+)" competency="([^"]*)">', user)
+    n, competency = (int(upcoming[1]), upcoming[2]) if upcoming else (0, "")
+    answers = re.findall(r"<answer>\n(.*?)\n</answer>", user, flags=re.S)
+    last = " ".join(answers[-1].split()[:12]) if answers else ""
+    previous = _between(user, "<previous_notes>", "</previous_notes>")
+    notes = [] if previous in ("", "(none yet)") else previous.splitlines()
+    notes.append(f"Q{len(answers)}: {last} …")
+    reply: dict[str, Any] = {
+        "notes": "\n".join(notes[-6:]),
+        "rewrite": False,
+        "text": "",
+        "rationale": "",
+    }
+    if n == 3:
+        reply.update(
+            rewrite=True,
+            text=f"Earlier you mentioned the billing migration. Staying with {competency}: "
+            "what was the hardest call you made on it, and how did it turn out?",
+            rationale="Scripted by FakeModel: builds on what the candidate already said.",
+        )
+    return reply
+
+
 def default_plan(count: int) -> dict[str, Any]:
     # Mirrors the real plan's shape, opener included (ADR 0016): question one is
     # "tell me about yourself" and gets a shorter clock than a failure story.
@@ -273,6 +327,13 @@ def default_plan(count: int) -> dict[str, Any]:
 
 
 DEFAULTS: dict[str, Any] = {
+    # Between questions (ADR 0036): a note, and the planned question kept.
+    "adapt": {
+        "notes": "Scripted by FakeModel: they described the billing migration to Cloud Run.",
+        "rewrite": False,
+        "text": "",
+        "rationale": "",
+    },
     # A plausible brain patch for the resume in tests/conftest.py. Evidence quotes
     # are verbatim fragments of that resume so the evidence check keeps them.
     "propose": {

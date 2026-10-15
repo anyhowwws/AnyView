@@ -45,7 +45,7 @@ from anyview.interview.prompts import (
     job_parse_user,
 )
 from anyview.interview.voice import voiced
-from anyview.llm.adapter import Model
+from anyview.llm.adapter import Model, ModelError
 from anyview.uploads.extract import (
     PDF,
     ExtractionError,
@@ -61,6 +61,9 @@ log = logging.getLogger(__name__)
 # A garden can outgrow a prompt. `Setup.garden` caps it; this is where the cut
 # is made, with a line saying so rather than a sentence stopping mid-word.
 MAX_GARDEN_CHARS = 20_000
+MAX_GARDEN_INDEX_CHARS = 12_000
+# Garden entries an ideal answer reads in full when the garden is searched (ADR 0038).
+RELEVANT_ENTRIES = 6
 MAX_JD_CHARS = 8_000
 
 # Every route here requires a signed-in, allow-listed user (api/auth.py).
@@ -153,6 +156,16 @@ def _garden(repo: Any, user_uid: str) -> str | None:
     return _truncate(text, MAX_GARDEN_CHARS, "Your Digital Garden")
 
 
+def _garden_index(repo: Any, user_uid: str) -> str | None:
+    """One line per garden entry, for Harvey on Live (ADR 0037)."""
+    if repo is None:
+        return None
+    index, _ = repo.brain_index(user_uid)
+    if not index.strip():
+        return None
+    return _truncate(index, MAX_GARDEN_INDEX_CHARS, "The garden index")
+
+
 def resolve_setup(
     body: StartRequest, *, user_uid: str, store: UploadStore, model: Model, repo: Any = None
 ) -> Setup:
@@ -190,6 +203,7 @@ def resolve_setup(
             job_description=given.job_description,
             resume_object=given.resume_object,
             garden=_garden(repo, user_uid) if given.difficulty == "panel" else None,
+            garden_index=_garden_index(repo, user_uid) if given.difficulty == "panel" else None,
         )
     except ValidationError as exc:
         first = exc.errors()[0]
@@ -533,27 +547,61 @@ def transcribe(
 
 
 @router.post("/answer", response_model=Session)
-def answer(body: AnswerRequest) -> Session:
-    return engine.submit_answer(body.session, body.answer)
+def answer(body: AnswerRequest, model: ModelDep) -> Session:
+    session = engine.submit_answer(body.session, body.answer)
+    if session.state == State.ASK:
+        # Another question follows: the planner may reword it (ADR 0036).
+        # Best effort and bounded; the planned question is asked if it fails.
+        session = engine.adapt(session, model=model)
+    return session
 
 
 def _for_report(session: Session, repo: Any, uid: str) -> Session:
     """The report is coaching, not simulation, so the ideal answers read the
     garden at every difficulty (ADR 0014). At `panel` the session already
     carries it; below that it is attached here, where it can reach the report
-    without ever having reached the questions."""
+    without ever having reached the questions. The index rides along for a
+    garden too big to read whole (ADR 0038)."""
+    update: dict[str, Any] = {}
     if session.setup.garden is None:
         garden = _garden(repo, uid)
         if garden:
-            session = session.model_copy(
-                update={"setup": session.setup.model_copy(update={"garden": garden})}
-            )
+            update["garden"] = garden
+    if session.setup.garden_index is None:
+        index = _garden_index(repo, uid)
+        if index:
+            update["garden_index"] = index
+    if update:
+        session = session.model_copy(update={"setup": session.setup.model_copy(update=update)})
     return session
+
+
+def _relevant(session: Session, repo: Any, uid: str, model: Model) -> dict[int, str]:
+    """For each question, the garden entries nearest it (ADR 0038), but only
+    when the garden is too big to read whole: until then the ideal answer reads
+    all of it, which nothing nearest-first can beat (the rule of ADR 0017).
+    Best effort: if search fails, the report reads the garden as before."""
+    if repo is None or len(repo.brain_context(uid)) <= MAX_GARDEN_CHARS:
+        return {}
+    queries = [f"{q.text} (competency: {q.competency})" for q in session.questions]
+    try:
+        vectors = model.embed(queries, session_id=session.session_id, call="embed_query")
+    except ModelError as exc:
+        log.warning("garden search failed for %s: %s", session.session_id, exc.user_message)
+        return {}
+    return {
+        question.id: "\n\n".join(
+            found.text for found in repo.search_garden(uid, vector, limit=RELEVANT_ENTRIES)
+        )
+        for question, vector in zip(session.questions, vectors, strict=True)
+    }
 
 
 @router.post("/report", response_model=Report)
 def report(session: Session, user: CurrentUser, model: ModelDep, repo: RepoDep) -> Report:
-    return engine.finish(_for_report(session, repo, user.uid), model=model)
+    session = _for_report(session, repo, user.uid)
+    relevant = _relevant(session, repo, user.uid, model)
+    return engine.finish(session, model=model, relevant=relevant)
 
 
 @router.post("/report/stream")
@@ -568,10 +616,11 @@ def stream_report(session: Session, user: CurrentUser, model: ModelDep, repo: Re
     session is checked before the stream opens, so a bad one is a plain 409."""
     session = _for_report(session, repo, user.uid)
     header = engine.begin_scoring(session)
+    relevant = _relevant(session, repo, user.uid, model)
 
     def frames():
         yield ("report", header.model_dump(mode="json"))
-        for index, item in engine.score_as_ready(session, model=model):
+        for index, item in engine.score_as_ready(session, model=model, relevant=relevant):
             yield ("item", {"index": index, "item": item.model_dump(mode="json")})
 
     return stream_response(frames())

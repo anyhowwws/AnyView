@@ -37,13 +37,14 @@ import asyncio
 import contextlib
 import json
 import logging
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 
 from anyview.api.auth import Verifier, get_settings, get_verifier, user_from_token
-from anyview.api.interview import get_model
+from anyview.api.interview import get_model, get_repository_optional
 from anyview.config import Settings
 from anyview.interview.engine import EngineError
 from anyview.interview.live import END_REASONS, TOOLS, LiveTurn
@@ -71,6 +72,7 @@ async def live(
     verifier: Annotated[Verifier, Depends(get_verifier)],
     settings: Annotated[Settings, Depends(get_settings)],
     model: Annotated[Model, Depends(get_model)],
+    repo: Annotated[Any, Depends(get_repository_optional)],
 ) -> None:
     # CORS does not apply to WebSockets, so any page could open one with the
     # user's cookies. There are no cookies here (the token is in the first
@@ -82,7 +84,7 @@ async def live(
     await ws.accept()
 
     try:
-        turn, session = await _open(ws, verifier, settings)
+        turn, session, uid = await _open(ws, verifier, settings)
     except _Refused as refused:
         await _send(ws, {"type": "error", "message": refused.message, "fallback": False})
         await ws.close(code=1008)
@@ -98,7 +100,8 @@ async def live(
             await _send(ws, {"type": "ready"})
             await harvey.send_text(turn.begin)
             limit = min(MAX_TURN_S, turn.question.seconds + 240)
-            gone = await _relay(ws, harvey, turn, limit=limit)
+            lookup = _lookup(repo, uid)
+            gone = await _relay(ws, harvey, turn, limit=limit, lookup=lookup)
     except ModelError as exc:
         log.warning("live session failed for %s: %s", session.session_id, exc.user_message)
         await _send(ws, {"type": "error", "message": exc.user_message, "fallback": True})
@@ -117,7 +120,9 @@ class _Refused(Exception):
         self.message = message
 
 
-async def _open(ws: WebSocket, verifier: Verifier, settings: Settings) -> tuple[LiveTurn, Session]:
+async def _open(
+    ws: WebSocket, verifier: Verifier, settings: Settings
+) -> tuple[LiveTurn, Session, str]:
     """Read the first frame: who is calling, and which question this is."""
     try:
         first = json.loads(await asyncio.wait_for(ws.receive_text(), FIRST_FRAME_TIMEOUT_S))
@@ -128,18 +133,30 @@ async def _open(ws: WebSocket, verifier: Verifier, settings: Settings) -> tuple[
     except WebSocketDisconnect as exc:
         raise _Refused("The connection closed.") from exc
     try:
-        user_from_token(token, verifier, settings)
-        return LiveTurn(session), session
+        user = user_from_token(token, verifier, settings)
+        return LiveTurn(session), session, user.uid
     except HTTPException as exc:
         raise _Refused(str(exc.detail)) from exc
     except EngineError as exc:
         raise _Refused(exc.user_message) from exc
 
 
-async def _relay(ws: WebSocket, harvey: LiveSession, turn: LiveTurn, *, limit: float) -> bool:
+Lookup = Callable[[list[str]], dict[str, str]] | None
+
+
+def _lookup(repo: Any, uid: str) -> Lookup:
+    """Harvey's garden lookup for this user (ADR 0037), or None with no database."""
+    if repo is None:
+        return None
+    return lambda labels: repo.garden_entries(uid, labels)
+
+
+async def _relay(
+    ws: WebSocket, harvey: LiveSession, turn: LiveTurn, *, limit: float, lookup: Lookup = None
+) -> bool:
     """Pump both directions until the question is over. True if the browser left."""
     upstream = asyncio.create_task(_from_browser(ws, harvey, turn))
-    downstream = asyncio.create_task(_from_live(ws, harvey, turn))
+    downstream = asyncio.create_task(_from_live(ws, harvey, turn, lookup))
     done, pending = await asyncio.wait(
         {upstream, downstream}, timeout=limit, return_when=asyncio.FIRST_COMPLETED
     )
@@ -183,7 +200,9 @@ async def _from_browser(ws: WebSocket, harvey: LiveSession, turn: LiveTurn) -> N
             return
 
 
-async def _from_live(ws: WebSocket, harvey: LiveSession, turn: LiveTurn) -> None:
+async def _from_live(
+    ws: WebSocket, harvey: LiveSession, turn: LiveTurn, lookup: Lookup = None
+) -> None:
     loop = asyncio.get_running_loop()
     events = aiter(harvey.events())
     finish_by: float | None = None
@@ -210,6 +229,22 @@ async def _from_live(ws: WebSocket, harvey: LiveSession, turn: LiveTurn) -> None
             await _send(ws, {"type": "turn_complete"})
         elif event.kind == "tool_call":
             result = turn.tool(event.name, event.args)
+            labels = turn.wants(event.args, result) if event.name == "ask_follow_up" else []
+            if labels and lookup is not None:
+                # Harvey is already waiting on this result, so the lookup adds no
+                # pause of its own. A thread, because the repository is blocking.
+                try:
+                    found = await asyncio.to_thread(lookup, labels)
+                except Exception:  # a lookup must never end the question
+                    log.exception("garden lookup failed for %s", labels)
+                    found = {}
+                result = {**result, "entries": turn.entries(found)}
+                log.info(
+                    "garden lookup for %s: asked %s, found %s",
+                    turn.session_id,
+                    labels,
+                    sorted(found),
+                )
             await harvey.send_tool_result(event.call_id, event.name, result)
             if event.name == "ask_follow_up":
                 await _send(

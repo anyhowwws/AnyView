@@ -166,6 +166,9 @@ export interface Question {
   /** This question's own clock, in seconds, set by the model when it planned
    *  the interview (ADR 0016). Only enforced when the setup is time-bounded. */
   seconds: number;
+  /** The wording planned at the start, when the planner reworded `text` after
+   *  an earlier answer (ADR 0036). Absent or null: asked as planned. */
+  planned?: string | null;
 }
 
 /** A follow-up Harvey asked during a spoken answer, and the reply (ADR 0031). */
@@ -190,6 +193,9 @@ export interface Session {
   questions: Question[];
   answers: Answer[];
   current: number;
+  /** The carry-over note (ADR 0036): what the candidate has said so far, kept
+   *  by the server between questions. The browser only carries it back. */
+  notes?: string;
 }
 
 export interface DimensionScore {

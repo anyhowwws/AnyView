@@ -8,7 +8,8 @@ the typed path produces:
 - whether a follow-up is allowed (at most `MAX_PROBES`, never after time is up);
 - how the question ended: Harvey closing it, or the browser ending it for the
   clock, the silence or the candidate's "next question" (ADR 0032);
-- what the candidate said to the question and to each follow-up.
+- what the candidate said to the question and to each follow-up;
+- which garden entries Harvey may read before a follow-up, at Panel (ADR 0037).
 
 No I/O here, so every rule is testable without a socket. `api/live.py` owns the
 socket and calls these methods as events arrive.
@@ -16,6 +17,7 @@ socket and calls these methods as events arrive.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -29,7 +31,13 @@ from anyview.interview.models import (
     Session,
     State,
 )
-from anyview.interview.prompts import BEGIN, LIVE_TOOLS, live_system
+from anyview.interview.prompts import (
+    BEGIN,
+    LIVE_TOOLS,
+    MAX_LOOKUP_LABELS,
+    live_system,
+    reads_garden,
+)
 
 TOOLS = LIVE_TOOLS
 
@@ -37,6 +45,11 @@ TOOLS = LIVE_TOOLS
 # answer was stopped, not finished. "manual" is the candidate pressing "Next
 # question", which is finishing.
 END_REASONS = frozenset({"time_up", "move_on", "manual"})
+
+# A garden label as Harvey might write it: "P3", "[P3]", "p3" (ADR 0037).
+_LABEL = re.compile(r"^\[?([A-Za-z])(\d{1,4})\]?$")
+# What one lookup may add to the conversation, which Live re-bills every turn.
+MAX_ENTRY_CHARS = 1_500
 
 
 @dataclass
@@ -63,11 +76,14 @@ class LiveTurn:
         if question is None:
             raise engine.EngineError("No question to ask.")
         self.question = question
+        self.setup = session.setup
+        self.session_id = session.session_id
         self.system = live_system(
             session.setup,
             questions=session.questions,
             answers=session.answers,
             index=session.current,
+            notes=session.notes,
         )
         self.parts: list[_Part] = [_Part(asked=None)]
         self.harvey: list[str] = []
@@ -122,6 +138,33 @@ class LiveTurn:
             return {"allowed": False, "reason": "Say which question you want to ask."}
         self.parts.append(_Part(asked=question))
         return {"allowed": True, "follow_ups_left": MAX_PROBES - self.follow_ups_used}
+
+    def wants(self, args: dict[str, Any], result: dict[str, Any]) -> list[str]:
+        """The garden labels to look up for an `ask_follow_up` call (ADR 0037):
+        only when the follow-up was allowed, only at Panel with the index, at most
+        `MAX_LOOKUP_LABELS`, normalised to the form the repository uses ("P3")."""
+        if not result.get("allowed") or not reads_garden(self.setup):
+            return []
+        if not (self.setup.garden_index and self.setup.garden_index.strip()):
+            return []
+        given = args.get("labels")
+        if not isinstance(given, list):
+            return []
+        labels: list[str] = []
+        for item in given:
+            match = _LABEL.match(str(item).strip())
+            label = f"{match[1].upper()}{match[2]}" if match else None
+            if label and label not in labels:
+                labels.append(label)
+        return labels[:MAX_LOOKUP_LABELS]
+
+    @staticmethod
+    def entries(found: dict[str, str]) -> dict[str, str]:
+        """What the lookup found, each entry capped, for the tool result."""
+        return {
+            label: text if len(text) <= MAX_ENTRY_CHARS else text[:MAX_ENTRY_CHARS] + " …"
+            for label, text in found.items()
+        }
 
     # --- The result --------------------------------------------------------------
 

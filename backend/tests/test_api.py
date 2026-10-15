@@ -166,6 +166,26 @@ def test_answer_to_wrong_question_is_a_409(client, setup):
     assert "Expected an answer to question 1" in r.json()["detail"]
 
 
+def test_the_answer_route_adapts_between_questions(client, setup, fake):
+    # ADR 0036: between two questions the planner may reword the next one.
+    fake.replies["adapt"] = {
+        "notes": "Led the billing migration.",
+        "rewrite": True,
+        "text": "Tell me about a time you owned something nobody asked you to.",
+        "rationale": "They already covered the migration.",
+    }
+    session = _start(client, setup)
+    r = client.post(
+        "/interview/answer",
+        json={"session": session, "answer": {"question_id": 1, "text": "answer 1"}},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["questions"][1]["text"].startswith("Tell me about a time you owned")
+    assert body["questions"][1]["planned"] == session["questions"][1]["text"]
+    assert body["notes"] == "Led the billing migration."
+
+
 def test_report_before_wrap_is_a_409(client, setup):
     session = _start(client, setup)
     r = client.post("/interview/report", json=session)

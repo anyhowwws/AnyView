@@ -1,11 +1,12 @@
 """The one place the model SDK is imported (ADR 0004, superseded by 0007).
 
-Four operations, plain Python in and out:
+Five operations, plain Python in and out:
 
     generate(...) -> Reply      one complete response, optionally parsed JSON
     stream(...)   -> Iterator   text deltas as they arrive; usage at the end
     speak(...)    -> bytes      one sentence spoken aloud, as a WAV file (ADR 0013)
     live(...)     -> LiveSession  a two-way spoken conversation on Gemini Live (ADR 0031)
+    embed(...)    -> list[list[float]]  one vector per text (ADR 0038)
 
 Everything else in the app talks in `str`, `dict`, and the small dataclasses
 below. No SDK object leaves this module. This is an indirection layer, not a
@@ -24,6 +25,7 @@ import logging
 import time
 import wave
 from collections.abc import AsyncIterator, Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Protocol
@@ -40,6 +42,15 @@ UsageSink = Callable[[dict[str, Any]], None]
 usage_sink: UsageSink | None = None
 
 Effort = Literal["low", "medium", "high"]
+
+# The length of every stored embedding (ADR 0038). `gemini-embedding-2` returns
+# unit-length vectors at this size, so cosine distance needs no normalising.
+# Must match `vector(768)` in migrations/010_entity_embeddings.sql.
+EMBEDDING_DIMENSIONS = 768
+# gemini-embedding-2 reads a list of texts as the parts of ONE input and returns
+# one vector for all of them (checked on this project), so each text is its own
+# request. These run side by side, this many at once.
+_EMBED_WORKERS = 8
 
 # Gemini counts its own reasoning ("thoughts") against max_output_tokens. The
 # caller's max_tokens is the budget for the visible answer; the adapter adds
@@ -167,6 +178,10 @@ class Model(Protocol):
     def speak(
         self, *, text: str, session_id: str, voice: str, style: str | None = None
     ) -> bytes: ...
+
+    def embed(
+        self, texts: list[str], *, session_id: str, call: str = "embed"
+    ) -> list[list[float]]: ...
 
     def live(
         self,
@@ -335,6 +350,7 @@ class VertexGemini:
         tts_model: str | None = None,
         live_model: str | None = None,
         live_region: str | None = None,
+        embedding_model: str | None = None,
     ) -> None:
         if not project_id:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for Vertex model access")
@@ -349,6 +365,8 @@ class VertexGemini:
         # A third model, for speech. Text models cannot synthesise audio and TTS
         # models cannot hold a conversation, so this is its own id (ADR 0013).
         self.tts_model = tts_model or "gemini-2.5-flash-preview-tts"
+        # Embeddings for garden search (ADR 0038). Same client, same identity.
+        self.embedding_model = embedding_model or "gemini-embedding-2"
         # Retry transient failures inside the SDK: a 429 "Resource exhausted"
         # in the middle of a ten-call report is a blip, not a quota problem.
         # 4 attempts with exponential backoff (1s, 2s, 4s) then give up.
@@ -440,6 +458,39 @@ class VertexGemini:
         if output_schema is not None and stop == "end_turn":
             data = json.loads(text)
         return Reply(text=text, stop_reason=stop, usage=usage, data=data)
+
+    def embed(self, texts: list[str], *, session_id: str, call: str = "embed") -> list[list[float]]:
+        """One unit-length vector per text, in order (ADR 0038). One request per
+        text (see `_EMBED_WORKERS`), each with its own usage row. Any failure
+        fails the whole call: a caller that embeds before saving saves nothing."""
+        if not texts:
+            return []
+
+        def one(text: str) -> list[float]:
+            started = time.monotonic()
+            try:
+                response = self._client.models.embed_content(
+                    model=self.embedding_model,
+                    contents=text,
+                    config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIMENSIONS),
+                )
+            except Exception as exc:  # translated; SDK types are not allowed out
+                raise _translate(exc) from exc
+            embedding = response.embeddings[0]
+            stats = embedding.statistics
+            tokens = int(stats.token_count or 0) if stats is not None else 0
+            _log_usage(
+                session_id=session_id,
+                call=call,
+                model=self.embedding_model,
+                usage=Usage(input_tokens=tokens),
+                latency_ms=int((time.monotonic() - started) * 1000),
+            )
+            return list(embedding.values)
+
+        # `map` keeps the input order and re-raises the first error it meets.
+        with ThreadPoolExecutor(max_workers=min(_EMBED_WORKERS, len(texts))) as pool:
+            return list(pool.map(one, texts))
 
     def stream(
         self,

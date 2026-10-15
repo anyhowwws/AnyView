@@ -27,6 +27,12 @@ MIN_ANSWER_SECONDS = 45
 MAX_ANSWER_SECONDS = 300
 DEAD_AIR_SECONDS = 10
 
+# Adaptive planning (ADR 0036): between questions, one fast call may reword the
+# next question and keeps a short note of what the candidate has said so far.
+# These bound what comes back, whatever the model writes.
+MAX_QUESTION_CHARS = 400
+MAX_NOTES_CHARS = 1_200
+
 # The browser's id for one interview. It names the usage rows and log lines of
 # every call made for it, so it is bounded wherever it comes in, not only
 # once it reaches a Session.
@@ -82,6 +88,10 @@ class Setup(BaseModel):
     # cite. Present at `panel`, or whenever an ideal answer can be improved by
     # it — the report reads it even when the interviewer does not.
     garden: str | None = Field(default=None, max_length=20_000)
+    # One line per garden entry (`Repository.brain_index`), set beside `garden`
+    # at Panel. On Live, Harvey reads this instead of the whole garden and looks
+    # entries up by label through `ask_follow_up` (ADR 0037).
+    garden_index: str | None = Field(default=None, max_length=12_000)
 
 
 class SetupInput(BaseModel):
@@ -182,6 +192,9 @@ class Question(BaseModel):
     seconds: int = Field(
         default=DEFAULT_ANSWER_SECONDS, ge=MIN_ANSWER_SECONDS, le=MAX_ANSWER_SECONDS
     )
+    # The wording planned at the start, kept when adaptive planning rewrote
+    # `text` after an earlier answer (ADR 0036). None: asked as planned.
+    planned: str | None = None
 
 
 # What the browser records when the clock runs out on silence (ADR 0016).
@@ -217,6 +230,10 @@ class Session(BaseModel):
     questions: list[Question] = []
     answers: list[Answer] = []
     current: int = 0  # index into `questions` of the question being asked/answered
+    # The carry-over note (ADR 0036): what the candidate has said so far, in a few
+    # lines, rewritten after each answer. Harvey reads it on Live, so a later
+    # question can refer back to an earlier one. Facts only, never a judgement.
+    notes: str = Field(default="", max_length=MAX_NOTES_CHARS)
 
     @property
     def current_question(self) -> Question | None:
@@ -340,6 +357,18 @@ IDEAL_SCHEMA = {
     "additionalProperties": False,
 }
 
+ADAPT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "notes": {"type": "string"},
+        "rewrite": {"type": "boolean"},
+        "text": {"type": "string"},
+        "rationale": {"type": "string"},
+    },
+    "required": ["notes", "rewrite", "text", "rationale"],
+    "additionalProperties": False,
+}
+
 _STRINGS = {"type": "array", "items": {"type": "string"}}
 
 JOB_SCHEMA = {
@@ -376,6 +405,17 @@ class PlanOutput(BaseModel):
         seconds: int = DEFAULT_ANSWER_SECONDS
 
     questions: list[Item] = Field(min_length=QUESTION_COUNT, max_length=QUESTION_COUNT)
+
+
+class AdaptOutput(BaseModel):
+    """What the planner returns between questions (ADR 0036). Unbounded here on
+    purpose: `engine.adapt` trims and checks it, so an overlong note costs the
+    note its tail, not the interview its next question."""
+
+    notes: str
+    rewrite: bool
+    text: str = ""
+    rationale: str = ""
 
 
 class ScoreOutput(BaseModel):

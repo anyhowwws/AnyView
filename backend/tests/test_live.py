@@ -283,3 +283,83 @@ def test_live_failing_tells_the_browser_to_fall_back(signed_in, session):
     finally:
         app.dependency_overrides.pop(interview.get_model, None)
     assert error["fallback"] is True
+
+
+# --- Harvey's garden lookup at Panel (ADR 0037) -----------------------------------
+
+INDEX = "[P1] Billing migration (R1): -38% monthly infra cost\n[S1] (ownership) Cutover"
+
+
+def _panel(session, index=INDEX):
+    setup = session.setup.model_copy(
+        update={"difficulty": "panel", "garden": GARDEN, "garden_index": index}
+    )
+    return session.model_copy(update={"setup": setup})
+
+
+def test_panel_with_an_index_reads_the_index_not_the_garden(session):
+    text = LiveTurn(_panel(session)).system
+    assert f"<garden_index>\n{INDEX}\n</garden_index>" in text
+    assert "<digital_garden>" not in text and "Cut monthly infra cost" not in text
+    assert "`labels`" in text
+
+
+def test_panel_without_an_index_keeps_the_whole_garden(session):
+    text = LiveTurn(_panel(session, index=None)).system
+    assert "<digital_garden>" in text and "<garden_index>" not in text
+    assert "`labels`" not in text
+
+
+def test_labels_are_normalised_deduplicated_and_capped(session):
+    turn = LiveTurn(_panel(session))
+    args = {"question": "q", "labels": ["[p1]", "P1", "S1 ", "nonsense", "K2", "A3"]}
+    assert turn.wants(args, {"allowed": True}) == ["P1", "S1", "K2"]
+
+
+@pytest.mark.parametrize(
+    ("difficulty", "allowed", "labels"),
+    [("panel", False, ["P1"]), ("hiring_manager", True, ["P1"]), ("panel", True, "P1")],
+)
+def test_no_lookup_unless_allowed_at_panel(session, difficulty, allowed, labels):
+    s = _panel(session)
+    s = s.model_copy(update={"setup": s.setup.model_copy(update={"difficulty": difficulty})})
+    assert LiveTurn(s).wants({"question": "q", "labels": labels}, {"allowed": allowed}) == []
+
+
+def test_entries_are_capped():
+    found = LiveTurn.entries({"P1": "x" * 5_000, "S1": "short"})
+    assert found["S1"] == "short"
+    assert len(found["P1"]) < 1_600 and found["P1"].endswith(" …")
+
+
+class _Garden:
+    """Just the repository method the socket's lookup calls."""
+
+    def __init__(self):
+        self.asked: list[tuple[str, list[str]]] = []
+
+    def garden_entries(self, uid, labels):
+        self.asked.append((uid, labels))
+        return {"P1": "[P1] Billing migration\n  Result: -38% monthly infra cost"}
+
+
+def test_the_socket_looks_entries_up_for_a_follow_up(client, fake, session):
+    garden = _Garden()
+    app.dependency_overrides[interview.get_repository_optional] = lambda: garden
+    try:
+        panel = _panel(session)
+        with client.websocket_connect("/interview/live") as ws:
+            ws.send_text(json.dumps({"token": "good", "session": panel.model_dump(mode="json")}))
+            _until(ws, "turn_complete")
+            _answer(ws)
+            _until(ws, "follow_up")
+            _until(ws, "turn_complete")
+            _answer(ws)
+            _until(ws, "done")
+    finally:
+        app.dependency_overrides.pop(interview.get_repository_optional, None)
+
+    assert [labels for _, labels in garden.asked] == [["P1"]]
+    name, result = fake.live_sessions[0].tool_results[0]
+    assert name == "ask_follow_up" and result["allowed"] is True
+    assert result["entries"] == {"P1": "[P1] Billing migration\n  Result: -38% monthly infra cost"}
