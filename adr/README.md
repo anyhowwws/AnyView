@@ -60,3 +60,4 @@ record of having been wrong is the useful part.
 | [0037](0037-harvey-looks-the-garden-up-on-live.md) | At Panel, Harvey reads the garden's index on Live and looks entries up | Accepted |
 | [0038](0038-garden-embeddings-embedded-first.md) | Garden embeddings: four kinds, 768 dimensions, embedded before the write | Accepted |
 | [0039](0039-the-report-fails-fast-and-falls-back.md) | The report fails fast and falls back; transcription moves to the fast model | Accepted |
+| [0040](0040-a-follow-up-adds-time.md) | A follow-up adds time to the question's clock | Accepted |

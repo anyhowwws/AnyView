@@ -16,6 +16,8 @@ interface Props {
   last: boolean;
   /** Harvey has finished asking; the clock starts. */
   onAsked: () => void;
+  /** Harvey is following up: the countdown gains this many ms (ADR 0040). */
+  onExtend: (extraMs: number) => void;
   /** Play one of Harvey's fixed lines: a nudge, or the cut-in that ends the question. */
   onInterject: (line: LiveAction) => void;
   /** The candidate ended the question themselves. */
@@ -34,6 +36,7 @@ export function LiveAnswer({
   seconds,
   last,
   onAsked,
+  onExtend,
   onInterject,
   onEnd,
   onAnswer,
@@ -50,8 +53,8 @@ export function LiveAnswer({
   const [line, setLine] = useState("");
   const conversation = useRef<LiveQuestion | null>(null);
   // The callbacks change on every render of the parent; the socket must not.
-  const props = useRef({ onAsked, onInterject, onAnswer, onFallback, onError });
-  props.current = { onAsked, onInterject, onAnswer, onFallback, onError };
+  const props = useRef({ onAsked, onExtend, onInterject, onAnswer, onFallback, onError });
+  props.current = { onAsked, onExtend, onInterject, onAnswer, onFallback, onError };
 
   useEffect(() => {
     setAsked(false);
@@ -66,7 +69,8 @@ export function LiveAnswer({
           setAsked(true);
           props.current.onAsked();
         },
-        onFollowUp: (asked) => {
+        onFollowUp: (asked, extraMs) => {
+          if (extraMs > 0) props.current.onExtend(extraMs);
           setFollowUps((n) => n + 1);
           setLine(asked);
           setHeard("");

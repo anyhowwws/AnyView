@@ -215,6 +215,8 @@ terraform plan                                                   # terraform.tfv
   pipeline on a document you know the answer for; keep real resumes out of the repo.
 - Each question carries its own `seconds` (ADR 0016), chosen by the model when it plans and
   clamped by `engine.start` into 45–300. The clock only runs when `setup.time_bounded`.
+  On Live each allowed follow-up adds `FOLLOW_UP_EXTRA_MS` (90 s) to both the cue clock and the on-screen
+  countdown (ADR 0040), so two follow-ups are not cut off at the planned seconds.
 - The report's `score` and `ideal` calls pass `fallback=True` (ADR 0039): 75 s and 2 attempts on the judgement model, then
   once on `gemini-3.8-flash` (`FALLBACK_MODEL_ID`) at **`low`** effort (5-10 s; `medium`/`high` take 37-69 s). The preview
   Pro model throttles (429, then 504 after ~2 min); the old 120 s x 4 attempts turned that into 8+ minute reports.
