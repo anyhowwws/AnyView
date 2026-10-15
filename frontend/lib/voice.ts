@@ -165,17 +165,76 @@ function decodeBase64(b64: string): ArrayBuffer {
 }
 
 /** One context for the whole page. Browsers cap how many a document may open,
- *  and Practice remounts on every question, so this must not be per instance. */
+ *  and Practice remounts on every question, so this must not be per instance.
+ *  It can be rebuilt (`resetAudio`), but only between uses, never mid-clip. */
 let shared: AudioContext | null = null;
+/** An audio device came or went since the context was made (`devicechange`).
+ *  A long-lived context can stay bound to the old output and play to nowhere
+ *  while reporting itself as running, so the next safe moment rebuilds it. */
+let staleDevices = false;
+const resetListeners = new Set<(ctx: AudioContext) => void>();
+
+function newContext(): AudioContext {
+  const Ctor =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  return new Ctor();
+}
 
 export function audioContext(): AudioContext {
   if (!shared) {
-    const Ctor =
-      window.AudioContext ??
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    shared = new Ctor();
+    shared = newContext();
+    watchDevices();
   }
   return shared;
+}
+
+let watchingDevices = false;
+
+function watchDevices(): void {
+  if (watchingDevices || !navigator.mediaDevices?.addEventListener) return;
+  watchingDevices = true;
+  navigator.mediaDevices.addEventListener("devicechange", () => {
+    staleDevices = true;
+  });
+}
+
+/** A context that has stopped (Safari's "interrupted", or "suspended" after the
+ *  tab slept) is resumed; anything but "closed" can be. */
+function wake(ctx: AudioContext): void {
+  if (ctx.state !== "running" && ctx.state !== "closed") void ctx.resume().catch(() => {});
+}
+
+/** Throw the page's audio context away and make a new one, bound to whatever
+ *  output the device has now. Call from a click, so the new context may start.
+ *  Harvey's and Donna's players move to it; subscribers (the pre-flight's level
+ *  meter) reconnect to it. A fresh window fixed silent audio when this did not
+ *  exist; this is that, without the reload. */
+export function resetAudio(): AudioContext {
+  const old = shared;
+  shared = newContext();
+  staleDevices = false;
+  wake(shared);
+  harvey?.rebind(shared);
+  donna?.rebind(shared);
+  for (const listener of resetListeners) listener(shared);
+  if (old) void old.close().catch(() => {});
+  return shared;
+}
+
+/** Rebuild the context if the audio devices changed since it was made, and
+ *  only if nothing is playing on it. For the moments between uses: a click in
+ *  the pre-flight, the start of a Live question. */
+export function refreshAudioIfDevicesChanged(): void {
+  if (!staleDevices || !shared) return;
+  if (harvey?.speaking || donna?.speaking) return; // never cut "let's move on" short
+  resetAudio();
+}
+
+/** Run `listener` whenever `resetAudio` makes a new context. Returns the unsubscribe. */
+export function onAudioReset(listener: (ctx: AudioContext) => void): () => void {
+  resetListeners.add(listener);
+  return () => resetListeners.delete(listener);
 }
 
 /** Call from a click handler. A browser lets a page start audio only in
@@ -187,12 +246,16 @@ export function audioContext(): AudioContext {
  *  reads zeros. */
 export function unlockAudio(): void {
   try {
-    const ctx = audioContext();
-    if (ctx.state === "suspended") void ctx.resume();
+    refreshAudioIfDevicesChanged();
+    wake(audioContext());
   } catch {
     // No Web Audio: Practice falls back to text and says so.
   }
 }
+
+/** What the pre-flight says when a clip will not play (its "Speak again" rebuilds the audio). */
+export const PLAYBACK_FAILED =
+  "Harvey's voice didn't play. Press Speak again, or reload the page if you still can't hear him.";
 
 /** Plays a stream of clips back to back. One per persona: Harvey's and Donna's
  *  never play on the same screen, but each keeps its own queue. */
@@ -204,8 +267,14 @@ export class VoicePlayer {
   private chain: Promise<void> = Promise.resolve();
   private nextAt = 0;
   private complete = false;
+  /** A clip in this run failed: the run did not "finish", so `onFinished` must
+   *  not fire after `onError` and paper over it. Cleared by `stop()`. */
+  private failed = false;
   /** Called once the last clip has finished playing. */
   onFinished: (() => void) | null = null;
+  /** Called when a clip cannot be decoded or played. It used to go only to the
+   *  console, so a silent Harvey looked like a working one. */
+  onError: (() => void) | null = null;
 
   get ready(): boolean {
     return this.ctx !== null;
@@ -226,7 +295,7 @@ export class VoicePlayer {
    *  ask for a click rather than leaving Harvey silently mute. */
   async enable(): Promise<void> {
     this.ctx = audioContext();
-    if (this.ctx.state === "suspended") await this.ctx.resume();
+    if (this.ctx.state !== "running" && this.ctx.state !== "closed") await this.ctx.resume();
     if (this.ctx.state !== "running") throw new Error("audio is blocked until the page is clicked");
   }
 
@@ -234,6 +303,8 @@ export class VoicePlayer {
   play(b64: string): void {
     this.chain = this.chain.then(() => this.schedule(b64)).catch((err) => {
       console.warn("voice playback failed", err);
+      this.failed = true;
+      this.onError?.();
     });
   }
 
@@ -255,6 +326,13 @@ export class VoicePlayer {
     };
   }
 
+  /** Move to a new context (`resetAudio`). Anything queued on the old one is
+   *  dropped; an enabled player stays enabled. */
+  rebind(ctx: AudioContext): void {
+    this.stop();
+    if (this.ctx) this.ctx = ctx;
+  }
+
   /** No more clips are coming for this question. */
   markComplete(): void {
     this.complete = true;
@@ -264,6 +342,10 @@ export class VoicePlayer {
   private settle(): void {
     if (this.complete && this.playing.size === 0) {
       this.complete = false;
+      if (this.failed) {
+        this.failed = false; // reported through onError already
+        return;
+      }
       this.onFinished?.();
     }
   }
@@ -288,6 +370,7 @@ export class VoicePlayer {
     }
     this.playing.clear();
     this.complete = false;
+    this.failed = false;
     this.nextAt = 0;
     this.chain = Promise.resolve();
   }
@@ -336,7 +419,7 @@ export function releaseMicrophone(): void {
  *  the context running for the next turn. */
 function tap(stream: MediaStream) {
   const ctx = audioContext();
-  if (ctx.state === "suspended") void ctx.resume();
+  wake(ctx);
   const source = ctx.createMediaStreamSource(stream);
   const analyser = ctx.createAnalyser();
   analyser.fftSize = 1024;
@@ -354,15 +437,23 @@ function tap(stream: MediaStream) {
   };
 }
 
-/** The pre-flight's meter: report the microphone level until stopped. */
+/** The pre-flight's meter: report the microphone level until stopped. If the
+ *  audio context is rebuilt meanwhile (`resetAudio`), the meter moves to the
+ *  new one: an analyser on a closed context reads zeros. */
 export async function watchLevel(onLevel: (level: number) => void): Promise<() => void> {
-  const meter = tap(await acquireMicrophone());
+  const stream = await acquireMicrophone();
+  let meter = tap(stream);
+  const unsubscribe = onAudioReset(() => {
+    meter.disconnect();
+    meter = tap(stream);
+  });
   let frame = requestAnimationFrame(function tick() {
     onLevel(meter.level());
     frame = requestAnimationFrame(tick);
   });
   return () => {
     cancelAnimationFrame(frame);
+    unsubscribe();
     meter.disconnect();
   };
 }

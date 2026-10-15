@@ -289,6 +289,9 @@ Still to come: Discover's search past its threshold, the golden retrieval test s
   planning runs: it opens the microphone (so the permission prompt lands there), plays Harvey's
   `hello` line, and prefetches the `time_up`/`stalled` clips. Its **Begin** click is the user gesture
   that unlocks audio (`unlockAudio()`); a browser's click permission lapses long before planning ends.
+- The page's `AudioContext` can be rebuilt (`resetAudio`, ADR 0041): pre-flight "Speak again", the next safe moment
+  after `devicechange` (never mid-clip), and Discover's next click after a failed clip. Players `rebind`, the meter
+  reconnects via `onAudioReset`, Live's worklet loads per context. `VoicePlayer.onError` puts failures on screen.
 - One mic stream, one `AudioContext`, one `HarveyVoice` for the whole interview (`acquireMicrophone`,
   `audioContext`, `harveyVoice()` in `lib/voice.ts`). Practice remounts per question, so anything
   per-mount was wrong: a fresh `AudioContext` per answer read zeros in Safari (no click for it), and

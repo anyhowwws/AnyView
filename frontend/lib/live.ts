@@ -25,7 +25,12 @@ import {
   type VoiceState,
 } from "@/lib/live-cues";
 import type { Answer, Session } from "@/lib/types";
-import { acquireMicrophone, audioContext, harveyVoice } from "@/lib/voice";
+import {
+  acquireMicrophone,
+  audioContext,
+  harveyVoice,
+  refreshAudioIfDevicesChanged,
+} from "@/lib/voice";
 
 const INPUT_RATE = 16_000;
 const OUTPUT_RATE = 24_000;
@@ -73,17 +78,20 @@ class Capture extends AudioWorkletProcessor {
 registerProcessor("anyview-capture", Capture);
 `;
 
-let workletLoaded: Promise<void> | null = null;
+const workletLoaded = new WeakMap<AudioContext, Promise<void>>();
 
 function loadWorklet(ctx: AudioContext): Promise<void> {
-  if (!workletLoaded) {
+  // Per context: a module added to one is not there on a rebuilt one (`resetAudio`).
+  let loaded = workletLoaded.get(ctx);
+  if (!loaded) {
     const url = URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: "text/javascript" }));
-    workletLoaded = ctx.audioWorklet.addModule(url).catch((err) => {
-      workletLoaded = null;
+    loaded = ctx.audioWorklet.addModule(url).catch((err) => {
+      workletLoaded.delete(ctx);
       throw err;
     });
+    workletLoaded.set(ctx, loaded);
   }
-  return workletLoaded;
+  return loaded;
 }
 
 /** Whether this browser can hold a Live conversation at all. */
@@ -156,8 +164,11 @@ export class LiveQuestion {
     let token: string;
     try {
       token = await signInToken();
+      // Between questions nothing else is using the context, so this is a safe
+      // moment to rebuild it if headphones came or went (ADR 0041).
+      refreshAudioIfDevicesChanged();
       this.ctx = audioContext();
-      if (this.ctx.state === "suspended") await this.ctx.resume();
+      if (this.ctx.state !== "running") await this.ctx.resume();
       await loadWorklet(this.ctx);
     } catch {
       this.fail("Live voice isn't available in this browser.", true);

@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { interjection, prefetchInterjection } from "@/lib/api";
 import { loadVoicePreference, saveVoicePreference } from "@/lib/store";
 import {
+  PLAYBACK_FAILED,
   harveyVoice,
   microphoneSupported,
   releaseMicrophone,
+  resetAudio,
   unlockAudio,
   watchLevel,
 } from "@/lib/voice";
@@ -18,7 +20,8 @@ import {
 const HEARD_LEVEL = 0.02;
 
 type MicState = "asking" | "on" | "heard" | "blocked";
-type SpeakerState = "idle" | "loading" | "playing" | "asked" | "ok" | "failed";
+// "silent": a clip was fetched but would not decode or play; "Speak again" rebuilds the audio.
+type SpeakerState = "idle" | "loading" | "playing" | "asked" | "ok" | "failed" | "silent";
 
 interface Props {
   sessionId: string;
@@ -68,8 +71,14 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
     };
   }, [voice, sessionId]);
 
-  async function speakToMe() {
-    unlockAudio(); // this click is what lets the page play sound
+  /** The hearing test. `again` is "Speak again" after "Did you hear Harvey?":
+   *  if the first clip was silent, the likeliest cause is an audio context still
+   *  bound to an output that is gone (headphones that disconnected, a tab that
+   *  slept), so the retry builds a fresh one first (ADR 0041). The level meter
+   *  moves to it by itself. */
+  async function speakToMe(again = false) {
+    if (again) resetAudio();
+    else unlockAudio(); // this click is what lets the page play sound
     setSpeaker("loading");
     const player = harveyVoice();
     try {
@@ -85,6 +94,9 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
     }
     player.stop();
     player.onFinished = () => setSpeaker("asked");
+    // A clip that will not decode or play never finishes, so without this the
+    // card sat on "Listen…" with nothing to press.
+    player.onError = () => setSpeaker("silent");
     player.play(clip);
     player.markComplete();
     setSpeaker("playing");
@@ -147,9 +159,9 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
         )}
 
         {voice && (
-          <li data-state={speaker === "ok" ? "done" : speaker === "failed" ? "failed" : "working"}>
+          <li data-state={speaker === "ok" ? "done" : speaker === "failed" || speaker === "silent" ? "failed" : "working"}>
             <StepIcon
-              state={speaker === "ok" ? "done" : speaker === "failed" ? "failed" : "todo"}
+              state={speaker === "ok" ? "done" : speaker === "failed" || speaker === "silent" ? "failed" : "todo"}
               icon={<Volume2 />}
             />
             <div>
@@ -158,13 +170,19 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
               {speaker === "loading" && <span>Getting Harvey&rsquo;s voice…</span>}
               {speaker === "playing" && <span>Listen…</span>}
               {speaker === "asked" && <span>Did you hear Harvey?</span>}
+              {speaker === "silent" && <span>{PLAYBACK_FAILED}</span>}
               {speaker === "ok" && <span>You can hear Harvey.</span>}
               {speaker === "failed" && (
                 <span>Harvey&rsquo;s voice isn&rsquo;t available right now. Questions will show as text.</span>
               )}
               <span className="preflight-actions">
-                {(speaker === "idle" || speaker === "asked") && (
-                  <Button type="button" variant="outline" className="h-9" onClick={() => void speakToMe()}>
+                {(speaker === "idle" || speaker === "asked" || speaker === "silent") && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9"
+                    onClick={() => void speakToMe(speaker !== "idle")}
+                  >
                     {speaker === "idle" ? "Speak to me" : "Speak again"}
                   </Button>
                 )}
