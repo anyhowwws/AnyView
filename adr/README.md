@@ -27,7 +27,7 @@ record of having been wrong is the useful part.
 | [0004](0004-llm-access-via-vertex-ai.md) | LLM access via Vertex AI, IAM-governed | Superseded by 0007 (model); access decision stands |
 | [0005](0005-hand-rolled-sse-streaming.md) | Hand-rolled server-sent events over a streaming SDK | Accepted, amended by 0006 and 0031 |
 | [0006](0006-browser-to-cloud-run-direct.md) | Browser talks to Cloud Run directly, not through Firebase Hosting | Accepted |
-| [0007](0007-gemini-on-vertex.md) | Gemini on Vertex AI as the Phase 0 model | Accepted |
+| [0007](0007-gemini-on-vertex.md) | Gemini on Vertex AI as the Phase 0 model | Accepted, amended by 0039 |
 | [0008](0008-custom-domain-dns-in-route53.md) | Custom domain on Firebase Hosting, DNS records managed in Route 53 | Accepted, amended by 0012 |
 | [0009](0009-google-sign-in-with-allow-list.md) | Google sign-in through Identity Platform, allow-listed by email | Accepted |
 | [0010](0010-resume-upload-via-signed-urls.md) | Resume upload: signed URLs into Cloud Storage, PDF read by the model | Accepted |
@@ -59,3 +59,4 @@ record of having been wrong is the useful part.
 | [0036](0036-adaptive-planning-and-the-carry-over-note.md) | Adaptive planning between questions, and the carry-over note | Accepted |
 | [0037](0037-harvey-looks-the-garden-up-on-live.md) | At Panel, Harvey reads the garden's index on Live and looks entries up | Accepted |
 | [0038](0038-garden-embeddings-embedded-first.md) | Garden embeddings: four kinds, 768 dimensions, embedded before the write | Accepted |
+| [0039](0039-the-report-fails-fast-and-falls-back.md) | The report fails fast and falls back; transcription moves to the fast model | Accepted |

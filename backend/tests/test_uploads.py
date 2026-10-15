@@ -172,3 +172,14 @@ def test_empty_docx_is_a_readable_422(client, store):
     )
     assert r.status_code == 422
     assert "at least 50 characters" in r.json()["detail"]
+
+
+def test_a_recording_is_transcribed_on_the_fast_model():
+    # ADR 0039: Pro took 4-50 s for a few words; transcription is mechanical.
+    from anyview.uploads.extract import audio_to_text
+
+    fake = FakeModel({"transcribe": "I led the migration."})
+    assert audio_to_text(b"RIFF", "audio/wav", model=fake, session_id="sess-0001") == (
+        "I led the migration."
+    )
+    assert fake.calls[0]["call"] == "transcribe" and fake.calls[0]["fast"] is True

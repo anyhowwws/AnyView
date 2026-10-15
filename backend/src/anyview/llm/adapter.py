@@ -30,6 +30,7 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal, Protocol
 
+import httpx
 from google import genai
 from google.genai import errors, types
 
@@ -42,6 +43,20 @@ UsageSink = Callable[[dict[str, Any]], None]
 usage_sink: UsageSink | None = None
 
 Effort = Literal["low", "medium", "high"]
+
+# The report's calls fail fast and fall back (ADR 0039). One attempt on the
+# judgement model gets this long and one retry after a throttle; past that the
+# call goes once to the fallback model. Measured: a healthy Pro call takes
+# 15-55 s; Vertex gives up on a stuck one at ~115 s, which the default
+# 120 s x 4 attempts turned into minutes of waiting.
+TIGHT_TIMEOUT_MS = 75_000
+TIGHT_ATTEMPTS = 2
+FALLBACK_MODEL = "gemini-3.8-flash"
+# The fallback thinks at `low`. Measured on the real scoring prompt: Flash takes
+# 5-10 s at `low` (no thinking) and 37-69 s at `medium`/`high` (5-9k thinking
+# tokens), for the same four scores. A fallback that is as slow as the model it
+# replaces is not a fallback.
+FALLBACK_EFFORT: Effort = "low"
 
 # The length of every stored embedding (ADR 0038). `gemini-embedding-2` returns
 # unit-length vectors at this size, so cosine distance needs no normalising.
@@ -162,6 +177,7 @@ class Model(Protocol):
         max_tokens: int = 4096,
         attachment: tuple[bytes, str] | None = None,
         fast: bool = False,
+        fallback: bool = False,
     ) -> Reply: ...
 
     def stream(
@@ -278,7 +294,12 @@ def _translate(exc: Exception) -> ModelError:
             return ModelError("The model service had a problem. Please try again.", retryable=True)
         log.error("model request rejected %s: %s", exc.code, exc.message)
         return ModelError("The request could not be processed.")
-    if isinstance(exc, ConnectionError | TimeoutError | OSError):
+    if isinstance(exc, httpx.TimeoutException):
+        # The SDK does not retry a timeout, and it used to fall through to
+        # "Unexpected model error" below.
+        log.warning("model request timed out: %r", exc)
+        return ModelError("The model took too long to answer. Please try again.", retryable=True)
+    if isinstance(exc, ConnectionError | TimeoutError | OSError | httpx.TransportError):
         return ModelError("Could not reach the model service. Please try again.", retryable=True)
     log.exception("unexpected model error")
     return ModelError("Unexpected model error.")
@@ -351,6 +372,7 @@ class VertexGemini:
         live_model: str | None = None,
         live_region: str | None = None,
         embedding_model: str | None = None,
+        fallback_model: str | None = None,
     ) -> None:
         if not project_id:
             raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for Vertex model access")
@@ -367,6 +389,8 @@ class VertexGemini:
         self.tts_model = tts_model or "gemini-2.5-flash-preview-tts"
         # Embeddings for garden search (ADR 0038). Same client, same identity.
         self.embedding_model = embedding_model or "gemini-embedding-2"
+        # Where a call made with `fallback=True` goes when `model` keeps failing (ADR 0039).
+        self.fallback_model = fallback_model or FALLBACK_MODEL
         # Retry transient failures inside the SDK: a 429 "Resource exhausted"
         # in the middle of a ten-call report is a blip, not a quota problem.
         # 4 attempts with exponential backoff (1s, 2s, 4s) then give up.
@@ -406,6 +430,27 @@ class VertexGemini:
             config.response_json_schema = output_schema
         return config
 
+    def _generate(
+        self, model: str, contents: Any, config: types.GenerateContentConfig, *, tight: bool
+    ) -> Any:
+        """One `generate_content`, on the client's defaults or, with `tight`, with
+        this call's own timeout and retry (the SDK reads both from the config)."""
+        if tight:
+            config = config.model_copy(
+                update={
+                    "http_options": types.HttpOptions(
+                        timeout=TIGHT_TIMEOUT_MS,
+                        retry_options=types.HttpRetryOptions(
+                            attempts=TIGHT_ATTEMPTS,
+                            initial_delay=1.0,
+                            max_delay=4.0,
+                            http_status_codes=[429, 500, 502, 503, 504],
+                        ),
+                    )
+                }
+            )
+        return self._client.models.generate_content(model=model, contents=contents, config=config)
+
     def generate(
         self,
         *,
@@ -418,27 +463,49 @@ class VertexGemini:
         max_tokens: int = 4096,
         attachment: tuple[bytes, str] | None = None,
         fast: bool = False,
+        fallback: bool = False,
     ) -> Reply:
         # `attachment` is (bytes, mime type) — a PDF the model reads natively.
         # `fast` sends a mechanical call (finding a dump's sections, ADR 0019)
         # to the fast model instead of the judgement model.
+        # `fallback` is for a call that must not wait on a struggling model
+        # (the report, ADR 0039): a tight timeout and one retry, then one try on
+        # `fallback_model`. The usage row names the model that answered.
         model = self.fast_model if fast else self.model
         # Sent inline; uploads are capped at 10 MB, well inside the request limit.
         contents: Any = user
         if attachment is not None:
             data, mime = attachment
             contents = [types.Part.from_bytes(data=data, mime_type=mime), user]
+        config = self._config(
+            system=system, effort=effort, max_tokens=max_tokens, output_schema=output_schema
+        )
         started = time.monotonic()
         try:
-            response = self._client.models.generate_content(
-                model=model,
-                contents=contents,
-                config=self._config(
-                    system=system, effort=effort, max_tokens=max_tokens, output_schema=output_schema
-                ),
-            )
+            response = self._generate(model, contents, config, tight=fallback)
         except Exception as exc:  # translated below; SDK types are not allowed out
-            raise _translate(exc) from exc
+            error = _translate(exc)
+            if not (fallback and error.retryable):
+                raise error from exc
+            log.warning(
+                "%s on %s failed (%s); trying %s",
+                call,
+                model,
+                error.user_message,
+                self.fallback_model,
+            )
+            model = self.fallback_model
+            started = time.monotonic()
+            quick = self._config(
+                system=system,
+                effort=FALLBACK_EFFORT,
+                max_tokens=max_tokens,
+                output_schema=output_schema,
+            )
+            try:
+                response = self._generate(model, contents, quick, tight=True)
+            except Exception as again:
+                raise _translate(again) from again
         latency_ms = int((time.monotonic() - started) * 1000)
 
         usage = _usage_from(response.usage_metadata)

@@ -86,6 +86,7 @@ def build_model() -> Model:
         live_model=settings.live_model_id,
         live_region=settings.live_region,
         embedding_model=settings.embedding_model_id,
+        fallback_model=settings.fallback_model_id,
     )
 
 

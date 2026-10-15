@@ -215,6 +215,10 @@ terraform plan                                                   # terraform.tfv
   pipeline on a document you know the answer for; keep real resumes out of the repo.
 - Each question carries its own `seconds` (ADR 0016), chosen by the model when it plans and
   clamped by `engine.start` into 45–300. The clock only runs when `setup.time_bounded`.
+- The report's `score` and `ideal` calls pass `fallback=True` (ADR 0039): 75 s and 2 attempts on the judgement model, then
+  once on `gemini-3.8-flash` (`FALLBACK_MODEL_ID`) at **`low`** effort (5-10 s; `medium`/`high` take 37-69 s). The preview
+  Pro model throttles (429, then 504 after ~2 min); the old 120 s x 4 attempts turned that into 8+ minute reports.
+  `audio_to_text` (spoken questions and answers) runs on the fast model. `api/interview.py` logs when each report item is sent.
 - Scoring is concurrent twice over: the five answers in a thread pool, and each answer's `score`
   and `ideal` calls side by side inside `_score_one` (the SDK client is thread-safe). Keep new
   per-answer work inside `_score_one` so it stays parallel. `POST /interview/report/stream` sends

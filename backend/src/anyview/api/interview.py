@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import logging
+import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -619,8 +620,17 @@ def stream_report(session: Session, user: CurrentUser, model: ModelDep, repo: Re
     relevant = _relevant(session, repo, user.uid, model)
 
     def frames():
+        started = time.monotonic()
         yield ("report", header.model_dump(mode="json"))
         for index, item in engine.score_as_ready(session, model=model, relevant=relevant):
+            # One line per item, so a slow report can be read off the logs: when
+            # each question's score and ideal answer were both in and sent.
+            log.info(
+                "report %s: question %d sent after %.0f s",
+                session.session_id,
+                index + 1,
+                time.monotonic() - started,
+            )
             yield ("item", {"index": index, "item": item.model_dump(mode="json")})
 
     return stream_response(frames())

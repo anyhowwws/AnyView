@@ -130,6 +130,9 @@ def audio_to_text(
         effort="low",
         max_tokens=4096,
         attachment=(data, mime_type),
+        # Mechanical work, and Pro's 4-50 s here made Donna's spoken questions
+        # crawl (ADR 0039): Flash-Lite takes ~2 s for the same words.
+        fast=True,
     )
     if reply.refused:
         raise ExtractionError("That recording could not be transcribed. Please try again.")
