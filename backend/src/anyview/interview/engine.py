@@ -310,6 +310,7 @@ def _score_one(
             output_schema=SCORE_SCHEMA,
             effort="high",
             max_tokens=2048,
+            fallback=True,
         )
         ideal_reply = model.generate(
             system=system,
@@ -319,6 +320,7 @@ def _score_one(
             output_schema=IDEAL_SCHEMA,
             effort="high",
             max_tokens=2048,
+            fallback=True,
         )
         score_reply = score_future.result()
     try:

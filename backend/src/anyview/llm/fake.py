@@ -54,8 +54,9 @@ class FakeModel:
 
     model = "fake"
 
-    def _record(self, call: str, session_id: str, system: str, user: str) -> None:
-        self.calls.append({"call": call, "session_id": session_id, "system": system, "user": user})
+    def _record(self, call: str, session_id: str, system: str, user: str) -> dict[str, Any]:
+        entry = {"call": call, "session_id": session_id, "system": system, "user": user}
+        self.calls.append(entry)
         if self.delay:
             time.sleep(self.delay)
         if self.fail == call:
@@ -64,6 +65,7 @@ class FakeModel:
         _log_usage(
             session_id=session_id, call=call, model=self.model, usage=_FAKE_USAGE, latency_ms=1
         )
+        return entry
 
     def generate(
         self,
@@ -77,12 +79,16 @@ class FakeModel:
         max_tokens: int = 4096,
         attachment: tuple[bytes, str] | None = None,
         fast: bool = False,
+        fallback: bool = False,
     ) -> Reply:
-        self._record(call, session_id, system, user)
+        # The entry itself, not `calls[-1]`: scoring calls this from several threads.
+        entry = self._record(call, session_id, system, user)
+        if fallback:
+            entry["fallback"] = True
         if fast:
-            self.calls[-1]["fast"] = True
+            entry["fast"] = True
         if attachment is not None:
-            self.calls[-1]["attachment"] = (len(attachment[0]), attachment[1])
+            entry["attachment"] = (len(attachment[0]), attachment[1])
         reply = self.replies.get(call, DEFAULTS[call])
         if call == "adapt" and call not in self.replies:
             reply = _fake_adapt(user)

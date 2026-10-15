@@ -167,3 +167,14 @@ def test_score_as_ready_yields_each_answer_as_it_finishes(setup):
     order = [(i, item.question.id) for i, item in engine.score_as_ready(session, model=fake)]
     assert order[-1] == (0, 1)
     assert sorted(order) == [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5)]
+
+
+def test_the_reports_calls_may_fall_back_and_others_may_not(setup):
+    # ADR 0039: score and ideal fail fast and fall back; planning does not.
+    fake = FakeModel()
+    session, _ = _walk(setup, fake)
+    by_call = {}
+    for call in fake.calls:
+        by_call.setdefault(call["call"], set()).add(call.get("fallback", False))
+    assert by_call["score"] == {True} and by_call["ideal"] == {True}
+    assert by_call["plan"] == {False}

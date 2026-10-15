@@ -3,6 +3,7 @@
 import json
 from types import SimpleNamespace
 
+import httpx
 import pytest
 from google.genai import errors, types
 
@@ -93,6 +94,8 @@ def _api_error(code: int) -> errors.APIError:
         (_api_error(503), True, "problem"),
         (_api_error(400), False, "could not be processed"),
         (ConnectionError("down"), True, "reach"),
+        (httpx.ReadTimeout("slow"), True, "too long"),
+        (httpx.ConnectError("refused"), True, "reach"),
         (ValueError("weird"), False, "Unexpected"),
     ],
 )
@@ -159,3 +162,81 @@ def test_live_messages_become_plain_events(caplog):
     assert events[0].audio == b"\x01\x02" and events[-1].call_id == "c1"
     row = json.loads(caplog.records[-1].message)
     assert row["call"] == "live" and row["input_tokens"] == 900 and row["output_tokens"] == 50
+
+
+# --- The report's calls fail fast and fall back (ADR 0039) --------------------
+
+
+class _Stub:
+    """A stand-in for the SDK client: answers each call from a script, and
+    remembers which model and per-request options each call used."""
+
+    def __init__(self, *script):
+        self.script = list(script)
+        self.calls = []
+        self.levels = []
+        self.models = self
+
+    def generate_content(self, *, model, contents, config):
+        self.calls.append((model, config.http_options))
+        self.levels.append(config.thinking_config.thinking_level)
+        step = self.script.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return SimpleNamespace(
+            usage_metadata=None,
+            candidates=[SimpleNamespace(finish_reason=SimpleNamespace(name="STOP"))],
+            text=step,
+        )
+
+
+def _vertex(stub):
+    model = VertexGemini.__new__(VertexGemini)  # skip __init__: no client needed
+    model.model, model.fast_model, model.fallback_model = "pro", "lite", "flash"
+    model._client = stub
+    return model
+
+
+def _ask(model, **extra):
+    return model.generate(system="s", user="u", session_id="sess-0001", call="score", **extra)
+
+
+def test_a_plain_call_uses_the_clients_defaults_and_never_falls_back():
+    stub = _Stub(_api_error(503))
+    with pytest.raises(ModelError):
+        _ask(_vertex(stub))
+    assert [(m, o) for m, o in stub.calls] == [("pro", None)]
+
+
+def test_a_fallback_call_has_a_tight_timeout_and_one_retry_budget():
+    stub = _Stub("fine")
+    assert _ask(_vertex(stub), fallback=True).text == "fine"
+    ((model, options),) = stub.calls
+    assert model == "pro"
+    assert options.timeout == adapter.TIGHT_TIMEOUT_MS
+    assert options.retry_options.attempts == adapter.TIGHT_ATTEMPTS
+
+
+@pytest.mark.parametrize("failure", [_api_error(504), _api_error(429), httpx.ReadTimeout("slow")])
+def test_a_struggling_model_hands_the_call_to_the_fallback(failure, caplog):
+    stub = _Stub(failure, "from flash")
+    with caplog.at_level("WARNING"):
+        assert _ask(_vertex(stub), fallback=True, effort="high").text == "from flash"
+    assert [m for m, _ in stub.calls] == ["pro", "flash"]
+    assert "trying flash" in caplog.text
+    # The judgement model was asked at the caller's effort; the fallback at the quick one.
+    assert stub.levels == [types.ThinkingLevel.HIGH, types.ThinkingLevel.LOW]
+
+
+def test_a_failing_fallback_is_the_error_the_caller_sees():
+    stub = _Stub(_api_error(504), _api_error(429))
+    with pytest.raises(ModelError, match="rate-limited"):
+        _ask(_vertex(stub), fallback=True)
+    assert len(stub.calls) == 2  # one try on each model, no more
+
+
+def test_a_bad_request_is_not_sent_to_the_fallback():
+    stub = _Stub(_api_error(400))
+    with pytest.raises(ModelError, match="could not be processed"):
+        _ask(_vertex(stub), fallback=True)
+    assert [m for m, _ in stub.calls] == ["pro"]

@@ -20,6 +20,8 @@ class Settings:
     tts_model_id: str = "gemini-2.5-flash-preview-tts"
     # Garden search (ADR 0038). Served from `vertex_region`, like the text models.
     embedding_model_id: str = "gemini-embedding-2"
+    # Where the report's calls go when the judgement model keeps failing (ADR 0039).
+    fallback_model_id: str = "gemini-3.8-flash"
     harvey_voice: str = "Charon"
     donna_voice: str = "Kore"
     # Harvey on Gemini Live (ADR 0031). Live models are regional, not `global`.
@@ -62,6 +64,7 @@ class Settings:
             # it gets its own id; the voice is one of Vertex's prebuilt speakers.
             tts_model_id=os.environ.get("TTS_MODEL_ID", "gemini-2.5-flash-preview-tts"),
             embedding_model_id=os.environ.get("EMBEDDING_MODEL_ID", "gemini-embedding-2"),
+            fallback_model_id=os.environ.get("FALLBACK_MODEL_ID", "gemini-3.8-flash"),
             harvey_voice=os.environ.get("HARVEY_VOICE", "Charon"),
             # Donna speaks only in Discover's speak mode (ADR 0030).
             donna_voice=os.environ.get("DONNA_VOICE", "Kore"),
