@@ -77,6 +77,7 @@ class LiveTurn:
             raise engine.EngineError("No question to ask.")
         self.question = question
         self.setup = session.setup
+        self.session_id = session.session_id
         self.system = live_system(
             session.setup,
             questions=session.questions,

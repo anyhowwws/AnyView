@@ -84,6 +84,8 @@ class FakeModel:
         if attachment is not None:
             self.calls[-1]["attachment"] = (len(attachment[0]), attachment[1])
         reply = self.replies.get(call, DEFAULTS[call])
+        if call == "adapt" and call not in self.replies:
+            reply = _fake_adapt(user)
         if isinstance(reply, dict):
             return Reply(
                 text=json.dumps(reply), stop_reason="end_turn", usage=_FAKE_USAGE, data=reply
@@ -272,6 +274,33 @@ class FakeLive:
     async def events(self) -> AsyncIterator[LiveEvent]:
         while (event := await self._queue.get()) is not None:
             yield event
+
+
+def _fake_adapt(user: str) -> dict[str, Any]:
+    """The planner between questions (ADR 0036), scripted so a walk-through shows
+    both outcomes: a note of the last answer's opening words every time, and
+    question 3 reworded around the earlier answers. Every other question is kept."""
+    upcoming = re.search(r'<next_question n="(\d+)" competency="([^"]*)">', user)
+    n, competency = (int(upcoming[1]), upcoming[2]) if upcoming else (0, "")
+    answers = re.findall(r"<answer>\n(.*?)\n</answer>", user, flags=re.S)
+    last = " ".join(answers[-1].split()[:12]) if answers else ""
+    previous = _between(user, "<previous_notes>", "</previous_notes>")
+    notes = [] if previous in ("", "(none yet)") else previous.splitlines()
+    notes.append(f"Q{len(answers)}: {last} …")
+    reply: dict[str, Any] = {
+        "notes": "\n".join(notes[-6:]),
+        "rewrite": False,
+        "text": "",
+        "rationale": "",
+    }
+    if n == 3:
+        reply.update(
+            rewrite=True,
+            text=f"Earlier you mentioned the billing migration. Staying with {competency}: "
+            "what was the hardest call you made on it, and how did it turn out?",
+            rationale="Scripted by FakeModel: builds on what the candidate already said.",
+        )
+    return reply
 
 
 def default_plan(count: int) -> dict[str, Any]:

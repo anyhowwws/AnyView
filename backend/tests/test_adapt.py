@@ -49,7 +49,7 @@ def test_keeping_the_question_still_updates_the_note(setup):
     after = engine.adapt(before, model=fake)
     assert after.questions == before.questions
     assert after.questions[1].planned is None
-    assert after.notes.startswith("Scripted by FakeModel")
+    assert after.notes == "Q1: I led the billing migration to Cloud Run. …"
 
 
 def test_a_second_rewrite_keeps_the_first_plan(setup):

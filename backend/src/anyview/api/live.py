@@ -239,6 +239,12 @@ async def _from_live(
                     log.exception("garden lookup failed for %s", labels)
                     found = {}
                 result = {**result, "entries": turn.entries(found)}
+                log.info(
+                    "garden lookup for %s: asked %s, found %s",
+                    turn.session_id,
+                    labels,
+                    sorted(found),
+                )
             await harvey.send_tool_result(event.call_id, event.name, result)
             if event.name == "ask_follow_up":
                 await _send(
