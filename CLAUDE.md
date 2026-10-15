@@ -145,6 +145,10 @@ Backend modules:
   `ingest_jobs` row (a 120 s lease renewed by every progress frame, so duplicate deliveries get 409),
   reuse the job's dump on a retry, and map the result to the status Cloud Tasks reads
   (204 stop / 503 retry / 409 busy). `IngestFailed` is a failure retrying will not fix.
+- `anyview/activity.py` — `record(name)`: one `{"activity": …}` JSON log line per thing a person did (sign-up,
+  interview started/completed, Discover question, garden upload). `infra/monitoring.tf` counts them with a
+  log-based metric and charts them on the "AnyView usage" dashboard (ADR 0042). A new name goes in
+  `ACTIVITIES` and in `local.activities`; a test checks both. No email, uid or text in a line.
 - `anyview/tasks.py` — `CloudTasksQueue` (REST via `google-auth`, task named after the job) and
   `InlineQueue` (this process: a laptop, tests, the fake model, i.e. whenever `TASKS_QUEUE` is unset).
 - `anyview/worker.py` — the worker app: `POST /tasks/ingest` and `/health`, reusing main.py's wiring.

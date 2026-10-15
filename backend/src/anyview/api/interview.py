@@ -19,6 +19,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, ValidationError
 
+from anyview.activity import record
 from anyview.api.auth import CurrentUser, current_user, get_settings
 from anyview.api.sse import stream_response, tokens
 from anyview.api.uploads import get_store, object_prefix, transcribe_recording
@@ -262,6 +263,7 @@ def start(
 
     if not (setup.resume_object and repo is not None):
         session = engine.start(setup, session_id=body.session_id, model=model)
+        record("interview_started")
         _save_job(repo, user, body.setup)
         return session
 
@@ -279,6 +281,7 @@ def start(
         except ExtractionFailed as exc:
             # The interview is what the user asked for; the garden entry is a bonus.
             log.warning("filing the resume failed for %s: %s", body.session_id, exc.user_message)
+    record("interview_started")
     _save_job(repo, user, body.setup)
     return session
 
@@ -602,7 +605,9 @@ def _relevant(session: Session, repo: Any, uid: str, model: Model) -> dict[int, 
 def report(session: Session, user: CurrentUser, model: ModelDep, repo: RepoDep) -> Report:
     session = _for_report(session, repo, user.uid)
     relevant = _relevant(session, repo, user.uid, model)
-    return engine.finish(session, model=model, relevant=relevant)
+    finished = engine.finish(session, model=model, relevant=relevant)
+    record("interview_completed")
+    return finished
 
 
 @router.post("/report/stream")
@@ -632,5 +637,6 @@ def stream_report(session: Session, user: CurrentUser, model: ModelDep, repo: Re
                 time.monotonic() - started,
             )
             yield ("item", {"index": index, "item": item.model_dump(mode="json")})
+        record("interview_completed")  # every item was sent
 
     return stream_response(frames())

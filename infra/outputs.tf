@@ -85,3 +85,8 @@ output "tf_apply_sa" {
   description = "Set as the GitHub repository variable GCP_TF_APPLY_SA (ADR 0024)."
   value       = google_service_account.tf_apply.email
 }
+
+output "usage_dashboard_url" {
+  description = "The AnyView usage dashboard in the Cloud console."
+  value       = "https://console.cloud.google.com/monitoring/dashboards/builder/${element(split("/", google_monitoring_dashboard.usage.id), 3)}?project=${var.project_id}"
+}

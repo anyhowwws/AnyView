@@ -24,6 +24,7 @@ from typing import Any, Literal
 import sqlalchemy as sa
 from sqlalchemy.engine import Connection, Engine
 
+from anyview.activity import record
 from anyview.brain.models import (
     EDITABLE,
     LABEL_PREFIX,
@@ -182,15 +183,27 @@ class Repository:
         with self.engine.begin() as c:
             return [r[0] for r in c.execute(_q("SELECT uid FROM users ORDER BY created_at"))]
 
-    def ensure_user(self, uid: str, email: str) -> None:
+    def ensure_user(self, uid: str, email: str) -> bool:
+        """Create the user's row on their first request. True when it was new,
+        which is what counts as a sign-up (ADR 0042)."""
         with self.engine.begin() as c:
-            c.execute(
+            # RETURNING gives a row only when the INSERT happened; on a conflict
+            # nothing is returned and the email is refreshed instead.
+            created = c.execute(
                 _q(
                     "INSERT INTO users (uid, email) VALUES (:uid, :email) "
-                    "ON CONFLICT (uid) DO UPDATE SET email = EXCLUDED.email"
+                    "ON CONFLICT (uid) DO NOTHING RETURNING uid"
                 ),
                 {"uid": uid, "email": email},
-            )
+            ).first()
+            if created is None:
+                c.execute(
+                    _q("UPDATE users SET email = :email WHERE uid = :uid AND email <> :email"),
+                    {"uid": uid, "email": email},
+                )
+        if created is not None:
+            record("signup")
+        return created is not None
 
     def erase_user(self, uid: str) -> dict[str, int]:
         """Delete everything stored about one user, in one transaction (ADR 0018).
