@@ -68,6 +68,7 @@ class LiveTurn:
             questions=session.questions,
             answers=session.answers,
             index=session.current,
+            notes=session.notes,
         )
         self.parts: list[_Part] = [_Part(asked=None)]
         self.harvey: list[str] = []

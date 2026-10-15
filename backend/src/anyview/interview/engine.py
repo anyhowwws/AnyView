@@ -3,6 +3,9 @@
     intake → plan → ask → answer → probe (≤ max_probes) → next → ask …
                                                         ↘ wrap → score → report
 
+Between two questions `adapt` may reword the next one and keeps the carry-over
+note (ADR 0036); it is a refinement of `ask`, not a state of its own.
+
 Transport-agnostic: text comes in as `str`, tokens go out as an iterator of
 `str`, and the model is anything satisfying `Model`. HTTP/SSE lives in
 `anyview.api`; voice can replace it later without touching this file.
@@ -14,19 +17,26 @@ so every transition in the brief's diagram is visible in `TRANSITIONS`.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FutureTimeout
 
 from pydantic import ValidationError
 
 from anyview.interview.models import (
+    ADAPT_SCHEMA,
     IDEAL_SCHEMA,
     MAX_ANSWER_SECONDS,
+    MAX_NOTES_CHARS,
     MAX_PROBES,
+    MAX_QUESTION_CHARS,
     MIN_ANSWER_SECONDS,
+    NO_ANSWER,
     PLAN_SCHEMA,
     QUESTION_COUNT,
     SCORE_SCHEMA,
+    AdaptOutput,
     Answer,
     IdealAnswer,
     PlanOutput,
@@ -38,8 +48,21 @@ from anyview.interview.models import (
     Setup,
     State,
 )
-from anyview.interview.prompts import ideal_user, lead_in, plan_user, score_user, session_system
-from anyview.llm.adapter import Model, Reply
+from anyview.interview.prompts import (
+    adapt_user,
+    ideal_user,
+    lead_in,
+    plan_user,
+    score_user,
+    session_system,
+)
+from anyview.llm.adapter import Model, ModelError, Reply
+
+log = logging.getLogger(__name__)
+
+# How long the next question may wait for the planner (ADR 0036). The fast model
+# answers in one to three seconds; past this, the planned question is asked.
+ADAPT_DEADLINE_S = 6.0
 
 TRANSITIONS: dict[State, set[State]] = {
     State.INTAKE: {State.PLAN},
@@ -166,6 +189,101 @@ def submit_answer(session: Session, answer: Answer) -> Session:
         session = session.model_copy(update={"current": session.current + 1})
         return _move(session, State.ASK)
     return _move(session, State.WRAP)
+
+
+def _tidy(text: str, limit: int) -> str:
+    """Whitespace collapsed, and cut at a word boundary under `limit`."""
+    text = " ".join(text.split())
+    if len(text) > limit:
+        text = text[:limit].rsplit(" ", 1)[0]
+    return text
+
+
+def _tidy_notes(text: str) -> str:
+    """The note keeps its lines; each is tidied, and the whole is held to its cap."""
+    lines = [" ".join(line.split()) for line in text.splitlines()]
+    notes = "\n".join(line for line in lines if line)
+    if len(notes) > MAX_NOTES_CHARS:
+        notes = notes[:MAX_NOTES_CHARS].rsplit("\n", 1)[0]
+    return notes
+
+
+def _adapt_call(session: Session, *, model: Model) -> AdaptOutput:
+    reply = model.generate(
+        # The same system text as the plan and the report, so it is a cache hit,
+        # and it gives the planner exactly what the interviewer knows: the garden
+        # only at Panel.
+        system=session_system(session.setup),
+        user=adapt_user(
+            session.setup,
+            questions=session.questions,
+            answers=session.answers,
+            notes=session.notes,
+        ),
+        session_id=session.session_id,
+        call="adapt",
+        output_schema=ADAPT_SCHEMA,
+        effort="low",
+        max_tokens=1024,
+        fast=True,
+    )
+    return AdaptOutput.model_validate(_structured(reply, "adapt the next question"))
+
+
+def adapt(session: Session, *, model: Model, deadline: float = ADAPT_DEADLINE_S) -> Session:
+    """Between two questions (ADR 0036): rewrite the carry-over note, and let the
+    planner reword the next question. The server sets the limits, not the model:
+
+    - only the next question can change, and only its wording and rationale; its
+      id, competency and clock stay as planned, so the plan's coverage holds;
+    - the question count never changes, and neither do follow-ups (`MAX_PROBES`);
+    - the wording planned at the start is kept on `Question.planned`;
+    - anything that goes wrong — the model fails, refuses, is slow, or returns an
+      empty question — leaves the session as it was. The interview never waits
+      on, or breaks for, the planner.
+
+    Needs a session in `ask` with at least one answer, i.e. what `submit_answer`
+    returns between two questions."""
+    require_state(session, State.ASK)
+    question = session.current_question
+    if question is None or not session.answers:
+        return session
+    last = session.previous_answer
+    if last is not None and last.text.strip() == NO_ANSWER and not last.follow_ups:
+        return session  # nothing was said, so there is nothing to note or adapt to
+
+    # A thread so the wait can be bounded: the SDK's own timeout is for the slow
+    # calls. Not a `with` block, because leaving one waits for the thread; a call
+    # that overruns finishes in the background and its result is dropped.
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
+        output = pool.submit(_adapt_call, session, model=model).result(timeout=deadline)
+    except FutureTimeout:
+        log.warning(
+            "adapt: no answer in %.0fs for %s; asking as planned", deadline, session.session_id
+        )
+        return session
+    except (ModelError, EngineError, ValidationError) as exc:
+        log.warning("adapt failed for %s: %s; asking as planned", session.session_id, exc)
+        return session
+    finally:
+        pool.shutdown(wait=False)
+
+    update: dict = {"notes": _tidy_notes(output.notes) or session.notes}
+    text = _tidy(output.text, MAX_QUESTION_CHARS)
+    if output.rewrite and text and text != question.text.strip():
+        rewritten = question.model_copy(
+            update={
+                "text": text,
+                "rationale": _tidy(output.rationale, MAX_QUESTION_CHARS) or question.rationale,
+                # Rewritten twice keeps the first plan, not the first rewrite.
+                "planned": question.planned or question.text,
+            }
+        )
+        questions = list(session.questions)
+        questions[session.current] = rewritten
+        update["questions"] = questions
+    return session.model_copy(update=update)
 
 
 def _score_one(

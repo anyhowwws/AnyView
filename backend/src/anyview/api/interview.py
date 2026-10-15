@@ -533,8 +533,13 @@ def transcribe(
 
 
 @router.post("/answer", response_model=Session)
-def answer(body: AnswerRequest) -> Session:
-    return engine.submit_answer(body.session, body.answer)
+def answer(body: AnswerRequest, model: ModelDep) -> Session:
+    session = engine.submit_answer(body.session, body.answer)
+    if session.state == State.ASK:
+        # Another question follows: the planner may reword it (ADR 0036).
+        # Best effort and bounded; the planned question is asked if it fails.
+        session = engine.adapt(session, model=model)
+    return session
 
 
 def _for_report(session: Session, repo: Any, uid: str) -> Session:

@@ -87,7 +87,11 @@ Backend modules:
   `prompts.py` also owns **difficulty** (ADR 0014): `recruiter_screen` (Easy: resume only, no job description) / `hiring_manager` (Medium: + job
   description) / `panel` (Hard: + garden) decide what the interviewer knows, in planning and on
   Live (ADR 0031); the garden reaches `session_system` at `panel` only.
-  It also owns `INTERJECTIONS` — the fixed lines Harvey says when he has to cut in (ADR 0016) — and
+  Between questions `engine.adapt` (ADR 0036) makes one fast `adapt` call: it rewrites `Session.notes` (the
+  carry-over note Harvey reads on Live in place of old excerpts) and may reword the next question — wording and
+  rationale only; id, competency, seconds, question count and `MAX_PROBES` are fixed, the original is kept on
+  `Question.planned`, and any failure or a reply slower than `ADAPT_DEADLINE_S` asks as planned.
+  `prompts.py` also owns `INTERJECTIONS` — the fixed lines Harvey says when he has to cut in (ADR 0016) — and
   tells the model to open with "tell me about yourself" and to set each question's `seconds`.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
   `account.py` serves `POST /account/erase` (ADR 0018): deletes the user's files, then every row, via `Repository.erase_user`.

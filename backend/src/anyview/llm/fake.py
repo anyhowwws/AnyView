@@ -4,7 +4,7 @@ Same four methods as `VertexGemini`, no network, no tokens. Tests use it to
 drive the engine and the API deterministically; `ANYVIEW_FAKE_MODEL=1` runs the
 whole app on it for a browser walk-through that costs nothing.
 
-Replies are keyed by the `call` name (`plan`, `ask`, `score`, `ideal`,
+Replies are keyed by the `call` name (`plan`, `adapt`, `ask`, `score`, `ideal`,
 `parse_job`, `transcribe`, `discover`, `segment`, `dedupe`, `link`) so a test can script
 one kind of call without caring about the others. `speak` returns silence of a
 plausible length instead of a reply, and `live` a scripted conversation (`FakeLive`).
@@ -273,6 +273,13 @@ def default_plan(count: int) -> dict[str, Any]:
 
 
 DEFAULTS: dict[str, Any] = {
+    # Between questions (ADR 0036): a note, and the planned question kept.
+    "adapt": {
+        "notes": "Scripted by FakeModel: they described the billing migration to Cloud Run.",
+        "rewrite": False,
+        "text": "",
+        "rationale": "",
+    },
     # A plausible brain patch for the resume in tests/conftest.py. Evidence quotes
     # are verbatim fragments of that resume so the evidence check keeps them.
     "propose": {
