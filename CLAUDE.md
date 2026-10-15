@@ -79,7 +79,9 @@ Backend modules:
 - `anyview/interview/live.py` — `LiveTurn`: one spoken question's rules with no I/O (ADR 0031). The
   follow-up budget (`MAX_PROBES` = 2, none once the question has ended), how it ended (`end(reason)`:
   `time_up`/`move_on` are cuts, `manual` is not, ADR 0032), and the transcript → `Answer` with `follow_ups`. `prompts.live_system` is Harvey's instruction
-  per question; `prompts.LIVE_TOOLS` are `ask_follow_up` and `finish_question`.
+  per question; `prompts.LIVE_TOOLS` are `ask_follow_up` and `finish_question`. At Panel, Live gets
+  `Setup.garden_index` (`Repository.brain_index`) instead of the whole garden; `ask_follow_up`'s optional `labels`
+  (≤3) are looked up by the socket (`Repository.garden_entries`) and come back as `entries` (ADR 0037).
 - `anyview/api/live.py` — `WS /interview/live`: token in the first frame (no headers on a
   WebSocket), `Origin` checked against the CORS list, one Live session per question relayed both
   ways, `done` carries the `Answer`. The browser posts it to `/interview/answer` as usual.

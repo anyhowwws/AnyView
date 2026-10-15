@@ -176,6 +176,9 @@ class FakeLive:
         # As 3.8 sometimes does: speak, and send no transcript of it.
         self.untranscribed = False
         self.last = "This is the last question" in system
+        # At Panel, read the first entry of the garden index before following up (ADR 0037).
+        index = _between(system, "<garden_index>\n", "</garden_index>")
+        self.labels = [index.split("]", 1)[0].lstrip("[")] if index.startswith("[") else []
         self.session_id = session_id
         self.follow_ups = follow_ups
         self.answer = answer
@@ -213,7 +216,10 @@ class FakeLive:
             self._heard = 0
             await self._queue.put(LiveEvent("candidate_text", text=self.answer))
             if self._asked < self.follow_ups:
-                await self._call("ask_follow_up", question=FAKE_FOLLOW_UP, reason="no outcome")
+                args: dict[str, Any] = {"question": FAKE_FOLLOW_UP, "reason": "no outcome"}
+                if self.labels:
+                    args["labels"] = self.labels
+                await self._call("ask_follow_up", **args)
             else:
                 await self._close()
 

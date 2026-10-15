@@ -98,6 +98,7 @@ def test_a_slow_planner_is_not_waited_for(setup):
     started = time.monotonic()
     assert engine.adapt(before, model=fake, deadline=0.05) == before
     assert time.monotonic() - started < 0.4
+    time.sleep(0.6)  # let the abandoned call finish while the test's logging is still open
 
 
 def test_no_call_after_silence(setup):

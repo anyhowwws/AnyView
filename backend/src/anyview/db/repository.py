@@ -919,73 +919,38 @@ class Repository:
         prompts: fuller than the index, still one entity per block, labels kept
         so answers can cite them."""
         with self.engine.begin() as c:
-            roles, projects, stories, skills, achievements, education, languages, feedback = (
-                self._entities(c, uid)
-            )
+            entities = self._entities(c, uid)
+        roles, projects, stories, skills, achievements, education, languages, feedback = entities
+        blocks = _entity_blocks(entities)
         role_by_id = {r.id: r for r in roles}
-        project_by_id = {p.id: p for p in projects}
         out: list[str] = []
         for r in roles:
-            out.append(
-                f"## [{r.label}] {r.title} at {r.company} ({_span(r.start_date, r.end_date)})"
-            )
-            if r.responsibilities:
-                out.append("Responsibilities:")
-                out.extend(f"  - {line}" for line in r.responsibilities)
-            for p in (p for p in projects if p.role_id == r.id):
-                out.append(_project_block(p))
+            out.append(blocks[r.label])
+            out.extend(blocks[p.label] for p in projects if p.role_id == r.id)
         loose = [p for p in projects if p.role_id not in role_by_id]
         if loose:
             out.append("## Other projects")
-            out.extend(_project_block(p) for p in loose)
-        if stories:
-            out.append("## Stories")
-            for s in stories:
-                out.append(
-                    f"[{s.label}] {s.title} (competencies: {', '.join(s.competencies) or 'none'})\n"
-                    f"  Situation: {s.situation or '—'}\n  Task: {s.task or '—'}\n"
-                    f"  Action: {s.action or '—'}\n  Result: {s.result or '—'}"
-                )
-        if feedback:
-            out.append("## Feedback")
-            for f in feedback:
-                about = ""
-                if f.project_id in project_by_id:
-                    about = f" — on {project_by_id[f.project_id].name}"
-                elif f.role_id in role_by_id:
-                    about = f" — at {role_by_id[f.role_id].title}"
-                when = f" ({f.received_on})" if f.received_on else ""
-                out.append(f"[{f.label}] {f.given_by}{when}{about}: {f.content}")
-        if skills:
-            out.append("## Skills")
-            label_of = {e.id: e.label for e in (*roles, *projects, *achievements)}
-            for k in skills:
-                where = [label_of[i] for i in (*k.project_ids, *k.role_ids) if i in label_of]
-                shown = [label_of[i] for i in k.achievement_ids if i in label_of]
-                used = f" — used in {', '.join(where)}" if where else ""
-                certified = f" — certified by {', '.join(shown)}" if shown else ""
-                out.append(f"[{k.label}] {k.name} — self-rated {k.depth}/5{used}{certified}")
-        if achievements:
-            out.append("## Achievements and certifications")
-            out.extend(
-                f"[{a.label}] {a.title}" + (f" ({a.issuer})" if a.issuer else "")
-                for a in achievements
-            )
-        if education:
-            out.append("## Education")
-            out.extend(
-                f"[{e.label}] {e.institution}"
-                + (f" — {e.qualification}" if e.qualification else "")
-                for e in education
-            )
-        if languages:
-            out.append("## Languages")
-            out.extend(
-                f"[{language.label}] {language.name}"
-                + (f" — {language.proficiency}" if language.proficiency else "")
-                for language in languages
-            )
+            out.extend(blocks[p.label] for p in loose)
+        for heading, group in (
+            ("## Stories", stories),
+            ("## Feedback", feedback),
+            ("## Skills", skills),
+            ("## Achievements and certifications", achievements),
+            ("## Education", education),
+            ("## Languages", languages),
+        ):
+            if group:
+                out.append(heading)
+                out.extend(blocks[e.label] for e in group)
         return "\n".join(out)
+
+    def garden_entries(self, uid: str, labels: list[str]) -> dict[str, str]:
+        """The full blocks of the entries named by label, as `brain_context`
+        renders them. For Harvey's lookup on Live (ADR 0037): unknown labels are
+        simply absent, so a model's guess finds nothing rather than an error."""
+        with self.engine.begin() as c:
+            blocks = _entity_blocks(self._entities(c, uid))
+        return {label: blocks[label] for label in labels if label in blocks}
 
     # --- usage --------------------------------------------------------------------
 
@@ -1588,6 +1553,56 @@ def _excerpt(text: str, limit: int = 80) -> str:
     """A feedback quote can run to a paragraph; the index stays scannable by
     showing only its opening. `brain_context` shows the full text."""
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _entity_blocks(entities: tuple) -> dict[str, str]:
+    """Every live entity's own block, by label: the unit `brain_context` is
+    made of and the unit Harvey can look up. A role's block is its heading and
+    responsibilities; its projects are blocks of their own."""
+    roles, projects, stories, skills, achievements, education, languages, feedback = entities
+    role_by_id = {r.id: r for r in roles}
+    project_by_id = {p.id: p for p in projects}
+    label_of = {e.id: e.label for e in (*roles, *projects, *achievements)}
+    blocks: dict[str, str] = {}
+    for r in roles:
+        lines = [f"## [{r.label}] {r.title} at {r.company} ({_span(r.start_date, r.end_date)})"]
+        if r.responsibilities:
+            lines.append("Responsibilities:")
+            lines.extend(f"  - {line}" for line in r.responsibilities)
+        blocks[r.label] = "\n".join(lines)
+    for p in projects:
+        blocks[p.label] = _project_block(p)
+    for s in stories:
+        blocks[s.label] = (
+            f"[{s.label}] {s.title} (competencies: {', '.join(s.competencies) or 'none'})\n"
+            f"  Situation: {s.situation or '—'}\n  Task: {s.task or '—'}\n"
+            f"  Action: {s.action or '—'}\n  Result: {s.result or '—'}"
+        )
+    for f in feedback:
+        about = ""
+        if f.project_id in project_by_id:
+            about = f" — on {project_by_id[f.project_id].name}"
+        elif f.role_id in role_by_id:
+            about = f" — at {role_by_id[f.role_id].title}"
+        when = f" ({f.received_on})" if f.received_on else ""
+        blocks[f.label] = f"[{f.label}] {f.given_by}{when}{about}: {f.content}"
+    for k in skills:
+        where = [label_of[i] for i in (*k.project_ids, *k.role_ids) if i in label_of]
+        shown = [label_of[i] for i in k.achievement_ids if i in label_of]
+        used = f" — used in {', '.join(where)}" if where else ""
+        certified = f" — certified by {', '.join(shown)}" if shown else ""
+        blocks[k.label] = f"[{k.label}] {k.name} — self-rated {k.depth}/5{used}{certified}"
+    for a in achievements:
+        blocks[a.label] = f"[{a.label}] {a.title}" + (f" ({a.issuer})" if a.issuer else "")
+    for e in education:
+        blocks[e.label] = f"[{e.label}] {e.institution}" + (
+            f" — {e.qualification}" if e.qualification else ""
+        )
+    for language in languages:
+        blocks[language.label] = f"[{language.label}] {language.name}" + (
+            f" — {language.proficiency}" if language.proficiency else ""
+        )
+    return blocks
 
 
 def _project_block(p: Project) -> str:

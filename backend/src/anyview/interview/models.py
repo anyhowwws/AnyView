@@ -88,6 +88,10 @@ class Setup(BaseModel):
     # cite. Present at `panel`, or whenever an ideal answer can be improved by
     # it — the report reads it even when the interviewer does not.
     garden: str | None = Field(default=None, max_length=20_000)
+    # One line per garden entry (`Repository.brain_index`), set beside `garden`
+    # at Panel. On Live, Harvey reads this instead of the whole garden and looks
+    # entries up by label through `ask_follow_up` (ADR 0037).
+    garden_index: str | None = Field(default=None, max_length=12_000)
 
 
 class SetupInput(BaseModel):

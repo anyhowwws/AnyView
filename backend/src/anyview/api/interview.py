@@ -61,6 +61,7 @@ log = logging.getLogger(__name__)
 # A garden can outgrow a prompt. `Setup.garden` caps it; this is where the cut
 # is made, with a line saying so rather than a sentence stopping mid-word.
 MAX_GARDEN_CHARS = 20_000
+MAX_GARDEN_INDEX_CHARS = 12_000
 MAX_JD_CHARS = 8_000
 
 # Every route here requires a signed-in, allow-listed user (api/auth.py).
@@ -153,6 +154,16 @@ def _garden(repo: Any, user_uid: str) -> str | None:
     return _truncate(text, MAX_GARDEN_CHARS, "Your Digital Garden")
 
 
+def _garden_index(repo: Any, user_uid: str) -> str | None:
+    """One line per garden entry, for Harvey on Live (ADR 0037)."""
+    if repo is None:
+        return None
+    index, _ = repo.brain_index(user_uid)
+    if not index.strip():
+        return None
+    return _truncate(index, MAX_GARDEN_INDEX_CHARS, "The garden index")
+
+
 def resolve_setup(
     body: StartRequest, *, user_uid: str, store: UploadStore, model: Model, repo: Any = None
 ) -> Setup:
@@ -190,6 +201,7 @@ def resolve_setup(
             job_description=given.job_description,
             resume_object=given.resume_object,
             garden=_garden(repo, user_uid) if given.difficulty == "panel" else None,
+            garden_index=_garden_index(repo, user_uid) if given.difficulty == "panel" else None,
         )
     except ValidationError as exc:
         first = exc.errors()[0]

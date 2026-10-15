@@ -508,6 +508,24 @@ def _earlier(questions: list[Question], answers: list[Answer], notes: str = "") 
     return "Earlier in this interview (their words, excerpted):\n\n" + "\n\n".join(lines)
 
 
+# At Panel on Live, Harvey reads the garden's index, not the garden (ADR 0037):
+# the instruction is re-billed on every turn, and the index is a fraction of it.
+# He opens an entry by naming its label in `ask_follow_up`, a call he already
+# waits on, so a lookup costs no extra pause.
+LIVE_SOURCES_PANEL_INDEX = (
+    "You have their resume, the job description and <garden_index>: one line for each entry "
+    "in what you learned about them before the interview. You may refer to any of it as things "
+    "you already know, and connect their answer to work it records."
+)
+MAX_LOOKUP_LABELS = 3
+GARDEN_LOOKUP_NOTE = (
+    "Each line of <garden_index> starts with a label: [R1] role, [P2] project, [S3] story, "
+    "[K1] skill, [A1] achievement, [E1] education, [L1] language, [F1] feedback. The index is "
+    "a summary; to read an entry in full before a follow-up, name its label in "
+    f"`ask_follow_up`'s `labels` (at most {MAX_LOOKUP_LABELS})."
+)
+
+
 # One per question after the first, in order. Neutral on purpose: a bridge
 # names what they said, it never judges it.
 BRIDGES = (
@@ -558,8 +576,20 @@ def live_system(
         "acknowledgement, so a closing line here would thank them twice."
     )
     garden = ""
+    lookup = ""
     sources = LIVE_SOURCES[setup.difficulty]
-    if reads_garden(setup):
+    if reads_garden(setup) and setup.garden_index and setup.garden_index.strip():
+        sources = LIVE_SOURCES_PANEL_INDEX
+        garden = (
+            f"\n<garden_index>\n{setup.garden_index.strip()}\n</garden_index>\n\n"
+            f"{GARDEN_LOOKUP_NOTE}\n"
+        )
+        lookup = (
+            " To check an entry first, add its label to `labels`: the result then carries the "
+            "entry under `entries`, and you may sharpen the follow-up with what it says."
+        )
+    elif reads_garden(setup):
+        # A session started before the index existed: the whole garden, as before.
         garden = f"\n<digital_garden>\n{setup.garden.strip()}\n</digital_garden>\n\n{GARDEN_NOTE}\n"
     elif setup.difficulty == "panel":
         sources = LIVE_SOURCES["hiring_manager"]
@@ -597,7 +627,7 @@ How this question goes:
    materials say they did. If so, call `ask_follow_up` with the exact question first, and ask it
    only if the result says it is allowed. One at a time, at most {MAX_PROBES} on this question.
    You may refer to the materials naturally: "Your resume says you led the migration — what
-   was your part, specifically?"
+   was your part, specifically?"{lookup}
 5. Otherwise, or once you are done following up: {closing} Never preview the next question.
 
 The room keeps time, not you: if they go quiet for long or the clock runs out, the room steps in
@@ -627,6 +657,14 @@ LIVE_TOOLS: list[dict] = [
                 "reason": {
                     "type": "string",
                     "description": "Why, in a few words: vague, no outcome, unclear role, …",
+                },
+                "labels": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": (
+                        "Optional, and only when you have <garden_index>: up to three labels "
+                        "(P3, S1) whose full entries you want to read before you ask."
+                    ),
                 },
             },
             "required": ["question", "reason"],

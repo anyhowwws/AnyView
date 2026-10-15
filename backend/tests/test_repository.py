@@ -668,3 +668,16 @@ def test_saved_jobs_are_private_and_most_recent_first(repo):
     # Someone else's id is not a handle on their row: it saves a new one of mine.
     assert _save(repo, job_id=mine.id, job_description="x" * 60).id != mine.id
     assert repo.saved_jobs("uid-other")[0].job_description == JD
+
+
+# --- Harvey's garden lookup (ADR 0037) ----------------------------------------------
+
+
+def test_garden_entries_are_the_blocks_brain_context_shows(repo):
+    _confirm(repo, _with_responsibilities())
+    found = repo.garden_entries(UID, ["P1", "S1", "Z9"])
+    assert set(found) == {"P1", "S1"}  # an unknown label is absent, not an error
+    context = repo.brain_context(UID)
+    assert found["P1"] in context and found["S1"] in context
+    assert found["P1"].startswith("[P1] ") and "Result:" in found["P1"]
+    assert repo.garden_entries("someone-else", ["P1"]) == {}
