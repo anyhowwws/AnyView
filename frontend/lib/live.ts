@@ -13,8 +13,10 @@
 
 import { LIVE_URL, signInToken } from "@/lib/api";
 import {
+  FOLLOW_UP_EXTRA_MS,
   FRESH,
   QUIET_ROOM,
+  budgetAfterFollowUp,
   hearVoice,
   nextCue,
   substantive,
@@ -107,7 +109,9 @@ export interface LiveHandlers {
   onCandidate: (text: string) => void;
   /** Harvey has finished asking: the clock starts. */
   onAsked: () => void;
-  onFollowUp: (question: string) => void;
+  /** Harvey was allowed a follow-up. `extraMs` is the time it adds to the clock
+   *  (0 when the interview is untimed); the screen's countdown adds the same. */
+  onFollowUp: (question: string, extraMs: number) => void;
   /** Play one of Harvey's fixed lines now: a nudge, or the cut-in that ends the question. */
   onInterject: (line: LiveAction) => void;
   onLevel: (level: number) => void;
@@ -225,7 +229,12 @@ export class LiveQuestion {
         this.silence(); // the candidate talked over Harvey: stop him mid-word
         break;
       case "follow_up":
-        if (frame.allowed) this.handlers.onFollowUp(frame.question);
+        if (frame.allowed) {
+          // A follow-up is more talking, so it gets more time (ADR 0040). The
+          // cue clock reads `budgetMs` on every tick, so this takes effect now.
+          this.budgetMs = budgetAfterFollowUp(this.budgetMs);
+          this.handlers.onFollowUp(frame.question, this.budgetMs === null ? 0 : FOLLOW_UP_EXTRA_MS);
+        }
         break;
       case "done": {
         // Let Harvey's last words play out ("thanks for your time") before the

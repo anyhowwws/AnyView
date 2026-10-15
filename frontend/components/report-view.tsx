@@ -28,14 +28,23 @@ export function ReportView({ report, onRestart }: Props) {
         <div className="space-y-1">
           <p className="eyebrow">A clearer picture of your strengths</p>
           <h1>Your next step<span className="text-primary">.</span></h1>
-          <p className="text-sm text-muted-foreground">
-            {report.role} · {report.company} · {report.seniority} · {difficulty}
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Scores and ideal answers are AI-generated from your answers, your resume
-            {report.garden_used && " and your Digital Garden"}. Check the facts before you
-            reuse them.
-          </p>
+          {/* A div, not a p: `.page-heading p` sets every paragraph to 15px, which made the
+              role line and the disclaimer read as one block of grey text. */}
+          <div className="space-y-3">
+            <div>
+              <div className="text-lg font-medium leading-snug text-foreground">{report.role}</div>
+              <div className="text-sm text-muted-foreground">{report.company}</div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge variant="outline" className="capitalize">{report.seniority}</Badge>
+              <Badge variant="outline">{difficulty}</Badge>
+            </div>
+            <div className="max-w-xl border-l-2 border-border pl-3 text-xs leading-relaxed text-muted-foreground">
+              Scores and ideal answers are AI-generated from your answers, your resume
+              {report.garden_used && " and your Digital Garden"}. Check the facts before you
+              reuse them.
+            </div>
+          </div>
         </div>
         {/* print:hidden — the saved PDF is the report, not the controls around it. */}
         <div className="flex flex-wrap gap-2 print:hidden">

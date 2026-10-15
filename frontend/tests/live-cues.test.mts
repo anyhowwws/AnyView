@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  FOLLOW_UP_EXTRA_MS,
   FRESH,
   LIVE_DEAD_AIR_MS,
   LIVE_GIVE_UP_MS,
@@ -8,6 +9,7 @@ import {
   MAX_NUDGES,
   QUIET_ROOM,
   VOICE_MS,
+  budgetAfterFollowUp,
   hearVoice,
   nextCue,
   substantive,
@@ -151,4 +153,34 @@ test("a steady hum is learned as the room within a few seconds", () => {
   const { state, voiced } = listen(QUIET_ROOM, 0, 30_000, () => 0.03);
   assert.ok(voiceThreshold(state.room) > 0.03, `threshold ${voiceThreshold(state.room)}`);
   assert.ok((voiced.at(-1) ?? 0) < 5_000, `still a voice at ${voiced.at(-1)}`);
+});
+
+
+// --- A follow-up adds time (ADR 0040) ---------------------------------------------
+
+test("a follow-up extends a timed budget, and never an untimed one", () => {
+  assert.equal(budgetAfterFollowUp(120_000), 120_000 + FOLLOW_UP_EXTRA_MS);
+  assert.equal(budgetAfterFollowUp(null), null);
+});
+
+test("two follow-ups are not cut off at the planned seconds", () => {
+  const state: CueState = { ...FRESH, askedAt: 0, lastSoundAt: 0 };
+  let budgetMs: number | null = 120_000;
+  const talking = () => ({ spoke: true });
+  // Answering up to the original deadline, then Harvey follows up twice.
+  let out = run(state, 0, 119_750, { budgetMs }, talking);
+  assert.deepEqual(out.actions, []);
+  budgetMs = budgetAfterFollowUp(budgetMs);
+  budgetMs = budgetAfterFollowUp(budgetMs);
+  // Still going 119 s later, past the 120 s the question started with.
+  out = run(out.state, 120_000, 120_000 + 119_000, { budgetMs }, talking);
+  assert.deepEqual(out.actions, []);
+  // The extended budget is a real deadline, not an open door.
+  out = run(out.state, 120_000 + 119_000, 120_000 + 2 * FOLLOW_UP_EXTRA_MS + 1_000, { budgetMs }, talking);
+  assert.deepEqual(out.actions.map(([, action]) => action), ["time_up"]);
+});
+
+test("without the extension the same answer is cut at the planned time", () => {
+  const out = run({ ...FRESH, askedAt: 0, lastSoundAt: 0 }, 0, 125_000, TIMED, () => ({ spoke: true }));
+  assert.deepEqual(out.actions.map(([, action]) => action), ["time_up"]);
 });

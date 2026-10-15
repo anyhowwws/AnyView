@@ -100,6 +100,17 @@ export const FRESH: CueState = {
   ended: false,
 };
 
+/** Time a follow-up adds to the question's clock (ADR 0040). Without it, the
+ *  planned seconds had to cover the answer, Harvey asking, and up to two more
+ *  answers, so a second follow-up could be cut off mid-sentence. */
+export const FOLLOW_UP_EXTRA_MS = 90_000;
+
+/** The question's budget once Harvey has been allowed a follow-up. An untimed
+ *  interview has no budget to extend. */
+export function budgetAfterFollowUp(budgetMs: number | null): number | null {
+  return budgetMs === null ? null : budgetMs + FOLLOW_UP_EXTRA_MS;
+}
+
 export interface CueLimits {
   /** The question's budget in ms, or null when the interview is untimed. */
   budgetMs: number | null;

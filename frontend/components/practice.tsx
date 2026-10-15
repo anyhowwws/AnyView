@@ -189,24 +189,34 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     held.current = null; // a new question brings a new clock
   }, [question.id]);
 
+  // When the countdown reaches zero, as a ref so a follow-up can move it (ADR 0040).
+  const deadlineAt = useRef(0);
+
   useEffect(() => {
     if (!answering) {
       setRemaining(null);
       return;
     }
-    const deadline = performance.now() + (held.current ?? question.seconds * 1000);
-    setRemaining(Math.ceil((deadline - performance.now()) / 1000));
+    deadlineAt.current = performance.now() + (held.current ?? question.seconds * 1000);
+    setRemaining(Math.ceil((deadlineAt.current - performance.now()) / 1000));
     const tick = setInterval(() => {
-      const left = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
+      const left = Math.max(0, Math.ceil((deadlineAt.current - performance.now()) / 1000));
       setRemaining(left);
       if (left === 0) clearInterval(tick);
     }, 250);
     return () => {
       clearInterval(tick);
-      held.current = Math.max(0, deadline - performance.now());
+      held.current = Math.max(0, deadlineAt.current - performance.now());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answering, question.id]);
+
+  /** Harvey is following up: give the question more time, on the screen's
+   *  countdown as well as in the cue clock that actually ends it (ADR 0040). */
+  function extendClock(extraMs: number) {
+    deadlineAt.current += extraMs;
+    setRemaining(Math.max(0, Math.ceil((deadlineAt.current - performance.now()) / 1000)));
+  }
 
   // Once per question. Without this a failed send looped: `busy` pauses the
   // clock, the pause holds 0 s, resuming sets `remaining` to 0 again, and that
@@ -455,6 +465,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           session={session}
           seconds={timed ? question.seconds : null}
           last={last}
+          onExtend={extendClock}
           onAsked={() => {
             setStreaming(false);
             onSpoken(question.id, question.text);
