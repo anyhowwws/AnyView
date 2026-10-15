@@ -121,6 +121,13 @@ variable "allowed_emails" {
   sensitive   = true
 }
 
+variable "alert_emails" {
+  description = "Emails that get a notification on every sign-up (ADR 0042). Empty creates no alert."
+  type        = list(string)
+  default     = []
+  sensitive   = true
+}
+
 variable "local_signers" {
   description = "IAM members allowed to sign upload URLs as the API service account from a laptop, e.g. [\"user:you@example.com\"]. roles/owner does not include signBlob. Empty in CI/production."
   type        = list(string)

@@ -37,6 +37,12 @@ Log-based metrics (`infra/monitoring.tf`):
 - The "AnyView usage" dashboard shows a 7-day total per activity and daily
   bars for activity and model calls. `terraform output usage_dashboard_url`.
 
+A log-match alert policy emails `alert_emails` (GitHub variable
+`TF_ALERT_EMAILS`, a JSON list) on each `signup` line, at most one email per
+5 minutes (the shortest rate limit Cloud Monitoring allows); an empty list
+creates no channel and no policy. The email says that someone signed up, not
+who: the identity is in the Identity Platform users list.
+
 Lines carry no email, uid or text: logs outlive an erased account (ADR 0018).
 
 ## Consequences
