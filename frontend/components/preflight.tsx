@@ -117,8 +117,8 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
         <h1 className="text-2xl font-semibold tracking-tight">Let&rsquo;s get the room ready.</h1>
         <p className="text-sm text-muted-foreground">
           {voice
-            ? "This is a spoken interview. Check you can hear Harvey, and that Harvey can hear you, while the interviewer reads your resume."
-            : "You'll answer by typing. The interviewer is reviewing your profile."}
+            ? "This is a spoken interview. Check you can hear Harvey, and that Harvey can hear you, while Harvey reads your resume."
+            : "You'll answer by typing. Harvey is reviewing your profile."}
         </p>
       </header>
 
@@ -181,13 +181,13 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
         <li data-state={ready ? "done" : error ? "failed" : "working"}>
           <StepIcon state={ready ? "done" : error ? "failed" : "working"} icon={<ScrollText />} />
           <div>
-            <strong>Interviewer</strong>
+            <strong>Harvey</strong>
             <span>
               {ready
-                ? "Interviewer has reviewed your profile and is ready to begin."
+                ? "Harvey has reviewed your profile and is ready to begin."
                 : error
                   ? error
-                  : "Interviewer is reviewing your profile…"}
+                  : "Harvey is reviewing your profile…"}
             </span>
           </div>
         </li>
