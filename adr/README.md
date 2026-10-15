@@ -61,3 +61,4 @@ record of having been wrong is the useful part.
 | [0038](0038-garden-embeddings-embedded-first.md) | Garden embeddings: four kinds, 768 dimensions, embedded before the write | Accepted |
 | [0039](0039-the-report-fails-fast-and-falls-back.md) | The report fails fast and falls back; transcription moves to the fast model | Accepted |
 | [0040](0040-a-follow-up-adds-time.md) | A follow-up adds time to the question's clock | Accepted |
+| [0041](0041-recoverable-audio.md) | Recoverable audio: a fresh context on retry and on device change, and failures on screen | Accepted |

@@ -64,6 +64,17 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   // mounts, so a clip from the last question plays out under the next (ADR 0028).
   const harvey = useRef<VoicePlayer | null>(null);
   if (harvey.current === null && typeof window !== "undefined") harvey.current = harveyVoice();
+
+  useEffect(() => {
+    // A clip that will not play used to fail only in the console (ADR 0041).
+    const player = harvey.current;
+    if (!player) return;
+    player.onError = () =>
+      setVoiceNote("Harvey's voice didn't play. The question is on screen; reload the page if it keeps happening.");
+    return () => {
+      if (player.onError) player.onError = null;
+    };
+  }, []);
   // Which (question, attempt) the Live conversation was opened for.
   const liveKey = useRef<string | null>(null);
 

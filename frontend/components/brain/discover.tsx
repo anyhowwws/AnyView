@@ -22,7 +22,9 @@ import {
   listen,
   microphoneSupported,
   QUESTION,
+  refreshAudioIfDevicesChanged,
   releaseMicrophone,
+  resetAudio,
   type ListenHandle,
 } from "@/lib/voice";
 
@@ -76,6 +78,20 @@ export function Discover({ brain, onOpen }: Props) {
   // Bumped whenever Donna is cut off. A clip still arriving for an older
   // reading checks it and stays silent, so "Stop" really stops her.
   const utterance = useRef(0);
+  // A clip failed to play: the next click that plays Donna rebuilds the page's
+  // audio first, the way a fresh window did (ADR 0041).
+  const audioFailed = useRef(false);
+
+  /** Before a click plays Donna: rebuild the audio if it failed last time, or if
+   *  headphones came or went since it was made. */
+  function freshAudio() {
+    if (audioFailed.current) {
+      audioFailed.current = false;
+      resetAudio();
+    } else {
+      refreshAudioIfDevicesChanged();
+    }
+  }
   // Shows the latest answer's held-back text now (`holdText`); a no-op once shown.
   const holding = useRef<(() => void) | null>(null);
   const listening = useRef<ListenHandle | null>(null);
@@ -110,6 +126,13 @@ export function Discover({ brain, onOpen }: Props) {
     let complete = true;
     setPlaying(index);
     voice.onFinished = () => setPlaying((p) => (p === index ? null : p));
+    voice.onError = () => {
+      audioFailed.current = true;
+      setPlaying((p) => (p === index ? null : p));
+      setVoiceNote(
+        "Donna's voice didn't play. Her answer is on screen; press Read aloud to try again.",
+      );
+    };
     return {
       speech: {
         onAudio: (b64: string) => {
@@ -202,6 +225,7 @@ export function Discover({ brain, onOpen }: Props) {
       return;
     }
     setVoiceNote(null);
+    freshAudio();
     const voice = donnaVoice();
     try {
       // This click is the user gesture that lets the page play Donna at all.
@@ -258,6 +282,7 @@ export function Discover({ brain, onOpen }: Props) {
     // This click is also what lets the page play her answer. If the browser
     // refuses, the question still goes through and the answer stays written.
     let answerAloud = true;
+    freshAudio();
     try {
       await donnaVoice().enable();
     } catch {
