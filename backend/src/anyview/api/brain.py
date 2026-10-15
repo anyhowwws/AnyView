@@ -4,6 +4,7 @@ allow-listed user; every repository call is scoped by that user's uid."""
 from __future__ import annotations
 
 import logging
+import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -17,7 +18,8 @@ from anyview.brain.discover import DiscoverRequest, ReadAloudRequest, answer, re
 from anyview.brain.ingest import IngestFailed, check_upload, propose_for, read_upload
 from anyview.brain.manual import BadEntry, patch_for, source_text
 from anyview.brain.models import Brain, Event, IngestJob, Patch, Proposal, RawDump
-from anyview.db.repository import Conflict, NotFound, Repository
+from anyview.db.repository import Conflict, Embedder, NotFound, Repository
+from anyview.llm.adapter import Model
 from anyview.tasks import QueueError, TaskQueue
 
 log = logging.getLogger(__name__)
@@ -30,6 +32,17 @@ def get_repository() -> Repository:  # overridden in main.py and tests
 
 
 RepoDep = Annotated[Repository, Depends(get_repository)]
+
+
+def embedder(model: Model) -> Embedder:
+    """The model's `embed` for one garden write (ADR 0038). Every entry a write
+    changes is embedded before it is saved; if that fails, nothing is saved and
+    the app's ModelError handler answers 503."""
+    session_id = f"garden-{uuid.uuid4().hex[:12]}"  # names this write's usage rows
+    return Embedder(
+        model=getattr(model, "embedding_model", model.model),
+        embed=lambda texts: model.embed(texts, session_id=session_id),
+    )
 
 
 def get_queue() -> TaskQueue:  # overridden in main.py and tests
@@ -167,10 +180,10 @@ def list_proposals(user: CurrentUser, repo: RepoDep) -> list[Proposal]:
 
 @router.post("/proposals/{proposal_id}/confirm", response_model=EventOut)
 def confirm_proposal(
-    proposal_id: str, body: ConfirmRequest, user: CurrentUser, repo: RepoDep
+    proposal_id: str, body: ConfirmRequest, user: CurrentUser, repo: RepoDep, model: ModelDep
 ) -> EventOut:
     try:
-        event = repo.confirm_proposal(user.uid, proposal_id, body.patch)
+        event = repo.confirm_proposal(user.uid, proposal_id, body.patch, embed=embedder(model))
     except NotFound as exc:
         raise HTTPException(404, "No such proposal.") from exc
     except Conflict as exc:
@@ -193,14 +206,16 @@ Kind = Literal[
 
 
 @router.post("/entities/{kind}", response_model=EventOut)
-def add_entity(kind: Kind, body: EditRequest, user: CurrentUser, repo: RepoDep) -> EventOut:
+def add_entity(
+    kind: Kind, body: EditRequest, user: CurrentUser, repo: RepoDep, model: ModelDep
+) -> EventOut:
     """Add one entry from a form, with no model call and no review (ADR 0022).
     The form's text becomes the dump the entry points back to."""
     repo.ensure_user(user.uid, user.email)
     text = source_text(kind, body.fields)
     try:
         patch = patch_for(kind, body.fields, evidence=text)
-        event = repo.add_entry(user.uid, patch, text)
+        event = repo.add_entry(user.uid, patch, text, embed=embedder(model))
     except BadEntry as exc:
         raise HTTPException(422, str(exc)) from exc
     except Conflict as exc:
@@ -210,10 +225,15 @@ def add_entity(kind: Kind, body: EditRequest, user: CurrentUser, repo: RepoDep) 
 
 @router.patch("/entities/{kind}/{entity_id}", response_model=EventOut)
 def edit_entity(
-    kind: Kind, entity_id: str, body: EditRequest, user: CurrentUser, repo: RepoDep
+    kind: Kind,
+    entity_id: str,
+    body: EditRequest,
+    user: CurrentUser,
+    repo: RepoDep,
+    model: ModelDep,
 ) -> EventOut:
     try:
-        event = repo.edit_entity(user.uid, kind, entity_id, body.fields)
+        event = repo.edit_entity(user.uid, kind, entity_id, body.fields, embed=embedder(model))
     except NotFound as exc:
         raise HTTPException(404, f"No such {kind}.") from exc
     except Conflict as exc:
@@ -222,9 +242,11 @@ def edit_entity(
 
 
 @router.delete("/entities/{kind}/{entity_id}", response_model=EventOut)
-def retire_entity(kind: Kind, entity_id: str, user: CurrentUser, repo: RepoDep) -> EventOut:
+def retire_entity(
+    kind: Kind, entity_id: str, user: CurrentUser, repo: RepoDep, model: ModelDep
+) -> EventOut:
     try:
-        event = repo.retire_entity(user.uid, kind, entity_id)
+        event = repo.retire_entity(user.uid, kind, entity_id, embed=embedder(model))
     except NotFound as exc:
         raise HTTPException(404, f"No such {kind}.") from exc
     return EventOut(event=event, brain=repo.brain(user.uid))

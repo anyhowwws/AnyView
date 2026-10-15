@@ -23,7 +23,7 @@ record of having been wrong is the useful part.
 |---|-------|--------|
 | [0001](0001-gcp-over-aws.md) | GCP over AWS | Accepted, amended by 0023 |
 | [0002](0002-postgres-over-firestore.md) | Cloud SQL for PostgreSQL over Firestore | Accepted |
-| [0003](0003-retrieval-over-user-authored-brain.md) | Retrieval over the user-authored brain (supersedes the earlier no-RAG decision) | Accepted |
+| [0003](0003-retrieval-over-user-authored-brain.md) | Retrieval over the user-authored brain (supersedes the earlier no-RAG decision) | Accepted, amended by 0038 |
 | [0004](0004-llm-access-via-vertex-ai.md) | LLM access via Vertex AI, IAM-governed | Superseded by 0007 (model); access decision stands |
 | [0005](0005-hand-rolled-sse-streaming.md) | Hand-rolled server-sent events over a streaming SDK | Accepted, amended by 0006 and 0031 |
 | [0006](0006-browser-to-cloud-run-direct.md) | Browser talks to Cloud Run directly, not through Firebase Hosting | Accepted |
@@ -37,7 +37,7 @@ record of having been wrong is the useful part.
 | [0014](0014-interview-setup-situation-not-sources.md) | Interview setup describes a situation, not a set of sources | Accepted, amended by 0031 |
 | [0015](0015-resume-re-ingestion-deltas.md) | Re-ingesting a resume: suppress what has not changed | Accepted |
 | [0016](0016-voice-first-and-the-clock.md) | Speaking by default; a per-question clock and an opener | Accepted |
-| [0017](0017-discover-whole-garden-before-retrieval.md) | Discover: ask Donna about the garden, whole garden before retrieval | Accepted |
+| [0017](0017-discover-whole-garden-before-retrieval.md) | Discover: ask Donna about the garden, whole garden before retrieval | Accepted, amended by 0038 |
 | [0018](0018-erasing-an-account.md) | Erasing an account: the one delete the event log allows | Accepted |
 | [0019](0019-sectioned-extraction-and-evidenced-links.md) | Sectioned extraction, evidenced skill links, and roles that carry responsibilities | Accepted, amended by 0034 |
 | [0020](0020-certifications-evidence-skills.md) | Certifications evidence skills | Accepted |
@@ -58,3 +58,4 @@ record of having been wrong is the useful part.
 | [0035](0035-harveys-fixed-lines-in-his-live-voice.md) | Harvey's fixed lines in his Live voice, in several wordings | Accepted |
 | [0036](0036-adaptive-planning-and-the-carry-over-note.md) | Adaptive planning between questions, and the carry-over note | Accepted |
 | [0037](0037-harvey-looks-the-garden-up-on-live.md) | At Panel, Harvey reads the garden's index on Live and looks entries up | Accepted |
+| [0038](0038-garden-embeddings-embedded-first.md) | Garden embeddings: four kinds, 768 dimensions, embedded before the write | Accepted |

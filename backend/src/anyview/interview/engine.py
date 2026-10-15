@@ -287,7 +287,13 @@ def adapt(session: Session, *, model: Model, deadline: float = ADAPT_DEADLINE_S)
 
 
 def _score_one(
-    session: Session, system: str, question: Question, answer: Answer, *, model: Model
+    session: Session,
+    system: str,
+    question: Question,
+    answer: Answer,
+    *,
+    model: Model,
+    relevant: str = "",
 ) -> QuestionReport:
     """Two structured calls for one answer: the rubric score, and the ideal
     answer grounded in whatever record the setup carries. Neither reads the
@@ -307,7 +313,7 @@ def _score_one(
         )
         ideal_reply = model.generate(
             system=system,
-            user=ideal_user(question, session.setup),
+            user=ideal_user(question, session.setup, relevant),
             session_id=session.session_id,
             call="ideal",
             output_schema=IDEAL_SCHEMA,
@@ -351,30 +357,44 @@ def begin_scoring(session: Session) -> Report:
     )
 
 
-def score_as_ready(session: Session, *, model: Model) -> Iterator[tuple[int, QuestionReport]]:
+def score_as_ready(
+    session: Session, *, model: Model, relevant: dict[int, str] | None = None
+) -> Iterator[tuple[int, QuestionReport]]:
     """Score every answer concurrently and yield `(index, item)` as each one
     finishes — in finishing order, not question order. Each takes 20–40 s on
     the model and none depends on another, so the wall time is the slowest
     answer's, and a caller can show the first result long before the last.
-    The SDK client is thread-safe. Call `begin_scoring` first."""
+    The SDK client is thread-safe. Call `begin_scoring` first.
+
+    `relevant` maps a question id to the garden entries nearest it, for a
+    garden too big to read whole (ADR 0038)."""
+    relevant = relevant or {}
     system = session_system(session.setup)
     pairs = list(zip(session.questions, session.answers, strict=True))
     with ThreadPoolExecutor(max_workers=len(pairs)) as pool:
         # future → its question's position, so a result can be put back in place.
         futures = {
-            pool.submit(_score_one, session, system, question, answer, model=model): i
+            pool.submit(
+                _score_one,
+                session,
+                system,
+                question,
+                answer,
+                model=model,
+                relevant=relevant.get(question.id, ""),
+            ): i
             for i, (question, answer) in enumerate(pairs)
         }
         for future in as_completed(futures):
             yield futures[future], future.result()
 
 
-def finish(session: Session, *, model: Model) -> Report:
+def finish(session: Session, *, model: Model, relevant: dict[int, str] | None = None) -> Report:
     """wrap → score → report, all at once: `score_as_ready` collected back into
     question order."""
     report = begin_scoring(session)
     items: list[QuestionReport | None] = [None] * len(session.questions)
-    for i, item in score_as_ready(session, model=model):
+    for i, item in score_as_ready(session, model=model, relevant=relevant):
         items[i] = item
     # The transitions are checked, not stored: the browser owns the session.
     _move(_move(session, State.SCORE), State.REPORT)

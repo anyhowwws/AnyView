@@ -25,11 +25,11 @@ writes simple scripts). So:
 | Cloud | GCP | 0001 |
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
 | LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028). **Gemini Live** (`LIVE_MODEL_ID`, regional: `LIVE_REGION`) runs each spoken question as a conversation with follow-ups (ADR 0031); Vertex AI (location `global` for everything else) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
-| Embeddings (Phase 2) | Vertex `gemini-embedding-2` (listed for this project). Same project, same IAM, same identity | 0003 |
+| Embeddings | Vertex `gemini-embedding-2` (`EMBEDDING_MODEL_ID`), 768 dimensions, one request per text (a list comes back as ONE vector). Project, story, achievement and feedback; embedded before the write that changes them. Same project, same IAM, same identity | 0003, 0038 |
 | Voice | **Gemini Live** for a spoken interview: one session per question, relayed over `WS /interview/live` (ADR 0031); the turn-based path below is its fallback. **Gemini TTS on Vertex** for Harvey, the interviewer, on that fallback path (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`) and for Donna in Discover when a question is asked out loud or an answer read aloud (`DONNA_VOICE`, default `Kore`, `discover.DONNA_DELIVERY`); answers and spoken questions recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default in an interview; typing is the default in Discover**, and a question asked out loud is answered out loud (no mode switch); Harvey's interruptions are fixed lines from `/interview/say`, read aloud by Live in his interviewer voice (TTS if Live fails), cached per instance, several wordings each, rotated by the browser (ADR 0035) | 0013, 0016, 0030, 0031, 0033, 0035 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
-| Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL | 0003 |
+| Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL (`Repository.search_garden`) | 0003, 0038 |
 | Frontend | Next.js App Router, TS, Tailwind v4, shadcn/ui, Framer Motion; static export → Firebase Hosting (static files only) | brief |
 | Files | Cloud Storage bucket `<project>-uploads`, `uploads/<uid>/…`, V4 signed PUT URLs (never transit the API); PDF read by the model, DOCX by `python-docx`. Resumes **and** job descriptions take the same path; a job can also be a link the API fetches | 0010, 0014, 0027 |
 | Async | **Cloud Tasks** queue `anyview-ingest` → private Cloud Run service `anyview-worker` (same image, `APP_MODULE=anyview.worker:app`, invoked only by `anyview-tasks` via OIDC). Ingestion is a job row the browser polls | brief, 0034 |
@@ -104,6 +104,11 @@ Backend modules:
   extraction, and recorded answer → transcript (`audio_to_text`).
 - `anyview/db/{connection,migrate,repository}.py` — engine (connector + IAM auth, or DATABASE_URL), numbered SQL migrations run at startup, and **the only file that runs SQL**: app-meaningful methods over an event log + projection (ADR 0011).
   `active_resume` / `set_active_resume` are the resume on file; `dump_with_text` is the re-upload no-op check.
+  Embeddings (ADR 0038): `confirm_proposal`/`add_entry`/`edit_entity`/`retire_entity` take `embed=Embedder`;
+  `_write` dry-runs the write (rolled back), embeds every stale text with no transaction open, then writes and
+  stores vectors matched by text hash (409 if the garden changed meanwhile). `entity_embeddings` has no FK to the
+  entities on purpose (`rebuild` replays them). Changing `_embedding_texts` means bumping `EMBED_RENDER_VERSION`.
+  The report's ideal answers search the garden only once it is past `MAX_GARDEN_CHARS` (`api/interview.py:_relevant`).
 - `anyview/brain/{models,extract}.py` — Patch drafts with verbatim evidence, the brain as read, coverage; the dump → Patch pipeline
   (ADR 0019): segment → extract per section in parallel → `merge` → flag drafts whose quote is missing as `unverified`
   (never dropped silently) → link skills. `drop_unchanged` keeps drafts restating already-confirmed entities out of the
@@ -175,6 +180,7 @@ createdb anyview_test && createdb anyview_dev                               # on
 TEST_DATABASE_URL=postgresql+psycopg://localhost/anyview_test .venv/bin/pytest   # DB tests run instead of skipping
 DATABASE_URL=postgresql+psycopg://localhost/anyview_dev .venv/bin/python -m anyview.db.migrate
 GOOGLE_CLOUD_PROJECT=anyapps-anyview DB_OWNER_IAM_USER=<you> .venv/bin/python scripts/db_bootstrap.py  # once per Cloud SQL instance
+GOOGLE_CLOUD_PROJECT=anyapps-anyview DB_INSTANCE=<p:r:i> DB_IAM_USER=<you> .venv/bin/python scripts/embed_garden.py  # backfill vectors (ADR 0038)
 
 # infra
 cd infra/bootstrap && terraform init && terraform apply         # once
@@ -229,9 +235,9 @@ terraform plan                                                   # terraform.tfv
 (0011): capture, review queue, event-sourced projection, coverage heatmap,
 `/brain` screen, Discover (0017), and the brain as an interview source. Setup now describes a
 situation rather than a set of sources (0014), and a replaced resume queues
-only what changed (0015). Ingestion runs on Cloud Tasks (0034). Phase 2 next: embeddings
-(`gemini-embedding-2`), hybrid retrieval, golden
-retrieval test set.
+only what changed (0015). Ingestion runs on Cloud Tasks (0034). Phase 2 under way: embeddings and hybrid search are in (0038)
+and back the report once a garden outgrows `MAX_GARDEN_CHARS`; Harvey looks entries up by label (0037).
+Still to come: Discover's search past its threshold, the golden retrieval test set (deferred).
 
 ## Gotchas
 

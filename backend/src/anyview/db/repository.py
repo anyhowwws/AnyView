@@ -17,7 +17,7 @@ import datetime as dt
 import hashlib
 import json
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -60,6 +60,32 @@ TABLE: dict[EntityKind, str] = {
 }
 
 
+# Garden search (ADR 0038): which kinds get an embedding, and the version of
+# how each renders to text. Bump the version when `_embedding_texts` changes:
+# every entity is then re-embedded on its next write (or by the backfill).
+EMBEDDED_KINDS = ("project", "story", "achievement", "feedback")
+EMBED_RENDER_VERSION = 1
+
+
+@dataclass(frozen=True)
+class Embedder:
+    """How a write gets its vectors (ADR 0038): the model's `embed`, bound to
+    a session id by the caller, and the model's name for the row."""
+
+    model: str
+    embed: Callable[[list[str]], list[list[float]]]
+
+
+@dataclass(frozen=True)
+class Found:
+    """One entity a garden search returned, nearest first."""
+
+    label: str
+    kind: str
+    text: str  # the block `brain_context` shows for it
+    distance: float  # cosine distance: 0 is the same direction, 2 the opposite
+
+
 # Every table holding a user's rows, children before parents (ADR 0018).
 # skill_evidence goes with skills and projects (ON DELETE CASCADE). A new
 # table with a user_id belongs here too; a test fails if one is missed.
@@ -78,6 +104,7 @@ ERASE_ORDER = (
     "raw_dumps",
     "usage_events",
     "saved_jobs",
+    "entity_embeddings",
     "users",
 )
 
@@ -149,6 +176,11 @@ class Repository:
         self.engine = engine
 
     # --- users ---------------------------------------------------------------
+
+    def user_ids(self) -> list[str]:
+        """Every user's uid. For one-off maintenance (`scripts/embed_garden.py`)."""
+        with self.engine.begin() as c:
+            return [r[0] for r in c.execute(_q("SELECT uid FROM users ORDER BY created_at"))]
 
     def ensure_user(self, uid: str, email: str) -> None:
         with self.engine.begin() as c:
@@ -629,13 +661,17 @@ class Repository:
         if n == 0:
             raise NotFound("pending proposal")
 
-    def confirm_proposal(self, uid: str, proposal_id: str, patch: Patch) -> Event:
+    def confirm_proposal(
+        self, uid: str, proposal_id: str, patch: Patch, *, embed: Embedder | None = None
+    ) -> Event:
         """The user reviewed (and possibly edited) the patch. Resolve its keys and
         labels to real ids, append one event, apply it, and close the proposal —
-        all in one transaction, so the log and the projection cannot disagree."""
+        all in one transaction, so the log and the projection cannot disagree.
+        With `embed`, the entities it changes are embedded first (ADR 0038)."""
         if patch.is_empty():
             raise Conflict("Nothing left to add. Discard the proposal instead.")
-        with self.engine.begin() as c:
+
+        def work(c: Connection) -> Event:
             row = c.execute(
                 _q(
                     "SELECT raw_dump_id, status FROM proposals "
@@ -654,17 +690,23 @@ class Repository:
                 _q("UPDATE proposals SET status = 'confirmed', resolved_at = now() WHERE id = :id"),
                 {"id": proposal_id},
             )
-        return event
+            return event
 
-    def add_entry(self, uid: str, patch: Patch, text: str) -> Event:
+        return self._write(uid, work, embed)
+
+    def add_entry(
+        self, uid: str, patch: Patch, text: str, *, embed: Embedder | None = None
+    ) -> Event:
         """An entry the user typed into a form (ADR 0022). The form's text is
         stored as a raw dump, which is the entry's provenance, and the patch
         is confirmed against it in the same transaction. No proposal: there
         was nothing for the user to review that they had not just written."""
         if patch.is_empty():
             raise Conflict("Nothing to add.")
+        # Fixed outside `work`, so the dry run and the write make the same ids.
         dump_id = str(uuid.uuid4())
-        with self.engine.begin() as c:
+
+        def work(c: Connection) -> Event:
             c.execute(
                 _q(
                     "INSERT INTO raw_dumps (id, user_id, kind, text, object_name, text_sha256) "
@@ -673,6 +715,8 @@ class Repository:
                 {"id": dump_id, "uid": uid, "text": text, "sha": text_sha256(text)},
             )
             return self._confirm(c, uid, patch, dump_id, None)
+
+        return self._write(uid, work, embed)
 
     def _confirm(
         self, c: Connection, uid: str, patch: Patch, dump_id: str, proposal_id: str | None
@@ -705,28 +749,186 @@ class Repository:
     # --- direct edits ----------------------------------------------------------
 
     def edit_entity(
-        self, uid: str, kind: EntityKind, entity_id: str, fields: dict[str, Any]
+        self,
+        uid: str,
+        kind: EntityKind,
+        entity_id: str,
+        fields: dict[str, Any],
+        *,
+        embed: Embedder | None = None,
     ) -> Event:
         unknown = set(fields) - EDITABLE[kind]
         if unknown:
             raise Conflict(f"Cannot edit {', '.join(sorted(unknown))} on a {kind}.")
         if not fields:
             raise Conflict("Nothing to change.")
-        with self.engine.begin() as c:
+
+        def work(c: Connection) -> Event:
             self._require_live(c, uid, kind, entity_id)
             self._require_link_targets(c, uid, fields)
             payload = {"kind": kind, "id": entity_id, "fields": fields}
             event = self._append(c, uid, kind="entity_edited", payload=payload)
             _apply(c, uid, event.id, event.kind, payload, event.created_at)
-        return event
+            return event
 
-    def retire_entity(self, uid: str, kind: EntityKind, entity_id: str) -> Event:
-        with self.engine.begin() as c:
+        return self._write(uid, work, embed)
+
+    def retire_entity(
+        self, uid: str, kind: EntityKind, entity_id: str, *, embed: Embedder | None = None
+    ) -> Event:
+        def work(c: Connection) -> Event:
             self._require_live(c, uid, kind, entity_id)
             payload = {"kind": kind, "id": entity_id}
             event = self._append(c, uid, kind="entity_retired", payload=payload)
             _apply(c, uid, event.id, event.kind, payload, event.created_at)
-        return event
+            return event
+
+        return self._write(uid, work, embed)
+
+    # --- embeddings (ADR 0038) ------------------------------------------------------
+
+    def _write(self, uid: str, work: Callable[[Connection], Any], embed: Embedder | None) -> Any:
+        """Run `work` in one transaction. With `embed`, embed first (ADR 0038):
+
+        1. a dry run applies `work` in a transaction that is rolled back, to see
+           which entities' text it changes (`_stale`);
+        2. those texts are embedded with no transaction open: a model call does
+           not hold a lock. If it fails, nothing has been written;
+        3. `work` runs for real, and the vectors are stored in the same
+           transaction. If the garden changed in between, so that the texts no
+           longer match, the write is refused rather than store a wrong vector.
+
+        Every entity with a stale or missing vector is embedded, not only the
+        ones this write touched, so the garden heals itself as it is used."""
+        if embed is None:
+            with self.engine.begin() as c:
+                return work(c)
+
+        with self.engine.connect() as c:
+            dry = c.begin()
+            try:
+                work(c)
+                planned = self._stale(c, uid)
+            finally:
+                dry.rollback()
+
+        # Keyed by the text's hash, not the entity id: a new entity gets a fresh
+        # id on each run (`_resolve`), but the same text has the same hash.
+        texts = {sha: text for _, text, sha in planned.values()}
+        shas = list(texts)
+        vectors = dict(zip(shas, embed.embed([texts[h] for h in shas]), strict=True))
+
+        with self.engine.begin() as c:
+            result = work(c)
+            stale = self._stale(c, uid)
+            if any(sha not in vectors for _, _, sha in stale.values()):
+                raise Conflict("Your garden changed while this was saving. Please try again.")
+            self._store_embeddings(c, uid, stale, vectors, embed)
+        return result
+
+    def embed_garden(self, uid: str, embed: Embedder) -> int:
+        """Embed every entity that has no current vector. For the backfill
+        script and after a render-version bump. Returns how many were embedded."""
+        with self.engine.begin() as c:
+            count = len(self._stale(c, uid))
+        if count:
+            self._write(uid, lambda c: None, embed)
+        return count
+
+    def _stale(self, c: Connection, uid: str) -> dict[str, tuple[str, str, str]]:
+        """Live embeddable entities whose stored vector is missing or was made
+        from different text: id → (kind, text, sha256 of the text)."""
+        texts = _embedding_texts(self._entities(c, uid))
+        stored = {
+            str(r[0]): r[1]
+            for r in c.execute(
+                _q(
+                    "SELECT entity_id, text_sha256 FROM entity_embeddings "
+                    "WHERE user_id = :uid AND render_version = :v"
+                ),
+                {"uid": uid, "v": EMBED_RENDER_VERSION},
+            )
+        }
+        stale = {}
+        for entity_id, (kind, text) in texts.items():
+            sha = text_sha256(text)
+            if stored.get(entity_id) != sha:
+                stale[entity_id] = (kind, text, sha)
+        return stale
+
+    def _store_embeddings(
+        self,
+        c: Connection,
+        uid: str,
+        stale: dict[str, tuple[str, str, str]],
+        vectors: dict[str, list[float]],
+        embed: Embedder,
+    ) -> None:
+        """Store each stale entity's vector (`vectors` is keyed by text hash)."""
+        for entity_id, (kind, _, sha) in stale.items():
+            c.execute(
+                _q(
+                    "INSERT INTO entity_embeddings "
+                    "(entity_id, user_id, kind, embedding, text_sha256, render_version, model) "
+                    "VALUES (:id, :uid, :kind, CAST(:vec AS vector), :sha, :v, :model) "
+                    "ON CONFLICT (entity_id) DO UPDATE SET embedding = EXCLUDED.embedding, "
+                    "kind = EXCLUDED.kind, text_sha256 = EXCLUDED.text_sha256, "
+                    "render_version = EXCLUDED.render_version, model = EXCLUDED.model, "
+                    "embedded_at = now()"
+                ),
+                {
+                    "id": entity_id,
+                    "uid": uid,
+                    "kind": kind,
+                    "vec": _vector(vectors[sha]),
+                    "sha": sha,
+                    "v": EMBED_RENDER_VERSION,
+                    "model": embed.model,
+                },
+            )
+        # Retired entities keep no vector. Search ignores them anyway; this
+        # keeps the table to what is live.
+        c.execute(
+            _q(
+                "DELETE FROM entity_embeddings e WHERE e.user_id = :uid AND NOT EXISTS ("
+                + _LIVE_EMBEDDED
+                + " AND live.id = e.entity_id)"
+            ),
+            {"uid": uid},
+        )
+
+    def search_garden(
+        self,
+        uid: str,
+        query: list[float],
+        *,
+        kinds: Iterable[str] = EMBEDDED_KINDS,
+        limit: int = 8,
+    ) -> list[Found]:
+        """The live entities nearest `query`, nearest first (ADR 0003, 0038):
+        filter first (this user, these kinds, live only), then order by cosine
+        distance, in one statement."""
+        with self.engine.begin() as c:
+            rows = c.execute(
+                _q(
+                    "SELECT e.entity_id, e.kind, e.embedding <=> CAST(:q AS vector) AS distance "
+                    "FROM entity_embeddings e "
+                    "WHERE e.user_id = :uid AND e.kind = ANY(:kinds) AND EXISTS ("
+                    + _LIVE_EMBEDDED
+                    + " AND live.id = e.entity_id) "
+                    "ORDER BY distance LIMIT :limit"
+                ),
+                {"uid": uid, "q": _vector(query), "kinds": list(kinds), "limit": limit},
+            ).all()
+            entities = self._entities(c, uid)
+        blocks = _entity_blocks(entities)
+        label_of = {e.id: e.label for group in entities for e in group}
+        found = []
+        for entity_id, kind, distance in rows:
+            label = label_of.get(str(entity_id))
+            if label is not None:
+                found.append(Found(label, kind, blocks[label], float(distance)))
+        return found
 
     def _require_link_targets(self, c: Connection, uid: str, fields: dict[str, Any]) -> None:
         """Every id a link field names must be this user's, live, and of the
@@ -1553,6 +1755,52 @@ def _excerpt(text: str, limit: int = 80) -> str:
     """A feedback quote can run to a paragraph; the index stays scannable by
     showing only its opening. `brain_context` shows the full text."""
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+# The live entities that carry embeddings, as one derived table `live` (id),
+# for an EXISTS that keeps retired entities out of search and storage.
+_LIVE_EMBEDDED = (
+    "SELECT 1 FROM ("
+    "SELECT id FROM projects WHERE user_id = :uid AND retired_at IS NULL UNION ALL "
+    "SELECT id FROM stories WHERE user_id = :uid AND retired_at IS NULL UNION ALL "
+    "SELECT id FROM achievements WHERE user_id = :uid AND retired_at IS NULL UNION ALL "
+    "SELECT id FROM feedback WHERE user_id = :uid AND retired_at IS NULL"
+    ") AS live WHERE true"
+)
+
+
+def _vector(values: list[float]) -> str:
+    """A vector as pgvector's text form, "[0.1,0.2,…]". Sent as text and cast in
+    SQL, so no pgvector client library is needed."""
+    return "[" + ",".join(f"{x:.7g}" for x in values) + "]"
+
+
+def _embedding_texts(entities: tuple) -> dict[str, tuple[str, str]]:
+    """What is embedded for each live project, story, achievement and feedback
+    (ADR 0038): id → (kind, text). The entity's own block without its label
+    (labels move when an entity is retired), led by what it is, plus the role it
+    belongs to. Version `EMBED_RENDER_VERSION`: change this, bump that."""
+    roles, projects, stories, _, achievements, _, _, feedback = entities
+    blocks = _entity_blocks(entities)
+    role_by_id = {r.id: r for r in roles}
+
+    def bare(label: str) -> str:
+        return blocks[label].removeprefix(f"[{label}] ")
+
+    def at(role_id: str | None) -> str:
+        role = role_by_id.get(role_id) if role_id else None
+        return f"\n  At: {role.title}, {role.company}" if role else ""
+
+    texts: dict[str, tuple[str, str]] = {}
+    for p in projects:
+        texts[p.id] = ("project", f"Project: {bare(p.label)}{at(p.role_id)}")
+    for s in stories:
+        texts[s.id] = ("story", f"Story: {bare(s.label)}{at(s.role_id)}")
+    for a in achievements:
+        texts[a.id] = ("achievement", f"{a.kind.capitalize()}: {bare(a.label)}")
+    for f in feedback:
+        texts[f.id] = ("feedback", f"Feedback from {bare(f.label)}")
+    return texts
 
 
 def _entity_blocks(entities: tuple) -> dict[str, str]:

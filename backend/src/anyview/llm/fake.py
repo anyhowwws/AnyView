@@ -1,6 +1,6 @@
 """A scripted stand-in for the real model.
 
-Same four methods as `VertexGemini`, no network, no tokens. Tests use it to
+Same methods as `VertexGemini`, no network, no tokens. Tests use it to
 drive the engine and the API deterministically; `ANYVIEW_FAKE_MODEL=1` runs the
 whole app on it for a browser walk-through that costs nothing.
 
@@ -13,13 +13,17 @@ plausible length instead of a reply, and `live` a scripted conversation (`FakeLi
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import math
+import re
 import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
 from anyview.llm.adapter import (
+    EMBEDDING_DIMENSIONS,
     LIVE_INPUT_RATE,
     LIVE_OUTPUT_RATE,
     PCM_SAMPLE_RATE,
@@ -114,6 +118,21 @@ class FakeModel:
         self._record("speak", session_id, voice, spoken_prompt(text, style))
         seconds = min(len(text) / SPOKEN_CHARS_PER_SECOND, 30)
         return wav(bytes(2 * int(PCM_SAMPLE_RATE * seconds)))
+
+    def embed(self, texts: list[str], *, session_id: str, call: str = "embed") -> list[list[float]]:
+        """A bag of words as a unit vector: texts that share words come out
+        close, so retrieval can be tested without a model (ADR 0038)."""
+        vectors = []
+        for text in texts:
+            self._record(call, session_id, "", text)
+            vector = [0.0] * EMBEDDING_DIMENSIONS
+            for word in re.findall(r"[a-z0-9]+", text.lower()):
+                if len(word) > 2:
+                    digest = hashlib.sha256(word.encode()).digest()
+                    vector[int.from_bytes(digest[:4], "big") % EMBEDDING_DIMENSIONS] += 1.0
+            norm = math.sqrt(sum(x * x for x in vector)) or 1.0
+            vectors.append([x / norm for x in vector])
+        return vectors
 
     def live(
         self,
