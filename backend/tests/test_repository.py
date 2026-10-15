@@ -681,3 +681,12 @@ def test_garden_entries_are_the_blocks_brain_context_shows(repo):
     assert found["P1"] in context and found["S1"] in context
     assert found["P1"].startswith("[P1] ") and "Result:" in found["P1"]
     assert repo.garden_entries("someone-else", ["P1"]) == {}
+
+
+def test_ensure_user_is_new_only_once(repo):
+    """A sign-up is the first ensure_user for a uid (ADR 0042); later calls refresh the email."""
+    assert repo.ensure_user("uid-new", "new@example.com") is True
+    assert repo.ensure_user("uid-new", "renamed@example.com") is False
+    with repo.engine.begin() as c:
+        email = c.execute(sa.text("SELECT email FROM users WHERE uid = 'uid-new'")).scalar_one()
+    assert email == "renamed@example.com"

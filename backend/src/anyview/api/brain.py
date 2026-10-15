@@ -10,6 +10,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from anyview.activity import record
 from anyview.api.auth import CurrentUser, current_user
 from anyview.api.interview import ModelDep, SettingsDep, Transcript
 from anyview.api.sse import stream_response
@@ -140,6 +141,7 @@ def create_job(body: JobRequest, user: CurrentUser, repo: RepoDep, queue: QueueD
         log.error("could not queue ingest job %s: %s", job.id, exc)
         repo.fail_job(job.id, "Donna couldn't start reading. Please try again.", 503)
         raise HTTPException(503, "Donna couldn't start reading. Please try again.") from exc
+    record("garden_upload")
     # An inline queue may already have finished it; read it back either way.
     return repo.job(user.uid, job.id)
 
@@ -268,6 +270,7 @@ def discover(
             422, "Your Digital Garden is empty. Capture something first, then ask Donna about it."
         )
     garden = repo.brain_context(user.uid)
+    record("discover_question")
     return stream_response(
         answer(body, garden=garden, labels=labels, model=model, voice=settings.donna_voice)
     )

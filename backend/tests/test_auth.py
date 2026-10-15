@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from anyview.api import interview
+from anyview.api import auth, interview
 from anyview.config import Settings
 from anyview.llm.fake import FakeModel
 from anyview.main import app
@@ -80,3 +80,17 @@ def test_empty_allow_list_lets_nobody_in(monkeypatch):
 def test_allow_list_is_parsed_and_lowercased(monkeypatch):
     monkeypatch.setenv("ALLOWED_EMAILS", " A@Example.com, b@example.com ,")
     assert Settings.from_env().allowed_emails == frozenset({"a@example.com", "b@example.com"})
+
+
+def test_star_lets_any_verified_account_in(setup, signed_in):
+    """ADR 0041: "*" opens sign-in to any verified Google account, and only verified ones."""
+    app.dependency_overrides[auth.get_settings] = lambda: Settings(
+        project_id="test",
+        vertex_region="global",
+        model_id="m",
+        fast_model_id="m",
+        allowed_emails=frozenset({"*"}),
+    )
+    assert _start(_client("stranger"), setup).status_code == 200
+    assert _start(_client("unverified"), setup).status_code == 403
+    assert _start(_client(None), setup).status_code == 401

@@ -97,7 +97,8 @@ resource "google_cloud_run_v2_service" "api" {
 
 # The browser calls this service directly (ADR 0006), so the invoker must be
 # public. Access control is app-level: every interview route requires a
-# signed-in Google account on the ALLOWED_EMAILS list (ADR 0009). Phase 0 had
+# signed-in Google account on the ALLOWED_EMAILS list, or any one when the list
+# is ["*"] (ADR 0009, 0041). Phase 0 had
 # no public binding because there was no app-level auth to stand behind it.
 resource "google_cloud_run_v2_service_iam_member" "public" {
   name     = google_cloud_run_v2_service.api.name

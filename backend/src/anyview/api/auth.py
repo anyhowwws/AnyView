@@ -3,7 +3,8 @@
 The browser signs in with Google through Firebase Authentication (Identity
 Platform) and sends the resulting ID token as `Authorization: Bearer …`. This
 module verifies that token against Google's public keys and checks the email
-against the allow-list. Nothing here talks to a database; the user is just
+against the allow-list, where `*` lets in any verified Google account (ADR
+0041). Nothing here talks to a database; the user is just
 `(uid, email)` for now — Phase 1's repository will key rows on `uid`.
 
 Verification uses `google-auth`, which is already installed as part of the
@@ -91,7 +92,9 @@ def user_from_token(token: str, verifier: Verifier, settings: Settings) -> User:
     email = str(claims.get("email", "")).lower()
     if not email or not claims.get("email_verified", False):
         raise HTTPException(403, "This account has no verified email address.")
-    if email not in settings.allowed_emails:
+    # "*" opens sign-in to any verified Google account (ADR 0041); an empty
+    # list still lets nobody in.
+    if "*" not in settings.allowed_emails and email not in settings.allowed_emails:
         log.warning("sign-in from an email not on the allow-list: %s", email)
         raise HTTPException(403, "This account isn't on the access list for AnyView.")
 

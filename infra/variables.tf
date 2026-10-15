@@ -115,7 +115,7 @@ variable "cors_origins" {
 }
 
 variable "allowed_emails" {
-  description = "Google account emails allowed past sign-in (ADR 0009). Empty means nobody can start an interview."
+  description = "Google account emails allowed past sign-in (ADR 0009). [\"*\"] lets in any verified Google account (ADR 0041). Empty means nobody can start an interview."
   type        = list(string)
   default     = []
   sensitive   = true
