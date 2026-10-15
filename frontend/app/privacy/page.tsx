@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   description: "What AnyView collects, why, where it is kept and how to erase it.",
 };
 
-const UPDATED = "15 October 2026";
+const UPDATED = "16 October 2026";
 const CONTACT = "anyview@anyapps.cloud";
 
 /** The privacy policy. Public, outside the sign-in gate, so it can be read
@@ -35,12 +35,13 @@ export default function Privacy() {
           <section>
             <h2>What we collect</h2>
             <ul>
-              <li><strong>Your Google account email</strong>, when you sign in, to keep your Digital Garden yours.</li>
+              <li><strong>Your Google account email</strong>, when you sign in, to keep your Digital Garden yours and so we know who uses AnyView.</li>
               <li><strong>What you give Donna:</strong> resumes and job descriptions you upload (PDF or Word), text you paste, and job postings fetched from links you paste.</li>
               <li><strong>Your Digital Garden:</strong> the entries you confirm, with the quote each one came from, and a history of every change you make.</li>
               <li><strong>Jobs you practise for</strong>, saved so you can pick them again.</li>
               <li><strong>Your voice</strong>, when you speak an answer or a question. The microphone is only on during an interview or while you ask Donna something out loud.</li>
               <li><strong>Usage records:</strong> for each AI call, which model ran and how many tokens it used. These never contain what you said or wrote.</li>
+              <li><strong>Activity counts:</strong> how many sign-ups, interviews, questions to Donna and uploads there are, to see how AnyView is used. A count never contains your name, email or anything you said or wrote. When someone new signs up we get an email saying so, without saying who.</li>
               <li><strong>Server logs</strong> of requests, including IP address, kept for up to 30 days to keep the service running and secure.</li>
             </ul>
             <p>
@@ -52,9 +53,10 @@ export default function Privacy() {
           <section>
             <h2>How we use it</h2>
             <p>
-              Only to run AnyView for you: to build and show your Digital Garden, answer your questions
-              about it, plan and run practice interviews, and score them. We do not sell your data, show
-              ads, or share it with anyone except the service provider below.
+              To run AnyView for you: to build and show your Digital Garden, answer your questions
+              about it, plan and run practice interviews, and score them. And to see how AnyView is used,
+              from the counts above. We do not send you marketing email, sell your data, show ads, or
+              share it with anyone except the service provider below.
             </p>
           </section>
 
@@ -90,7 +92,7 @@ export default function Privacy() {
           <section>
             <h2>In your browser</h2>
             <p>
-              AnyView uses no cookies for tracking and no analytics. Your browser keeps your sign-in, the
+              AnyView uses no tracking cookies and no analytics scripts. Your browser keeps your sign-in, the
               interview in progress (until you close the tab) and whether you prefer to speak or type.
             </p>
           </section>
@@ -98,7 +100,7 @@ export default function Privacy() {
           <section>
             <h2>Who can use AnyView</h2>
             <p>
-              Access is by invitation. AnyView is not meant for anyone under 16. Please only upload
+              Anyone with a Google account can sign in. AnyView is not meant for anyone under 16. Please only upload
               material about yourself.
             </p>
           </section>

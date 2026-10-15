@@ -97,8 +97,10 @@ move the apply identity's trust to that environment).
    and their bindings). Merging first would fail: CI cannot use identities that do
    not exist yet.
 2. Set repository variables: `GCP_TF_PLAN_SA`, `GCP_TF_APPLY_SA` (from
-   `terraform output`), `TF_BILLING_ACCOUNT_ID`, `TF_DB_OWNER_IAM_USER`,
-   `TF_ALLOWED_EMAILS` (JSON list), and `TF_LOCAL_SIGNERS` if laptop upload signing
-   should survive (otherwise CI removes that binding).
+   `terraform output`), and `TF_LOCAL_SIGNERS` if laptop upload signing
+   should survive (otherwise CI removes that binding). Set repository **secrets**
+   (ADR 0042: a variable is printed in a public repository's logs, a secret is
+   not): `TF_BILLING_ACCOUNT_ID`, `TF_DB_OWNER_IAM_USER`, `TF_ALLOWED_EMAILS`
+   (JSON list) and `TF_ALERT_EMAILS` (JSON list).
 3. Open a PR. The first plan must say **No changes**. If it does not, `terraform.tfvars`
    sets something that the variables above do not, and applying would change it.

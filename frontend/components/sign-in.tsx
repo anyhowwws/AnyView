@@ -61,8 +61,7 @@ export function SignIn({ configured }: Props) {
       )}
 
       <p className="text-xs text-muted-foreground">
-        Access is by invitation: your Google account needs to be on the list. Your sign-in is
-        used to keep your Digital Garden and practice sessions yours.{" "}
+        Your Google sign-in is used to keep your Digital Garden and practice sessions yours.{" "}
         <Link href="/privacy" className="underline underline-offset-2 hover:text-foreground">
           Privacy policy
         </Link>

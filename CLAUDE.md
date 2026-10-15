@@ -315,7 +315,15 @@ Still to come: Discover's search past its threshold, the golden retrieval test s
   "signed" upload URL back at `PUT /uploads/memory/...`, so the whole voice loop — mic, silence
   detection, upload, transcript — can be walked through locally with no bucket and no tokens.
 - Cloud Run is publicly invokable; the sign-in gate is app-level (ADR 0009). An empty
-  `ALLOWED_EMAILS` lets nobody in — check tfvars before assuming auth is broken.
+  `ALLOWED_EMAILS` lets nobody in — check tfvars before assuming auth is broken. `["*"]` lets in any
+  verified Google account (ADR 0041); switching between the two is the `TF_ALLOWED_EMAILS` secret plus a
+  pipeline run on main, no code change.
+- Personal CI inputs (`TF_BILLING_ACCOUNT_ID`, `TF_DB_OWNER_IAM_USER`, `TF_ALLOWED_EMAILS`,
+  `TF_ALERT_EMAILS`) are GitHub **secrets**, not variables: a step's log prints its env and the repo is
+  meant to go public (ADR 0042). `ci.yml` falls back to a variable of the same name while a secret is
+  missing. A new personal input is a secret and a `sensitive` Terraform variable.
+- `TF_ALERT_EMAILS` gets an email on each sign-up (`infra/monitoring.tf`, at most one per 5 min). The
+  email says someone signed up, not who; who is in the Identity Platform users list.
 - Signed URLs are signed via IAM `signBlob` as `anyview-api@…`. **`roles/owner` does not
   include `signBlob`** — a laptop needs `local_signers = ["user:you@…"]` in tfvars (grants
   `tokenCreator` on the SA) before the real API can issue upload URLs locally. `ANYVIEW_FAKE_MODEL=1`

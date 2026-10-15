@@ -143,6 +143,7 @@ variable "db_tier" {
 variable "db_owner_iam_user" {
   description = "Google account that may log in to the database with IAM auth from a laptop (migrations, tests, break-glass). Usually the project owner."
   type        = string
+  sensitive   = true # an email; kept out of the plan CI posts on a PR
 }
 
 variable "db_password_version" {
