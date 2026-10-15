@@ -174,3 +174,50 @@ resource "google_monitoring_dashboard" "usage" {
 
   depends_on = [google_project_service.enabled]
 }
+
+# An email per sign-up, while traffic is low enough for that to be welcome
+# (ADR 0042). Matches the same `signup` line the dashboard counts. Nothing is
+# created while `alert_emails` is empty.
+resource "google_monitoring_notification_channel" "owner" {
+  # The emails are sensitive, so they stay out of the plan that CI posts on a
+  # PR; how many there are is not, and `count` needs a value it can show.
+  count        = nonsensitive(length(var.alert_emails))
+  display_name = "AnyView alerts ${count.index + 1}"
+  type         = "email"
+  labels = {
+    email_address = var.alert_emails[count.index]
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_monitoring_alert_policy" "signup" {
+  count        = nonsensitive(length(var.alert_emails)) > 0 ? 1 : 0
+  display_name = "AnyView: someone signed up"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "A signup activity line"
+    # A log-match condition fires on each matching entry, rather than on a
+    # metric crossing a threshold, so one sign-up is enough.
+    condition_matched_log {
+      filter = "${local.app_logs} jsonPayload.activity=\"signup\""
+    }
+  }
+
+  alert_strategy {
+    # The shortest gap Cloud Monitoring allows between two notifications of a
+    # log-match policy: sign-ups within 5 minutes of each other share one email.
+    notification_rate_limit {
+      period = "300s"
+    }
+    auto_close = "1800s"
+  }
+
+  documentation {
+    mime_type = "text/markdown"
+    content   = "A new account signed in to AnyView for the first time. Totals: the AnyView usage dashboard (`terraform output usage_dashboard_url`)."
+  }
+
+  notification_channels = google_monitoring_notification_channel.owner[*].id
+}

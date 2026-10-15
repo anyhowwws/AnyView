@@ -37,7 +37,24 @@ Log-based metrics (`infra/monitoring.tf`):
 - The "AnyView usage" dashboard shows a 7-day total per activity and daily
   bars for activity and model calls. `terraform output usage_dashboard_url`.
 
+A log-match alert policy emails `alert_emails` (GitHub secret
+`TF_ALERT_EMAILS`, a JSON list) on each `signup` line, at most one email per
+5 minutes (the shortest rate limit Cloud Monitoring allows); an empty list
+creates no channel and no policy. The email says that someone signed up, not
+who: the identity is in the Identity Platform users list.
+
 Lines carry no email, uid or text: logs outlive an erased account (ADR 0018).
+
+Personal values reach Terraform from GitHub **secrets**, not variables:
+`TF_BILLING_ACCOUNT_ID`, `TF_DB_OWNER_IAM_USER`, `TF_ALLOWED_EMAILS`,
+`TF_ALERT_EMAILS`. A step's log prints its environment, a public repository's
+logs are public, and a secret prints as `***`. `ci.yml` falls back to the old
+variable while a secret is missing, so the switch can happen in any order.
+The Terraform variables holding them are `sensitive`, which keeps them out of
+the plan CI posts on a PR.
+
+The privacy page says what is counted, that counts identify nobody, and that
+the owner is emailed when someone new signs up, without the address.
 
 ## Consequences
 
@@ -46,4 +63,6 @@ Lines carry no email, uid or text: logs outlive an erased account (ADR 0018).
 - Counts are events, not distinct people: two interviews by one person are two.
   Distinct users per period would need a uid label, which is the identifier the
   rule above keeps out.
+- To see *who* signed up, read the Identity Platform users list in the
+  console. It is the list an erasure updates, unlike an inbox.
 - Adding a counter is a `record()` call plus one entry in `local.activities`.

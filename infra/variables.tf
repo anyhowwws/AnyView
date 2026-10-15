@@ -121,6 +121,13 @@ variable "allowed_emails" {
   sensitive   = true
 }
 
+variable "alert_emails" {
+  description = "Emails that get a notification on every sign-up (ADR 0042). Empty creates no alert."
+  type        = list(string)
+  default     = []
+  sensitive   = true
+}
+
 variable "local_signers" {
   description = "IAM members allowed to sign upload URLs as the API service account from a laptop, e.g. [\"user:you@example.com\"]. roles/owner does not include signBlob. Empty in CI/production."
   type        = list(string)
@@ -136,6 +143,7 @@ variable "db_tier" {
 variable "db_owner_iam_user" {
   description = "Google account that may log in to the database with IAM auth from a laptop (migrations, tests, break-glass). Usually the project owner."
   type        = string
+  sensitive   = true # an email; kept out of the plan CI posts on a PR
 }
 
 variable "db_password_version" {

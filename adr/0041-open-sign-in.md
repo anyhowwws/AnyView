@@ -20,12 +20,17 @@ gate itself is unchanged: every route still requires a valid Firebase ID token
 for this project, and the browser shows only the sign-in card until there is
 one.
 
-Production sets the GitHub variable `TF_ALLOWED_EMAILS` to `["*"]`. Going back
-to a list is the same variable.
+Production sets the GitHub secret `TF_ALLOWED_EMAILS` to `["*"]` (a secret
+rather than a variable since ADR 0042). Going back to a list is the same
+secret, followed by a run of the pipeline on main; no code changes.
+
+The privacy page and the sign-in card no longer say access is by invitation;
+the sign-in card says nothing about who may sign in, so it is right either way.
 
 ## Consequences
 
 - Anyone with a Google account can run interviews on the owner's budget. The
   budget alert (`infra/budget.tf`) only alerts; it does not stop spending.
+- Usage is counted (ADR 0042), and a new sign-up emails the owner.
 - Usage is already recorded per user (`users`, `usage_events`), which is what
   any later per-user limit would read.
