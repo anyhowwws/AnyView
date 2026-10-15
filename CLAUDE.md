@@ -33,7 +33,7 @@ writes simple scripts). So:
 | Frontend | Next.js App Router, TS, Tailwind v4, shadcn/ui, Framer Motion; static export → Firebase Hosting (static files only) | brief |
 | Files | Cloud Storage bucket `<project>-uploads`, `uploads/<uid>/…`, V4 signed PUT URLs (never transit the API); PDF read by the model, DOCX by `python-docx`. Resumes **and** job descriptions take the same path; a job can also be a link the API fetches | 0010, 0014, 0027 |
 | Async | **Cloud Tasks** queue `anyview-ingest` → private Cloud Run service `anyview-worker` (same image, `APP_MODULE=anyview.worker:app`, invoked only by `anyview-tasks` via OIDC). Ingestion is a job row the browser polls | brief, 0034 |
-| Auth | Identity Platform: Google sign-in only, email allow-list (`ALLOWED_EMAILS`), Firebase ID token verified by `google-auth` on every `/interview/*` route | 0009 |
+| Auth | Identity Platform: Google sign-in only, email allow-list (`ALLOWED_EMAILS`; `*` = any verified Google account, ADR 0041), Firebase ID token verified by `google-auth` on every `/interview/*` route | 0009, 0041 |
 | Secrets | Secret Manager, Terraform provisions the *parameter*, never the value | brief |
 | IaC | Terraform, everything; console-clicked resources do not exist. The `aws` provider manages **only** Route 53 records for `anyview.anyapps.cloud` | brief, 0008 |
 | CI/CD | GitHub Actions → WIF → GCP. No stored keys. Terraform plans on PRs, applies automatically on main | brief, 0024 |

@@ -50,7 +50,8 @@ class Settings:
         # adapter refuses to start without it.
         origins = [o.strip() for o in os.environ.get("CORS_ORIGINS", "").split(",") if o.strip()]
         # Lower-cased so the comparison in api/auth.py is case-insensitive. An
-        # empty list means nobody gets in, which is the safe default.
+        # empty list means nobody gets in, which is the safe default; "*" means
+        # any verified Google account (ADR 0041).
         emails = frozenset(
             e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "").split(",") if e.strip()
         )
