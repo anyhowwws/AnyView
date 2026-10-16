@@ -492,7 +492,8 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           }}
           onTypeInstead={() => {
             setStreaming(false);
-            setTurn("typing");
+            // Same as the "Answer by typing" toggle: stays typed until switched back.
+            chooseVoice(false);
           }}
         />
       ) : voiceOn && turn === "listening" && !streaming && !streamError ? (
@@ -505,7 +506,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
             setVoiceNote(message);
             setTurn("typing");
           }}
-          onTypeInstead={() => setTurn("typing")}
+          onTypeInstead={() => chooseVoice(false)}
         />
       ) : voiceOn && turn === "sending" && !error ? (
         <p className="flex items-center gap-3 text-sm text-muted-foreground" role="status">
