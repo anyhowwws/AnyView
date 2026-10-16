@@ -43,9 +43,10 @@ export function clear(): void {
   }
 }
 
-// Voice mode is a preference, not session state, so it outlives the interview
-// in localStorage (ADR 0013). Speaking is the default: an interview is a spoken
-// event, so only someone who has actively chosen typing gets typing (ADR 0016).
+// Voice mode is kept in localStorage so a reload mid-interview keeps the choice
+// (ADR 0013), but it only lasts one interview: the setup form resets it to
+// speaking on Start. Speaking is the default: an interview is a spoken event,
+// so only someone who has actively chosen typing gets typing (ADR 0016).
 const VOICE_KEY = "anyview.voice";
 
 export function loadVoicePreference(): boolean {

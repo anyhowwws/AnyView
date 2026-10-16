@@ -30,7 +30,7 @@ import {
   valuesFromParse,
   type JobValues,
 } from "@/lib/job-template";
-import { loadVoicePreference } from "@/lib/store";
+import { loadVoicePreference, saveVoicePreference } from "@/lib/store";
 import { unlockAudio } from "@/lib/voice";
 import {
   DIFFICULTIES,
@@ -328,6 +328,8 @@ export function SetupForm({ onStart, error, busy, stage }: Props) {
         if (!seniority || !canSubmit) return;
         // Now, inside the click: by the time the questions are planned the
         // browser no longer counts this as the user asking for sound.
+        // A new interview always starts with speaking; typing is chosen per interview.
+        saveVoicePreference(true);
         if (loadVoicePreference()) unlockAudio();
         void onStart(file, {
           company: company.trim(),
