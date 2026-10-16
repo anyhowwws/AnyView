@@ -56,6 +56,11 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   // stream and pay for the same question twice.
   const wantsVoice = useRef(false);
   const [turn, setTurn] = useState<Turn>("typing");
+  // "Type this one instead" answers this question by typing but keeps speaking
+  // as the preference for the next one. The toggle shows what is on screen now.
+  // Practice remounts per question, so this resets by itself.
+  const [typedThisOne, setTypedThisOne] = useState(false);
+  const speakingShown = voiceOn && !typedThisOne;
   // Set when switching to speaking: ask this question again, aloud, even though
   // its text is already here.
   const reask = useRef(false);
@@ -278,7 +283,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   }
 
   function chooseVoice(on: boolean) {
-    if (on === voiceOn) return;
+    if (on === speakingShown) return;
     if (!on) {
       harvey.current?.stop();
       wantsVoice.current = false;
@@ -297,6 +302,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
       .then(() => {
         wantsVoice.current = true;
         setVoiceOn(true);
+        setTypedThisOne(false);
         saveVoicePreference(true);
         setVoiceNote(null);
         // Ask this question again, aloud. It costs one more short call, and
@@ -376,7 +382,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           <button
             type="button"
             role="radio"
-            aria-checked={voiceOn}
+            aria-checked={speakingShown}
             onClick={() => chooseVoice(true)}
           >
             <Mic className="size-3.5" aria-hidden />
@@ -385,7 +391,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           <button
             type="button"
             role="radio"
-            aria-checked={!voiceOn}
+            aria-checked={!speakingShown}
             onClick={() => chooseVoice(false)}
           >
             <Keyboard className="size-3.5" aria-hidden />
@@ -492,6 +498,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           }}
           onTypeInstead={() => {
             setStreaming(false);
+            setTypedThisOne(true);
             setTurn("typing");
           }}
         />
@@ -505,7 +512,10 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
             setVoiceNote(message);
             setTurn("typing");
           }}
-          onTypeInstead={() => setTurn("typing")}
+          onTypeInstead={() => {
+            setTypedThisOne(true);
+            setTurn("typing");
+          }}
         />
       ) : voiceOn && turn === "sending" && !error ? (
         <p className="flex items-center gap-3 text-sm text-muted-foreground" role="status">
