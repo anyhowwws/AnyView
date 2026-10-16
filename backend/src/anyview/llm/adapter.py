@@ -47,7 +47,7 @@ Effort = Literal["low", "medium", "high"]
 # The report's calls fail fast and fall back (ADR 0039). One attempt on the
 # judgement model gets this long and one retry after a throttle; past that the
 # call goes once to the fallback model. Measured: a healthy Pro call takes
-# 15-55 s; Vertex gives up on a stuck one at ~115 s, which the default
+# 15-55 s; Agent Platform gives up on a stuck one at ~115 s, which the default
 # 120 s x 4 attempts turned into minutes of waiting.
 TIGHT_TIMEOUT_MS = 75_000
 TIGHT_ATTEMPTS = 2
@@ -350,7 +350,7 @@ def _audio_part(response: Any) -> Any | None:
 
 
 class VertexGemini:
-    """Gemini on Vertex AI. Auth is Application Default Credentials — locally
+    """Gemini on Gemini Enterprise Agent Platform. Auth is Application Default Credentials — locally
     from `gcloud auth application-default login`, on Cloud Run from the
     service account. No API key exists.
 
@@ -375,7 +375,7 @@ class VertexGemini:
         fallback_model: str | None = None,
     ) -> None:
         if not project_id:
-            raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for Vertex model access")
+            raise RuntimeError("GOOGLE_CLOUD_PROJECT is required for Agent Platform model access")
         self.model = model
         self.fast_model = fast_model or model
         # Live models are served from regions, not from `global` (ADR 0031), so
@@ -600,11 +600,11 @@ class VertexGemini:
     def speak(
         self, *, text: str, session_id: str, voice: str = "Charon", style: str | None = None
     ) -> bytes:
-        """One line of dialogue as a WAV file, spoken by a prebuilt Vertex voice.
+        """One line of dialogue as a WAV file, spoken by a prebuilt Agent Platform voice.
 
         A TTS model takes no system instruction and does no thinking, so this
         builds its own config rather than reusing `_config`. `response_modalities`
-        is what asks for audio instead of text; `voice` names one of Vertex's
+        is what asks for audio instead of text; `voice` names one of Agent Platform's
         prebuilt speakers (Harvey's default is set by HARVEY_VOICE). `style` directs
         the delivery: see `spoken_prompt`.
         """

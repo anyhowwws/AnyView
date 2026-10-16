@@ -1,4 +1,4 @@
-# 0007 — Gemini on Vertex AI as the Phase 0 model
+# 0007 — Gemini on Gemini Enterprise Agent Platform as the Phase 0 model
 
 - **Status:** Accepted
 - **Date:** 2026-09-16
@@ -14,7 +14,7 @@
 
 ## Context
 
-ADR 0004 chose Claude on Vertex AI. The first real call from the project
+ADR 0004 chose Claude on Gemini Enterprise Agent Platform. The first real call from the project
 returned `429 Quota exceeded for global_online_prediction_requests_per_base_model:
 anthropic-claude-opus` — a fresh GCP project has a zero quota for Anthropic
 partner models until they are enabled in Model Garden and a quota increase is
@@ -30,7 +30,7 @@ families once the Claude quota is in place.
 **Wait for the Claude quota.** Blocks every end-to-end run on a support ticket
 of unknown duration. Nothing else in Phase 0 depends on which model answers.
 
-**Gemini on Vertex.** Same project, same `roles/aiplatform.user`, same platform
+**Gemini on Agent Platform.** Same project, same `roles/aiplatform.user`, same platform
 invocation logging, same data boundary — every governance argument in 0004
 applies unchanged. Different SDK (`google-genai`), different caching model
 (implicit, no breakpoints), thinking tokens billed as output, a `thinking_level`

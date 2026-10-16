@@ -6,11 +6,11 @@
 resource "google_service_account" "api" {
   account_id   = "anyview-api"
   display_name = "AnyView API runtime"
-  description  = "Identity of the Cloud Run service. Calls Vertex AI; writes logs. Nothing else."
+  description  = "Identity of the Cloud Run service. Calls Gemini Enterprise Agent Platform; writes logs. Nothing else."
 }
 
-# Call Claude and embeddings on Vertex AI (ADR 0004). This is the only model-access grant in the project.
-# aiplatform.user is project-level by API design — Vertex has no per-model IAM.
+# Call Claude and embeddings on Gemini Enterprise Agent Platform (ADR 0004). This is the only model-access grant in the project.
+# aiplatform.user is project-level by API design — Agent Platform has no per-model IAM.
 resource "google_project_iam_member" "api_vertex" {
   project = var.project_id
   role    = "roles/aiplatform.user"

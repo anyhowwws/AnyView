@@ -60,7 +60,7 @@ questions and thank them for their time. When the browser ends it instead (time-
 when the candidate's turn starts and ends. At time-up the browser would end the turn and Harvey
 would cut in in his own Live voice, with no barge-in to stop him. Not taken yet: the browser
 would then have to judge the end of *every* answer, which Live's own detection does well today,
-and the behaviour on Vertex is untested. Worth an experiment against the real model.
+and the behaviour on Agent Platform is untested. Worth an experiment against the real model.
 
 ## Consequences
 

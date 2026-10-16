@@ -21,7 +21,7 @@ That works, but only while nothing goes wrong:
 - **The work only lives as long as the instance.** A deploy, or Cloud Run
   replacing the instance (ADR 0023 counts these as routine), kills the
   request. Nothing retries it.
-- **A model hiccup fails the whole upload.** A 429 or 503 from Vertex partway
+- **A model hiccup fails the whole upload.** A 429 or 503 from Agent Platform partway
   through ends the stream with an error frame. There is no backoff and no
   second try.
 - **It competes with the interview.** The API runs on one instance (ADR 0023,
@@ -90,7 +90,7 @@ browser ◀─GET /brain/jobs/{id}── anyview-api                │ OIDC tok
   to one: a queued job can wait out a cold start, which the API's first screen
   could not (ADR 0023).
 - **The worker runs as the API's service account.** It needs exactly the
-  API's data access: Vertex, the uploads bucket, and the same Cloud SQL IAM
+  API's data access: Agent Platform, the uploads bucket, and the same Cloud SQL IAM
   user. A separate runtime account would be a second database user with the
   same grants, with no reduction in what either can reach. The *invoker*
   identity is separate: `anyview-tasks` can call the worker and nothing else.

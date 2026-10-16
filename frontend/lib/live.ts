@@ -1,7 +1,7 @@
 // Harvey on Gemini Live (ADR 0031): one question as a live conversation.
 //
 // One WebSocket per question to the API, which holds the Live session (the
-// browser cannot: Vertex accepts only IAM credentials). The microphone streams
+// browser cannot: Agent Platform accepts only IAM credentials). The microphone streams
 // up as 16 kHz PCM the whole time; Harvey's voice streams down as 24 kHz PCM and
 // is scheduled on the shared AudioContext. Live decides when the candidate has
 // finished and whether to follow up. The browser keeps the clock (live-cues.ts):

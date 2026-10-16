@@ -27,7 +27,7 @@ budget.
 
 **Token verification on the API.** The Firebase Admin SDK (a large dependency
 tree, most of it for Firestore and Storage we do not use) or `google-auth`'s
-`verify_firebase_token`, which is already installed underneath the Vertex SDK.
+`verify_firebase_token`, which is already installed underneath the Agent Platform SDK.
 
 **Provisioning the Google OAuth client.** Terraform (puts the client secret in
 state) or the Firebase CLI from a checked-in provider config (the secret never

@@ -4,7 +4,7 @@ locals {
   services = [
     "run.googleapis.com",                  # Cloud Run
     "artifactregistry.googleapis.com",     # container images
-    "aiplatform.googleapis.com",           # Vertex AI (Claude + embeddings)
+    "aiplatform.googleapis.com",           # Gemini Enterprise Agent Platform (Claude + embeddings)
     "iam.googleapis.com",                  # service accounts
     "iamcredentials.googleapis.com",       # WIF token exchange
     "sts.googleapis.com",                  # WIF token exchange

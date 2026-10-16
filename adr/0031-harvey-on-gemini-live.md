@@ -59,7 +59,7 @@ nudges in his own words, twice at most); fifteen more after a nudge sends `[move
 question's budget sends `[time_up]`. Cues are keys, never free text: the browser chooses when
 Harvey speaks up, never what he says.
 
-**One WebSocket per question, relayed by the API** (`WS /interview/live`). Vertex Live
+**One WebSocket per question, relayed by the API** (`WS /interview/live`). Agent Platform Live
 authenticates with IAM only, and browser tokens exist only for the API-key product this project
 does not use, so the API holds the session with its own identity. The Firebase ID token arrives
 in the socket's first frame (a browser cannot set headers on a WebSocket) and is checked by the

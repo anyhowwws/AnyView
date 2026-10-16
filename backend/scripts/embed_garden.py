@@ -5,7 +5,7 @@ the deploy that adds embeddings, and again after `EMBED_RENDER_VERSION` changes.
         DB_IAM_USER=<you> .venv/bin/python scripts/embed_garden.py
 
 Uses the app's own wiring (`main.build_model`, `main.build_repository`): your
-ADC for Vertex and for the Cloud SQL connector, never a key. Or point it at a
+ADC for Agent Platform and for the Cloud SQL connector, never a key. Or point it at a
 local database with DATABASE_URL. Safe to run again: an entry whose vector is
 current is skipped, so a second run embeds nothing.
 

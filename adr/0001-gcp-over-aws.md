@@ -31,12 +31,12 @@ is recorded here with the alternative.
 the three problems above remain, and the fix for the first — Bedrock — was
 rejected by AWS support on the account in question.
 
-**GCP.** Claude models are available on Vertex AI in the owner's project with
+**GCP.** Claude models are available on Gemini Enterprise Agent Platform in the owner's project with
 no account-level gating. Access is an IAM role on a service account, invocation
 logging is a platform feature, and request data stays inside the project
 boundary. Cloud Run gives a plain HTTP server (FastAPI) where streaming is just
 a chunked response, so no runtime-specific streaming code. Text embeddings are
-available from the same Vertex endpoint under the same identity.
+available from the same Agent Platform endpoint under the same identity.
 
 ## Decision
 
@@ -45,7 +45,7 @@ pgvector for data (see 0002), Cloud Storage for uploads, Cloud Tasks for async
 ingestion, Identity Platform for auth, Secret Manager for any secret, Firebase
 Hosting for the frontend, all provisioned by Terraform, with GitHub Actions
 authenticating through Workload Identity Federation. Direct Claude access on
-Vertex removes the API-key problem outright (see 0004).
+Agent Platform removes the API-key problem outright (see 0004).
 
 ## What this costs
 

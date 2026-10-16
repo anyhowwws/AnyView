@@ -8,7 +8,7 @@
 
 On 2026-10-16 the pre-flight's hearing test played nothing in the owner's normal browser window,
 and worked in a fresh incognito window. The server was not the cause: every `/interview/say` call
-returned 200, and the same `hello` line generated against Vertex was a 4 s clip at normal volume.
+returned 200, and the same `hello` line generated against Agent Platform was a 4 s clip at normal volume.
 
 The page keeps one `AudioContext` for its whole life (ADR 0028), and a tab lives long. A context
 can stay bound to an output that has gone (Bluetooth headphones that disconnected, a tab the

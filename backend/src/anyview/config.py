@@ -62,7 +62,7 @@ class Settings:
             model_id=os.environ.get("MODEL_ID", "gemini-3.1-pro-preview"),
             fast_model_id=os.environ.get("MODEL_ID_FAST", "gemini-3.5-flash-lite"),
             # Voice mode (ADR 0013). A TTS model is a different model family, so
-            # it gets its own id; the voice is one of Vertex's prebuilt speakers.
+            # it gets its own id; the voice is one of Agent Platform's prebuilt speakers.
             tts_model_id=os.environ.get("TTS_MODEL_ID", "gemini-2.5-flash-preview-tts"),
             embedding_model_id=os.environ.get("EMBEDDING_MODEL_ID", "gemini-embedding-2"),
             fallback_model_id=os.environ.get("FALLBACK_MODEL_ID", "gemini-3.8-flash"),

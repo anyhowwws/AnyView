@@ -11,6 +11,13 @@ immutable once merged. If a decision is reversed, write a new ADR that
 supersedes the old one and add a `Superseded by` line to the original — the
 record of having been wrong is the useful part.
 
+**A note on naming.** In April 2026 Google renamed Vertex AI to Gemini Enterprise Agent Platform
+(the Vertex AI API is now the Agent Platform API). The records below were updated to the new name
+in place, the one exception to the immutability rule above, because only the product's name
+changed, not any decision. File names still say `vertex` so that existing links keep working, and
+the identifiers Google kept (`vertexai=True` in the SDK, `aiplatform.googleapis.com`,
+`roles/aiplatform.user`) and our own (`VERTEX_REGION`, `VertexGemini`) are unchanged.
+
 ## Status values
 
 - `Accepted` — in force
@@ -24,10 +31,10 @@ record of having been wrong is the useful part.
 | [0001](0001-gcp-over-aws.md) | GCP over AWS | Accepted, amended by 0023 |
 | [0002](0002-postgres-over-firestore.md) | Cloud SQL for PostgreSQL over Firestore | Accepted |
 | [0003](0003-retrieval-over-user-authored-brain.md) | Retrieval over the user-authored brain (supersedes the earlier no-RAG decision) | Accepted, amended by 0038 |
-| [0004](0004-llm-access-via-vertex-ai.md) | LLM access via Vertex AI, IAM-governed | Superseded by 0007 (model); access decision stands |
+| [0004](0004-llm-access-via-vertex-ai.md) | LLM access via Gemini Enterprise Agent Platform, IAM-governed | Superseded by 0007 (model); access decision stands |
 | [0005](0005-hand-rolled-sse-streaming.md) | Hand-rolled server-sent events over a streaming SDK | Accepted, amended by 0006 and 0031 |
 | [0006](0006-browser-to-cloud-run-direct.md) | Browser talks to Cloud Run directly, not through Firebase Hosting | Accepted |
-| [0007](0007-gemini-on-vertex.md) | Gemini on Vertex AI as the Phase 0 model | Accepted, amended by 0039 |
+| [0007](0007-gemini-on-vertex.md) | Gemini on Gemini Enterprise Agent Platform as the Phase 0 model | Accepted, amended by 0039 |
 | [0008](0008-custom-domain-dns-in-route53.md) | Custom domain on Firebase Hosting, DNS records managed in Route 53 | Accepted, amended by 0012 |
 | [0009](0009-google-sign-in-with-allow-list.md) | Google sign-in through Identity Platform, allow-listed by email | Accepted |
 | [0010](0010-resume-upload-via-signed-urls.md) | Resume upload: signed URLs into Cloud Storage, PDF read by the model | Accepted |
