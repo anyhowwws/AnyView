@@ -10,31 +10,31 @@ variable "region" {
 }
 
 variable "vertex_region" {
-  description = "Vertex AI location the model is served from. \"global\" is recommended for current-generation models; may differ from var.region."
+  description = "Gemini Enterprise Agent Platform location the model is served from. \"global\" is recommended for current-generation models; may differ from var.region."
   type        = string
   default     = "global"
 }
 
 variable "model_id" {
-  description = "Vertex AI model for judgement calls: plan, score, ideal (ADR 0007). A variable so a model change is a plan, not a code change."
+  description = "Gemini Enterprise Agent Platform model for judgement calls: plan, score, ideal (ADR 0007). A variable so a model change is a plan, not a code change."
   type        = string
   default     = "gemini-3.1-pro-preview"
 }
 
 variable "fast_model_id" {
-  description = "Vertex AI model for streamed interviewer turns, where time-to-first-token matters more than depth."
+  description = "Gemini Enterprise Agent Platform model for streamed interviewer turns, where time-to-first-token matters more than depth."
   type        = string
   default     = "gemini-3.5-flash-lite"
 }
 
 variable "tts_model_id" {
-  description = "Vertex AI model that speaks Harvey's questions in voice mode (ADR 0013). A text model cannot synthesise audio, so this is its own id."
+  description = "Gemini Enterprise Agent Platform model that speaks Harvey's questions in voice mode (ADR 0013). A text model cannot synthesise audio, so this is its own id."
   type        = string
   default     = "gemini-2.5-flash-preview-tts"
 }
 
 variable "live_model_id" {
-  description = "Vertex AI Live model that runs Harvey's spoken interview, follow-ups included (ADR 0031). Native-audio Live models are regional; confirm the id is enabled in Model Garden for the project before relying on it."
+  description = "Gemini Enterprise Agent Platform Live model that runs Harvey's spoken interview, follow-ups included (ADR 0031). Native-audio Live models are regional; confirm the id is enabled in Model Garden for the project before relying on it."
   type        = string
   default     = "gemini-3.8-live"
 }
@@ -46,13 +46,13 @@ variable "live_region" {
 }
 
 variable "harvey_voice" {
-  description = "Prebuilt Vertex voice for Harvey, the interviewer. Male-sounding options include Charon (informative), Alnilam, Orus (firm), Puck (upbeat) and Fenrir (excitable). Alnilam read as British in a real run; the accent comes from the voice and the delivery direction together. Check a name with a real call before using it: an unknown one is a 400."
+  description = "Prebuilt Agent Platform voice for Harvey, the interviewer. Male-sounding options include Charon (informative), Alnilam, Orus (firm), Puck (upbeat) and Fenrir (excitable). Alnilam read as British in a real run; the accent comes from the voice and the delivery direction together. Check a name with a real call before using it: an unknown one is a 400."
   type        = string
   default     = "Charon"
 }
 
 variable "donna_voice" {
-  description = "Prebuilt Vertex voice for Donna, the Digital Garden's assistant, heard only in Discover's speak mode (ADR 0030). Female-sounding options include Kore (firm), Aoede (breezy), Leda (youthful), Zephyr (bright) and Sulafat (warm). Check a name with a real call before using it: an unknown one is a 400."
+  description = "Prebuilt Agent Platform voice for Donna, the Digital Garden's assistant, heard only in Discover's speak mode (ADR 0030). Female-sounding options include Kore (firm), Aoede (breezy), Leda (youthful), Zephyr (bright) and Sulafat (warm). Check a name with a real call before using it: an unknown one is a 400."
   type        = string
   default     = "Kore"
 }

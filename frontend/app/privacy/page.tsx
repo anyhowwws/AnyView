@@ -65,7 +65,7 @@ export default function Privacy() {
             <p>
               AnyView runs entirely on Google Cloud, in the United States (us-central1). Your documents,
               Digital Garden, recordings and the text of your answers are sent to Gemini on Google&apos;s
-              Vertex AI to read, transcribe, plan and score. Google states that it does not use this data
+              Gemini Enterprise Agent Platform to read, transcribe, plan and score. Google states that it does not use this data
               to train its models without permission. It may cache it for up to 24 hours to answer
               faster, and may log prompts to detect abuse. Sign-in uses Google Identity Platform, and the
               site is served by Firebase Hosting.

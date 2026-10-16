@@ -9,7 +9,7 @@ dependencies = [
   "fastapi>=0.115",
   # ASGI server that runs FastAPI. Cloud Run needs a process listening on $PORT; this is it.
   "uvicorn[standard]>=0.30",
-  # Official Google Gen AI SDK; its Vertex client is the only model access path (ADR 0007). No API key.
+  # Official Google Gen AI SDK; its Agent Platform client is the only model access path (ADR 0007). No API key.
   "google-genai>=1.75,<2",
   # Signed upload URLs and reading uploaded resumes from Cloud Storage (ADR 0010). Files never transit the API.
   "google-cloud-storage>=3,<4",

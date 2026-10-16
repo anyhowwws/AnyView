@@ -8,7 +8,7 @@ against the allow-list, where `*` lets in any verified Google account (ADR
 `(uid, email)` for now — Phase 1's repository will key rows on `uid`.
 
 Verification uses `google-auth`, which is already installed as part of the
-Vertex SDK stack, so no new dependency. Google's signing certificates are
+Agent Platform SDK stack, so no new dependency. Google's signing certificates are
 fetched over HTTPS and cached by the transport between calls.
 """
 

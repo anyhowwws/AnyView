@@ -45,7 +45,7 @@
       "Read(//Users/hows/.config/gcloud/**)"
     ],
     "environment": [
-      "**Cloud provider**: GCP — Cloud Run (FastAPI), Vertex AI (Claude, IAM-governed, no API key), Cloud SQL Postgres + pgvector, Cloud Storage, Cloud Tasks, Identity Platform, Firebase Hosting. All Terraform-managed.",
+      "**Cloud provider**: GCP — Cloud Run (FastAPI), Gemini Enterprise Agent Platform (Claude, IAM-governed, no API key), Cloud SQL Postgres + pgvector, Cloud Storage, Cloud Tasks, Identity Platform, Firebase Hosting. All Terraform-managed.",
       "**Repository visibility**: private",
       "**Secrets management**: none in Phase 0 (model access is IAM). Later: Secret Manager, provisioned by Terraform as a parameter only. No .env with secrets ever; .env.example is the only committed env file.",
       "**Sensitive data**: user's resume, career history, STAR stories, mock-interview transcripts — personal career data, not public",

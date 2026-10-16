@@ -80,7 +80,7 @@ realises they set the interview up wrong.
   never started. It scores honestly rather than being hidden, and it keeps
   `finish()`'s "every question needs an answer" rule intact. The upload and the
   transcription call are both skipped, because there is nothing to transcribe.
-- Two Vertex models are now on the critical path of a timed turn. A TTS failure
+- Two Agent Platform models are now on the critical path of a timed turn. A TTS failure
   still degrades to silence rather than stopping the interview.
 - **The rubric does not really fit the opener.** "Tell me about yourself" is
   scored on STAR completeness, specificity, quantified outcome and ownership

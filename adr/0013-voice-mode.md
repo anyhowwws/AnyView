@@ -18,7 +18,7 @@ Both directions needed a decision, and the options were not symmetric.
 1. The browser's own `speechSynthesis`. Free, instant, no backend. But the
    voice is whatever the operating system ships — good on macOS, robotic on
    Windows and Android — and no prebuilt female voice is guaranteed anywhere.
-2. Gemini TTS on Vertex, through the existing `google-genai` client.
+2. Gemini TTS on Agent Platform, through the existing `google-genai` client.
 3. Cloud Text-to-Speech (Chirp 3 HD). The best voices and true streaming
    synthesis, at the cost of a dependency, an API enablement, IAM, and a second
    cost-tracking path outside the usage log.
@@ -36,7 +36,7 @@ Both directions needed a decision, and the options were not symmetric.
 
 ## Decision
 
-**Gemini TTS on Vertex for Donna, Gemini transcription for the candidate.**
+**Gemini TTS on Agent Platform for Donna, Gemini transcription for the candidate.**
 Both go through `llm/adapter.py`, which keeps every rule this project already
 has: one SDK, IAM only, no API key, and one usage row per model call.
 
@@ -86,7 +86,7 @@ recordings of your own voice should not sit in a bucket forever.
   mic panel has "Type this one instead", and a transcript can be edited before
   it is sent. Browsers without `MediaRecorder` see the typed interview exactly
   as before.
-- A second Vertex model means a second thing that can be rate-limited. A 429
+- A second Agent Platform model means a second thing that can be rate-limited. A 429
   maps to the same 503 as everything else, and the interview degrades to text
   rather than stopping.
 - Recordings are the raw material for a Phase 2 idea this does not build:

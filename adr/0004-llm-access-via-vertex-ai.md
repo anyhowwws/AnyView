@@ -1,4 +1,4 @@
-# 0004 — LLM access via Vertex AI, IAM-governed
+# 0004 — LLM access via Gemini Enterprise Agent Platform, IAM-governed
 
 - **Status:** Superseded by 0007 (model choice); the IAM-governed access decision stands
 - **Date:** 2026-09-16
@@ -18,14 +18,14 @@ be stored, rotated, and guarded; access control lives outside the cloud IAM
 model; resume text — personal data — leaves the project boundary to a
 third-party endpoint.
 
-**Vertex AI (Claude on Vertex).** Same models, same official `anthropic` Python
+**Gemini Enterprise Agent Platform (Claude on Agent Platform).** Same models, same official `anthropic` Python
 SDK via its `AnthropicVertex` client. Authentication is the Cloud Run service
 account's IAM role (`roles/aiplatform.user`). Requests are logged by the
 platform. Spend is a line in the GCP bill. No key exists anywhere.
 
 ## Decision
 
-All model calls go to Vertex AI using the official Anthropic SDK's Vertex
+All model calls go to Gemini Enterprise Agent Platform using the official Anthropic SDK's Agent Platform
 client. Model access is governed entirely by IAM on the Cloud Run service
 account. There is no API key, no direct Anthropic API path, and no environment
 variable that could hold one.
@@ -36,18 +36,18 @@ types. No SDK object leaks into application code. The adapter is an indirection
 layer, not a framework — it exists so that the SDK can be swapped, not so that
 prompts can be composed.
 
-Text embeddings come from the same Vertex endpoint under the same identity.
+Text embeddings come from the same Agent Platform endpoint under the same identity.
 
 Every model call writes a usage row (session, tokens in/out, cached tokens,
-model) so Vertex token spend is tracked as its own line item and cost per
+model) so Agent Platform token spend is tracked as its own line item and cost per
 interview session is a query, not a guess.
 
 ## What this costs
 
-- **Region and model availability.** Claude on Vertex is available in specific
+- **Region and model availability.** Claude on Agent Platform is available in specific
   regions; the model ID and region are Terraform variables, not constants, so a
   move is a variable change.
 - **Local development needs ADC.** `gcloud auth application-default login`
   replaces "paste a key in .env". Slightly more setup; considerably safer.
-- **Vertex quotas are per-project.** A separate project for a second
+- **Agent Platform quotas are per-project.** A separate project for a second
   environment means separate quota requests. Acceptable for a single-owner tool.

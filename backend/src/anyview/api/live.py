@@ -1,6 +1,6 @@
 """`WS /interview/live`: one question of a spoken interview, relayed to Gemini Live (ADR 0031).
 
-The browser cannot talk to Live itself: Vertex accepts only IAM credentials,
+The browser cannot talk to Live itself: Agent Platform accepts only IAM credentials,
 and this project has no API key to mint browser tokens from. So the API holds
 the Live session with its own identity and relays both directions. One socket
 per question: the context stays small (Live re-bills it every turn), and no

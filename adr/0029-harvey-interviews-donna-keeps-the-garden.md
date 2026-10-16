@@ -22,7 +22,7 @@ read your resume", "Donna moves on when the clock runs out", "Ask Donna about yo
 - **Harvey's voice is configured as `HARVEY_VOICE`**, default **`Charon`** (chosen by ear after auditioning; first `Orus`, then `Alnilam`, which read as British in a real run).
   `DONNA_VOICE` and the Terraform variable `donna_voice` are gone, along with the frontend's
   `DonnaVoice`/`donnaVoice()`. The garden gets its own setting when she gets a voice.
-- **The voice name was checked against Vertex, not assumed.** "Orbit" was the first choice, but
+- **The voice name was checked against Agent Platform, not assumed.** "Orbit" was the first choice, but
   a synthesis call with it returns `400 INVALID_ARGUMENT`; `Orus` and `Charon` both succeed.
   An unknown voice name fails every spoken question, and the app then falls back to text, so a
   wrong name would have looked like "voice is broken". Orus was the first stand-in, until Alnilam was picked.

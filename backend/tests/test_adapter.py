@@ -1,4 +1,4 @@
-"""Tests for the adapter's pure parts. Nothing here talks to Vertex."""
+"""Tests for the adapter's pure parts. Nothing here talks to Agent Platform."""
 
 import json
 from types import SimpleNamespace

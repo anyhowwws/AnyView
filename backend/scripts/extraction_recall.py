@@ -4,7 +4,7 @@
         .venv/bin/python scripts/extraction_recall.py ~/Downloads/resume.pdf \\
         --expect achievements=14 education=2 languages=2 roles=2
 
-Runs the real pipeline against Vertex (your ADC, never a key): transcribe if
+Runs the real pipeline against Agent Platform (your ADC, never a key): transcribe if
 it is a PDF or DOCX, then `propose()` against an empty garden. Prints what
 came out per kind, which drafts were flagged unverified, every skill link with
 its quote, and what each model call cost. With `--expect`, exits non-zero when

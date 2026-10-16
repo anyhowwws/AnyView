@@ -21,7 +21,7 @@ resource "google_cloud_tasks_queue" "ingest" {
 
   rate_limits {
     # Each job is several model calls in parallel (ADR 0019). Two at once is
-    # plenty for a handful of users and keeps Vertex quota and the worker's
+    # plenty for a handful of users and keeps Agent Platform quota and the worker's
     # one instance comfortable.
     max_concurrent_dispatches = 2
     max_dispatches_per_second = 1
@@ -93,7 +93,7 @@ resource "google_cloud_run_v2_service" "worker" {
 
   template {
     # The API's identity, deliberately (ADR 0034): the worker needs exactly the
-    # API's data access (Vertex, the uploads bucket, the same Cloud SQL IAM
+    # API's data access (Agent Platform, the uploads bucket, the same Cloud SQL IAM
     # user). A second runtime account would be a second database user with the
     # same grants, for no reduction in what either can reach.
     service_account = google_service_account.api.email

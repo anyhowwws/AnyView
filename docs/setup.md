@@ -25,7 +25,7 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8080 NEXT_PUBLIC_FAKE_AUTH=dev@example
 The same pair is in [`.claude/launch.json`](../.claude/launch.json) as `api-fake` and
 `web-fake`; `api-fake-slow` gives each fake call two seconds, so the resume
 progress view can be watched step by step. Neither fake path exists in a
-Vertex-backed build.
+Agent Platform-backed build.
 
 Then open http://localhost:3000: the Digital Garden is the home page, and
 Practice runs an interview.
@@ -59,7 +59,7 @@ cd backend
 .venv/bin/ruff check . && .venv/bin/ruff format --check .
 ```
 
-Model calls go to Vertex AI using your local `gcloud` Application Default
+Model calls go to Gemini Enterprise Agent Platform using your local `gcloud` Application Default
 Credentials — there is no API key anywhere:
 
 ```sh

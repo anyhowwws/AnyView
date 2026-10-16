@@ -24,9 +24,9 @@ writes simple scripts). So:
 |---|---|---|
 | Cloud | GCP | 0001 |
 | API | Python 3.12, FastAPI, Cloud Run | 0001 |
-| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028). **Gemini Live** (`LIVE_MODEL_ID`, regional: `LIVE_REGION`) runs each spoken question as a conversation with follow-ups (ADR 0031); Vertex AI (location `global` for everything else) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
-| Embeddings | Vertex `gemini-embedding-2` (`EMBEDDING_MODEL_ID`), 768 dimensions, one request per text (a list comes back as ONE vector). Project, story, achievement and feedback; embedded before the write that changes them. Same project, same IAM, same identity | 0003, 0038 |
-| Voice | **Gemini Live** for a spoken interview: one session per question, relayed over `WS /interview/live` (ADR 0031); the turn-based path below is its fallback. **Gemini TTS on Vertex** for Harvey, the interviewer, on that fallback path (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`) and for Donna in Discover when a question is asked out loud or an answer read aloud (`DONNA_VOICE`, default `Kore`, `discover.DONNA_DELIVERY`); answers and spoken questions recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default in an interview; typing is the default in Discover**, and a question asked out loud is answered out loud (no mode switch); Harvey's interruptions are fixed lines from `/interview/say`, read aloud by Live in his interviewer voice (TTS if Live fails), cached per instance, several wordings each, rotated by the browser (ADR 0035) | 0013, 0016, 0030, 0031, 0033, 0035 |
+| LLM | **Gemini 3.1 Pro (preview)** for plan/score/ideal, **Gemini 3.5 Flash-Lite** for fast calls (Discover, segmenting; 0.8–1.2 s to first token; 3.8 Flash and Pro both think for 4–6 s first). `ask` makes no model call (ADR 0028). **Gemini Live** (`LIVE_MODEL_ID`, regional: `LIVE_REGION`) runs each spoken question as a conversation with follow-ups (ADR 0031); Gemini Enterprise Agent Platform (location `global` for everything else) via `google-genai`; IAM only, **no API key exists anywhere**. The second adapter (ADR 0004, on hold per ADR 0007) returns once its quota is granted | 0004, 0007 |
+| Embeddings | Agent Platform `gemini-embedding-2` (`EMBEDDING_MODEL_ID`), 768 dimensions, one request per text (a list comes back as ONE vector). Project, story, achievement and feedback; embedded before the write that changes them. Same project, same IAM, same identity | 0003, 0038 |
+| Voice | **Gemini Live** for a spoken interview: one session per question, relayed over `WS /interview/live` (ADR 0031); the turn-based path below is its fallback. **Gemini TTS on Agent Platform** for Harvey, the interviewer, on that fallback path (prebuilt voice, `HARVEY_VOICE`, default `Charon`, delivered with the style direction in `prompts.HARVEY_DELIVERY`) and for Donna in Discover when a question is asked out loud or an answer read aloud (`DONNA_VOICE`, default `Kore`, `discover.DONNA_DELIVERY`); answers and spoken questions recorded in the browser and transcribed by the same model through the adapter's `attachment=` path. No speech API, no new dependency. **Speaking is the default in an interview; typing is the default in Discover**, and a question asked out loud is answered out loud (no mode switch); Harvey's interruptions are fixed lines from `/interview/say`, read aloud by Live in his interviewer voice (TTS if Live fails), cached per instance, several wordings each, rotated by the browser (ADR 0035) | 0013, 0016, 0030, 0031, 0033, 0035 |
 | Streaming | Hand-rolled SSE (`StreamingResponse`), no streaming-UI SDK. Browser → Cloud Run **direct** with CORS; Firebase Hosting rewrites buffer and must not carry the API | 0005, 0006 |
 | Data | Cloud SQL Postgres (db-g1-small, single zone) + pgvector, Cloud SQL connector, small pool | 0002 |
 | Retrieval | One embedding per confirmed entity; hybrid filter-then-vector in one SQL (`Repository.search_garden`) | 0003, 0038 |
@@ -259,10 +259,10 @@ Still to come: Discover's search past its threshold, the golden retrieval test s
   (`JOB_STALE`). The queue name cannot be reused for ~7 days after deletion.
 
 - **Live (ADR 0031)** is regional (`LIVE_REGION`, default `us-central1`) and its model id
-  (`LIVE_MODEL_ID`, default `gemini-3.8-live`, GA on Vertex in us-central1; the previous model was
+  (`LIVE_MODEL_ID`, default `gemini-3.8-live`, GA on Agent Platform in us-central1; the previous model was
   `gemini-live-2.5-flash-native-audio`, one variable away) must be enabled in Model Garden before
   the first real run. 3.8 has proactive audio always on and refuses `proactive_audio: false` (the
-  adapter leaves the setting out instead); its tool calls block on Vertex, so `ask_follow_up` still
+  adapter leaves the setting out instead); its tool calls block on Agent Platform, so `ask_follow_up` still
   waits for the API's answer. A smoke test before switching: Harvey asked the planned question,
   waited silently while a follow-up's permission was held for 3 s, honoured a refusal by calling
   `finish_question`, and read the fixed lines word for word. If it fails, the socket sends `fallback: true`
@@ -334,7 +334,7 @@ Still to come: Discover's search past its threshold, the golden retrieval test s
 - Local dev without Google: `ANYVIEW_FAKE_MODEL=1` also switches the API to accept
   `Authorization: Bearer fake:<email>` (allow-list still applies), and the `web-fake` launch
   config builds the frontend with `NEXT_PUBLIC_FAKE_AUTH=dev@example.com`. Neither exists in
-  a Vertex-backed build.
+  a Agent Platform-backed build.
 - Tests never call Google: `signed_in` fixture in `tests/conftest.py` swaps the verifier.
   The real one needs `GOOGLE_CLOUD_PROJECT` set (token audience).
 - The Google provider is provisioned by the Firebase CLI from `firebase-auth.json`, not
@@ -359,7 +359,7 @@ Still to come: Discover's search past its threshold, the golden retrieval test s
 - Don't run `next build` while `next dev` is up — both use `frontend/.next/` and the
   dev server then throws `__webpack_modules__[moduleId] is not a function`. Stop
   dev, build, restart dev (or `rm -rf frontend/.next`).
-- The second adapter's model (ADR 0004) on Vertex needs the models enabled in Model
+- The second adapter's model (ADR 0004) on Agent Platform needs the models enabled in Model
   Garden and a non-zero `global_online_prediction_requests_per_base_model` quota; a
   fresh project returns 429 "Quota exceeded" until then (that is why Phase 0 runs
   Gemini — ADR 0007). Gemini has a default quota. The app maps a 429 to a 503 either way.
