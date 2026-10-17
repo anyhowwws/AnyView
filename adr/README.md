@@ -71,3 +71,4 @@ the identifiers Google kept (`vertexai=True` in the SDK, `aiplatform.googleapis.
 | [0041](0041-recoverable-audio.md) | Recoverable audio: a fresh context on retry and on device change, and failures on screen | Accepted |
 | [0043](0043-harvey-times-his-follow-ups.md) | The clock pauses while Harvey speaks, and he times his own follow-ups | Accepted |
 | [0044](0044-conversation-guardrails.md) | Conversation guardrails: English only, protected topics, staying in role | Accepted |
+| [0045](0045-extraction-fails-fast-and-uploads-can-be-cancelled.md) | Extraction fails fast and falls back; an upload can be cancelled | Accepted |

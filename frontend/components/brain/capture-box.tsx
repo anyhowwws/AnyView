@@ -4,8 +4,23 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { ApiError, activeJobs, followJob, queueText, queueUpload, uploadResume } from "@/lib/api";
-import { startView, viewOfJob, type IngestView, type ProgressFrame } from "@/lib/ingest-progress";
+import {
+  ApiError,
+  CANCELLED,
+  activeJobs,
+  cancelJob,
+  followJob,
+  queueText,
+  queueUpload,
+  uploadResume,
+} from "@/lib/api";
+import {
+  startView,
+  viewOfJob,
+  type IngestJob,
+  type IngestView,
+  type ProgressFrame,
+} from "@/lib/ingest-progress";
 import { IngestProgress } from "@/components/brain/ingest-progress";
 import { MonthPicker } from "@/components/brain/entry-form";
 import { monthOf, thisMonth } from "@/lib/entry-fields";
@@ -36,6 +51,14 @@ export function CaptureBox({ onProposal }: Props) {
   // Polling stops when the garden screen goes away; the job does not.
   const leaving = useRef(new AbortController());
   const [error, setError] = useState<string | null>(null);
+  // The job Donna is reading now, so Cancel knows which one to stop.
+  const jobId = useRef<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
+  const track = (job: IngestJob) => {
+    jobId.current = job.id;
+    return job;
+  };
   const fileInput = useRef<HTMLInputElement>(null);
   const busy = stage !== "idle";
   const definition = CAPTURE_TEMPLATES[template];
@@ -44,16 +67,32 @@ export function CaptureBox({ onProposal }: Props) {
     ? formattedCaptureIsValid(template, fields)
     : text.trim().length >= 20;
 
+  async function stop() {
+    if (!jobId.current || cancelling) return;
+    setCancelling(true);
+    try {
+      // The poll that is already running sees the job end and clears the view.
+      await cancelJob(jobId.current);
+    } catch (err) {
+      setCancelling(false);
+      setError(err instanceof ApiError ? err.message : "Couldn't cancel. Try again.");
+    }
+  }
+
   async function run(action: () => Promise<Proposal>) {
     setError(null);
+    setCancelled(false);
     try {
       onProposal(await action());
       setText("");
       setFields({});
     } catch (err) {
       if (leaving.current.signal.aborted) return;
-      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      if (err instanceof ApiError && err.status === CANCELLED) setCancelled(true);
+      else setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
+      jobId.current = null;
+      setCancelling(false);
       if (!leaving.current.signal.aborted) {
         setStage("idle");
         setProgress(null);
@@ -71,7 +110,7 @@ export function CaptureBox({ onProposal }: Props) {
         if (!job || controller.signal.aborted) return;
         setStage("reading");
         setProgress({ view: viewOfJob(job.progress), fromFile: job.source === "upload" });
-        void run(() => followJob(job, report, controller.signal));
+        void run(() => followJob(track(job), report, controller.signal));
       })
       .catch(() => {}); // nothing to pick up is the usual case; a failure here is not worth a message
     return () => controller.abort();
@@ -88,7 +127,9 @@ export function CaptureBox({ onProposal }: Props) {
           setStage("reading");
           setProgress({ view: startView(false), fromFile: false });
           const dump = formatted ? formatCapture(template, fields, text) : text;
-          void run(async () => followJob(await queueText(dump), report, leaving.current.signal));
+          void run(async () =>
+            followJob(track(await queueText(dump)), report, leaving.current.signal),
+          );
         }}
       >
         <label className="text-sm font-medium" htmlFor="dump">
@@ -204,14 +245,24 @@ export function CaptureBox({ onProposal }: Props) {
                 const object = await uploadResume(f);
                 setStage("reading");
                 setProgress({ view: viewOfJob([]), fromFile: true }); // uploaded: now in the queue
-                return followJob(await queueUpload(object), report, leaving.current.signal);
+                return followJob(track(await queueUpload(object)), report, leaving.current.signal);
               });
             }}
           />
           <Button type="button" variant="outline" className="h-10" disabled={busy} onClick={() => fileInput.current?.click()}>
             {stage === "uploading" ? "Uploading…" : "Upload resume"}
           </Button>
-          {!busy && (
+          {stage === "reading" && (
+            <Button type="button" variant="ghost" className="h-10" disabled={cancelling} onClick={() => void stop()}>
+              {cancelling ? "Cancelling…" : "Cancel"}
+            </Button>
+          )}
+          {cancelled && !busy && (
+            <span role="status" className="text-sm text-muted-foreground">
+              Cancelled. Nothing was added to your garden.
+            </span>
+          )}
+          {!busy && !cancelled && (
             <span className="text-xs text-muted-foreground">
               PDF or Word (.docx), up to 10 MB. Donna drafts, you review: only confirmed entries enter your Digital Garden.
             </span>

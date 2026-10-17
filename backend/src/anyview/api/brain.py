@@ -160,6 +160,15 @@ def read_job(job_id: str, user: CurrentUser, repo: RepoDep) -> IngestJob:
         raise HTTPException(404, "No such job.") from exc
 
 
+@router.post("/jobs/{job_id}/cancel", response_model=IngestJob)
+def cancel_job(job_id: str, user: CurrentUser, repo: RepoDep) -> IngestJob:
+    """Stop an upload that is queued or running. Nothing it was reading is kept."""
+    try:
+        return repo.cancel_job(user.uid, job_id)
+    except NotFound as exc:
+        raise HTTPException(404, "No such job.") from exc
+
+
 @router.get("/dumps/{dump_id}", response_model=RawDump)
 def read_dump(dump_id: str, user: CurrentUser, repo: RepoDep) -> RawDump:
     try:

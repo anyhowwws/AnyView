@@ -233,6 +233,9 @@ terraform plan                                                   # terraform.tfv
   once on `gemini-3.8-flash` (`FALLBACK_MODEL_ID`) at **`low`** effort (5-10 s; `medium`/`high` take 37-69 s). The preview
   Pro model throttles (429, then 504 after ~2 min); the old 120 s x 4 attempts turned that into 8+ minute reports.
   `audio_to_text` (spoken questions and answers) runs on the fast model. `api/interview.py` logs when each report item is sent.
+  Extraction's `propose`/`link` calls do the same with `deadline_ms=EXTRACT_DEADLINE_MS` (one 120 s try, since healthy ones run
+  up to ~112 s), and `dedupe` with the 75 s default (ADR 0045). An upload can be cancelled (`POST /brain/jobs/{id}/cancel`): the job
+  fails with 499 "Cancelled.", the worker stops at its next progress frame, and `finish_job` only lands on a running job.
 - Scoring is concurrent twice over: the five answers in a thread pool, and each answer's `score`
   and `ideal` calls side by side inside `_score_one` (the SDK client is thread-safe). Keep new
   per-answer work inside `_score_one` so it stays parallel. `POST /interview/report/stream` sends

@@ -115,6 +115,11 @@ ERASE_ORDER = (
 # backoff added together, so a job waiting on its next attempt is never caught.
 JOB_STALE = dt.timedelta(minutes=15)
 
+# What a cancelled job records. 499 is nginx's "client closed request": nothing
+# failed, the user changed their mind, and the browser shows it as such.
+CANCELLED_MESSAGE = "Cancelled."
+CANCELLED_STATUS = 499
+
 
 @dataclass(frozen=True)
 class JobWork:
@@ -553,16 +558,18 @@ class Repository:
             return "missing"
         return "busy" if status == "running" else "finished"
 
-    def report_job_progress(self, job_id: str, frame: dict) -> None:
-        """Append one progress frame. Doubles as the heartbeat."""
+    def report_job_progress(self, job_id: str, frame: dict) -> bool:
+        """Append one progress frame. Doubles as the heartbeat. False means the
+        job is no longer running (the user cancelled it), so the worker stops."""
         with self.engine.begin() as c:
-            c.execute(
+            result = c.execute(
                 _q(
                     "UPDATE ingest_jobs SET progress = progress || CAST(:frame AS jsonb), "
                     "updated_at = now() WHERE id = :id AND status = 'running'"
                 ),
                 {"id": job_id, "frame": _json([frame])},
             )
+        return result.rowcount > 0
 
     def set_job_dump(self, job_id: str, dump_id: str) -> None:
         with self.engine.begin() as c:
@@ -571,32 +578,50 @@ class Repository:
                 {"id": job_id, "dump": dump_id},
             )
 
-    def finish_job(self, job_id: str, proposal_id: str) -> None:
+    def finish_job(self, job_id: str, proposal_id: str) -> bool:
+        """Mark a running job done. False when it was cancelled meanwhile: the
+        caller then discards the proposal, so a cancelled upload leaves nothing."""
         with self.engine.begin() as c:
-            c.execute(
+            result = c.execute(
                 _q(
                     "UPDATE ingest_jobs SET status = 'done', proposal_id = :pid, "
-                    "updated_at = now() WHERE id = :id"
+                    "updated_at = now() WHERE id = :id AND status = 'running'"
                 ),
                 {"id": job_id, "pid": proposal_id},
             )
+        return result.rowcount > 0
 
     def fail_job(self, job_id: str, message: str, status: int) -> None:
         with self.engine.begin() as c:
             c.execute(
                 _q(
                     "UPDATE ingest_jobs SET status = 'failed', error = :msg, "
-                    "error_status = :status, updated_at = now() WHERE id = :id"
+                    "error_status = :status, updated_at = now() "
+                    "WHERE id = :id AND status IN ('queued', 'running')"
                 ),
                 {"id": job_id, "msg": message, "status": status},
             )
+
+    def cancel_job(self, uid: str, job_id: str) -> IngestJob:
+        """The user's way out of a job that is queued or running. The job fails
+        with status 499 ("Cancelled."), which a redelivered task then finds
+        finished and skips, and the worker stops at its next progress frame.
+        A job that already ended is returned as it is."""
+        job = self.job(uid, job_id)  # NotFound unless it is this user's
+        if job.status in ("queued", "running"):
+            self.fail_job(job_id, CANCELLED_MESSAGE, CANCELLED_STATUS)
+            job = self.job(uid, job_id)
+        return job
 
     def requeue_job(self, job_id: str) -> None:
         """This delivery failed in a way worth retrying; Cloud Tasks will call
         again after its backoff, and the next claim takes the row at once."""
         with self.engine.begin() as c:
             c.execute(
-                _q("UPDATE ingest_jobs SET status = 'queued', updated_at = now() WHERE id = :id"),
+                _q(
+                    "UPDATE ingest_jobs SET status = 'queued', updated_at = now() "
+                    "WHERE id = :id AND status = 'running'"  # never revive a cancelled job
+                ),
                 {"id": job_id},
             )
 

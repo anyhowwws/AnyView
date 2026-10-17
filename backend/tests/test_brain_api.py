@@ -395,6 +395,7 @@ def test_jobs_are_scoped_to_the_signed_in_user(client, db):
     try:
         other = TestClient(app, headers={"Authorization": "Bearer other"})
         assert other.get(f"/brain/jobs/{job['id']}").status_code == 404
+        assert other.post(f"/brain/jobs/{job['id']}/cancel").status_code == 404
     finally:
         del FAKE_TOKENS["other"]
     assert client.get("/brain/jobs/not-a-uuid").status_code == 404
@@ -419,6 +420,18 @@ def test_a_reloaded_page_finds_the_job_still_running(client):
     job = client.post("/brain/jobs", json={"text": DUMP}).json()
     assert job["status"] == "queued" and job["proposal"] is None
     assert [j["id"] for j in client.get("/brain/jobs").json()] == [job["id"]]
+
+
+def test_a_running_job_can_be_cancelled_and_is_gone_from_the_active_list(client):
+    app.dependency_overrides[brain.get_queue] = lambda: _Parked()
+    job = client.post("/brain/jobs", json={"text": DUMP}).json()
+    r = client.post(f"/brain/jobs/{job['id']}/cancel")
+    assert r.status_code == 200
+    assert r.json()["status"] == "failed" and r.json()["error_status"] == 499
+    assert client.get("/brain/jobs").json() == []
+    # Pressing it twice is harmless, and an unknown job is a 404.
+    assert client.post(f"/brain/jobs/{job['id']}/cancel").status_code == 200
+    assert client.post("/brain/jobs/not-a-uuid/cancel").status_code == 404
 
 
 def test_a_job_the_queue_refused_fails_at_once(client):

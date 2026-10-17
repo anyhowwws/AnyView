@@ -40,7 +40,7 @@ from anyview.brain.evidence import contains, normalise
 from anyview.brain.link import link_skills
 from anyview.brain.models import LABEL_PREFIX, Brain, EntityKind, Patch, RoleDraft, SkillDraft
 from anyview.brain.sections import Section, segment
-from anyview.llm.adapter import Effort, Model
+from anyview.llm.adapter import EXTRACT_DEADLINE_MS, Effort, Model
 
 log = logging.getLogger(__name__)
 
@@ -393,6 +393,10 @@ def _extract(
         output_schema=PATCH_SCHEMA,
         effort=EFFORT_BY_SECTION.get(section.kind, "medium") if section else "high",
         max_tokens=8192,
+        # A stuck Pro call used to hold an upload for 8 minutes of retries; now
+        # it gets one try, then one on the fallback model (ADR 0039).
+        fallback=True,
+        deadline_ms=EXTRACT_DEADLINE_MS,
     )
     if reply.refused:
         raise ExtractionFailed("Donna declined to read that dump.")

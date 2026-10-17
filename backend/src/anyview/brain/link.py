@@ -19,7 +19,7 @@ import re
 
 from anyview.brain.evidence import fold, normalise, spans, within
 from anyview.brain.models import Patch
-from anyview.llm.adapter import Model, ModelError
+from anyview.llm.adapter import EXTRACT_DEADLINE_MS, Model, ModelError
 
 log = logging.getLogger(__name__)
 
@@ -128,6 +128,8 @@ def link_skills(patch: Patch, dump_text: str, *, model: Model, session_id: str) 
             output_schema=link_schema([k.key for k in patch.skills], list(stretches)),
             effort="medium",
             max_tokens=4096,
+            fallback=True,
+            deadline_ms=EXTRACT_DEADLINE_MS,
         )
     except ModelError as exc:
         log.warning("skill linking failed, skills left unlinked: %s", exc)

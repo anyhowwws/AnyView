@@ -217,6 +217,17 @@ def test_a_fallback_call_has_a_tight_timeout_and_one_retry_budget():
     assert options.retry_options.attempts == adapter.TIGHT_ATTEMPTS
 
 
+def test_a_call_with_a_deadline_gets_one_long_try_then_the_tight_fallback():
+    stub = _Stub(_api_error(504), "from flash")
+    assert (
+        _ask(_vertex(stub), fallback=True, deadline_ms=adapter.EXTRACT_DEADLINE_MS).text
+        == "from flash"
+    )
+    (_, first), (_, second) = stub.calls
+    assert first.timeout == adapter.EXTRACT_DEADLINE_MS and first.retry_options.attempts == 1
+    assert second.timeout == adapter.TIGHT_TIMEOUT_MS  # the fallback is not given the long one
+
+
 @pytest.mark.parametrize("failure", [_api_error(504), _api_error(429), httpx.ReadTimeout("slow")])
 def test_a_struggling_model_hands_the_call_to_the_fallback(failure, caplog):
     stub = _Stub(failure, "from flash")
