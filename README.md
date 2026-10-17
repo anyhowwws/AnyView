@@ -29,6 +29,7 @@
   <summary>Table of Contents</summary>
   <ol>
     <li><a href="#about-the-project">About The Project</a></li>
+    <li><a href="#try-it-with-the-sample-data">Try It With The Sample Data</a></li>
     <li><a href="#the-digital-garden">The Digital Garden</a></li>
     <li><a href="#practice-against-your-garden">Practice Against Your Garden</a></li>
     <li><a href="#harvey-a-bounded-agent-with-tools">Harvey: A Bounded Agent With Tools</a></li>
@@ -70,6 +71,34 @@ every entry shows where it came from.
 Two AI personas work in it. **Donna** tends the garden: she reads what you give
 her, proposes entries and answers your questions about it. **Harvey** is the
 interviewer.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- TRY IT -->
+## Try It With The Sample Data
+
+There is no shared test account, on purpose. The repo is public, so credentials
+in it could be tampered with, and a fresh account lets you walk the whole path
+yourself: upload, extraction, review queue, garden.
+
+1. Open [anyview.anyapps.cloud](https://anyview.anyapps.cloud) and sign in with
+   any Google account ([ADR 0041](adr/0041-open-sign-in.md)).
+2. In **Digital Garden**, upload the sample resume
+   [`docs/demo/mike-rose-resume.pdf`](docs/demo/mike-rose-resume.pdf). Donna
+   reads it and proposes roles, projects, stories, skills and achievements, each
+   with its quote. Nothing is saved until you confirm it.
+3. Upload [`docs/demo/mike-rose-feedback.pdf`](docs/demo/mike-rose-feedback.pdf)
+   the same way. It adds feedback entries linked to the roles and projects they
+   concern.
+4. Confirm the drafts, then open the garden to see it connected and the
+   competency coverage.
+5. Ask Donna a question in Discover, or start a practice interview from
+   **Practice** (Panel difficulty reads the garden).
+
+Mike Rose is a fictional candidate. You can use your own resume instead; it works
+the same way.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

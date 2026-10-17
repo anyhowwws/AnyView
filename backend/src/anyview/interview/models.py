@@ -79,7 +79,7 @@ class Setup(BaseModel):
     lets the interviewer read it. Two fields, because they are two things;
     the old single slot with a `source` flag was one thing pretending."""
 
-    resume: str = Field(min_length=50, max_length=15_000)
+    resume: str = Field(min_length=50, max_length=25_000)
     company: str = Field(min_length=1, max_length=120)
     role: str = Field(min_length=1, max_length=120)
     seniority: Seniority
@@ -110,7 +110,7 @@ class SetupInput(BaseModel):
     same thing as already-extracted text, which the form does not offer but
     the API accepts so an interview can run with no database behind it."""
 
-    resume: str | None = Field(default=None, max_length=15_000)
+    resume: str | None = Field(default=None, max_length=25_000)
     resume_object: str | None = Field(default=None, max_length=200)
     company: str = Field(min_length=1, max_length=120)
     role: str = Field(min_length=1, max_length=120)

@@ -14,7 +14,7 @@ the interview is unusable without it.
 
 Two constraints shaped the design: the file must never transit the API (brief),
 and everything downstream — prompt caching, quoting `cited_resume_lines`, the
-50–15,000 character limits — works on text.
+50–25,000 character limits — works on text.
 
 ## Options considered
 

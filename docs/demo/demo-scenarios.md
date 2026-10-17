@@ -4,6 +4,7 @@ Files in this folder:
 
 | File | For |
 |---|---|
+| `mike-rose-resume.pdf` / `mike-rose-feedback.pdf` | The sample data named in the README and the submission deck: upload both into a fresh account's Digital Garden (resume, then feedback). Fictional candidate |
 | `jordan-lee-resume.docx` / `.pdf` | The mock resume for judges to upload. Prefer the **.docx**: it is read as-is, with no transcription step |
 | `job-description.docx` / `.pdf` | A matching fictional posting (Staff Platform Engineer, Northstar Wallet) for Hiring Manager and Panel difficulty |
 | `*.md` | Editable sources. Rebuild the .docx with bullets written as literal `•` characters (see "Why the resume looks like this") |

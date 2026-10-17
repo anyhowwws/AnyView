@@ -209,6 +209,14 @@ def resolve_setup(
         )
     except ValidationError as exc:
         first = exc.errors()[0]
+        if first["loc"] == ("resume",) and first["type"] == "string_too_long":
+            # Pydantic reports the limit it broke; say which one, not always "too short".
+            limit = first["ctx"]["max_length"]
+            raise HTTPException(
+                422,
+                f"That resume is too long: {len(text):,} characters, and the limit is "
+                f"{limit:,}. Trim it to the last few roles, or shorten it.",
+            ) from exc
         if first["loc"] == ("resume",):
             raise HTTPException(
                 422, "The resume needs at least 50 characters of text. Is the file empty?"
