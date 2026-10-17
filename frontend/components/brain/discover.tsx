@@ -48,8 +48,10 @@ interface Props {
  *  shown anyway (ADR 0033). A slow voice must never hide the answer. */
 const HOLD_TEXT_MS = 4000;
 
-/** The microphone, while a question is being asked out loud. */
-type Mic = "idle" | "listening" | "transcribing";
+/** The microphone, while a question is being asked out loud. "opening" lasts
+ *  until the recording really runs: "Listening" any earlier invites words that
+ *  are never recorded, and the question loses its beginning. */
+type Mic = "idle" | "opening" | "listening" | "transcribing";
 
 function newConversationId(): string {
   return crypto.randomUUID();
@@ -289,10 +291,11 @@ export function Discover({ brain, onOpen }: Props) {
       answerAloud = false;
     }
     setLevel(0);
-    setMic("listening");
+    setMic("opening");
     listening.current = await listen({
       limits: QUESTION,
       onLevel: setLevel,
+      onStart: () => setMic("listening"),
       onError: (message) => {
         closeMicrophone();
         setMic("idle");
@@ -394,7 +397,12 @@ export function Discover({ brain, onOpen }: Props) {
         </div>
       )}
 
-      {mic === "listening" ? (
+      {mic === "opening" ? (
+        <div className="flex items-center gap-3 text-sm text-muted-foreground" role="status">
+          <span className="size-2 animate-pulse rounded-full bg-primary" aria-hidden />
+          Opening the microphone — wait for &ldquo;Listening&rdquo;…
+        </div>
+      ) : mic === "listening" ? (
         <QuestionListening level={level} onDone={() => listening.current?.stop()} onCancel={() => {
           listening.current?.cancel();
           closeMicrophone();
