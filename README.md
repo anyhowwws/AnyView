@@ -32,6 +32,7 @@
     <li><a href="#the-digital-garden">The Digital Garden</a></li>
     <li><a href="#practice-against-your-garden">Practice Against Your Garden</a></li>
     <li><a href="#harvey-a-bounded-agent-with-tools">Harvey: A Bounded Agent With Tools</a></li>
+    <li><a href="#guardrails">Guardrails</a></li>
     <li><a href="#searching-the-garden-vectors-and-similarity">Searching The Garden: Vectors And Similarity</a></li>
     <li><a href="#how-it-meets-the-challenge">How It Meets The Challenge</a></li>
     <li><a href="#how-its-built">How It's Built</a>
@@ -42,6 +43,7 @@
         <li><a href="#built-with">Built With</a></li>
       </ul>
     </li>
+    <li><a href="#try-it">Try It</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#license">License</a></li>
   </ol>
@@ -76,33 +78,45 @@ interviewer.
 <!-- THE DIGITAL GARDEN -->
 ## The Digital Garden
 
-**Planting.** Upload a resume (PDF or Word), paste a brain dump, or write a
-**Freeform thought** ("write naturally; Donna will identify the useful
-entries"). Donna reads it with Gemini and proposes entries of eight kinds:
-roles, projects, stories, skills, achievements, education, languages and
-feedback others have given you. Each comes with the quote it was drawn from. An
-entry whose quote she can't find in your document is marked unverified, never
-silently dropped or accepted. Near-duplicates ("GCP" and "Google Cloud") are
-merged, and skills are linked to the roles, projects and credentials that show
-them. If you'd rather type it yourself, each entry type has its own form (a
-story asks for situation, task, action and result), and those entries skip the
-model entirely.
+**Uploading a resume.** Upload a resume (PDF or Word) and Donna reads it as a
+background job, so you can keep working while it runs. She first splits it into
+sections (each job in your experience is its own section), then reads every
+section **in parallel** with Gemini, merges the results, folds near-duplicate
+skills ("GCP" and "Google Cloud") and links skills to the roles, projects and
+credentials that show them. A progress view shows each step as it finishes, and
+a **Cancel** button stops the job without adding anything. A one-page resume
+takes about 90 seconds.
 
-**Tending.** Proposals wait in a review queue. You confirm, edit or discard each
-one, and only confirmed entries join the garden. Uploading a newer resume
+Every draft carries the word-for-word quote it was drawn from. A draft whose
+quote can't be found in your document is marked unverified, never silently
+dropped or accepted. Entries come in eight kinds: roles, projects, stories,
+skills, achievements, education, languages and feedback others have given you.
+
+**Capturing.** Beside uploads, a capture box takes either a **Freeform
+thought** ("write naturally; Donna will identify the useful entries"), which
+goes through the same pipeline, or a **formatted entry**: a form per entry type
+(a story asks for situation, task, action and result). Formatted entries skip
+the model and join the garden at once.
+
+**Tending.** Proposals wait in a review queue, and **nothing is committed until
+you say so**: you can edit any draft before confirming it, or discard it. Only
+confirmed entries join the garden. Uploading a newer resume
 proposes only what changed. Every change is kept in a history, so the garden
 can always be rebuilt from it.
 
-**Seeing it whole.** The garden is drawn as a **constellation**: a graph of how
+**Exploring it.** The **Explore your experience** panel has four tabs: Graph,
+Entries, Coverage and Discover. **Entries** lists everything by type, where you
+can edit or retire any entry. The **Graph** is a **constellation**: a graph of how
 your work connects, built only from links you have confirmed. It has three
 views. *Constellation* lets the connections alone decide where entries sit.
 *By role* gives each job its own territory, so a skill used in two roles
 settles between them. *By kind* clusters each entry type, so you can see which
 skills have projects behind them and which stand alone. A **coverage heatmap**
-shows which competencies have strong, weak or no evidence.
+(the **Coverage** tab) shows which competencies have strong, weak or no
+evidence, role by role.
 
-**Asking it.** In **Discover** you ask Donna about your own career, typed or out
-loud ("What have I done with Kubernetes?", "Which project best shows
+**Asking it.** In **Discover** you ask Donna about your own career, typed or
+spoken ("What have I done with Kubernetes?", "Which project best shows
 leadership?"). A question asked out loud is answered out loud. Each answer
 cites the garden entries it came from, so you can check it.
 
@@ -113,22 +127,33 @@ cites the garden entries it came from, so you can check it.
 <!-- PRACTICE -->
 ## Practice Against Your Garden
 
-**Tailored to the job.** Give Harvey a job description as a file, a link or
-pasted text. Three difficulty levels change what he knows: a recruiter screen
-sees only your resume, a hiring manager also has the job description, and a
-panel has your whole garden.
+**Starting an interview.** Setup takes three things:
+
+1. **Your resume.** The one you uploaded before stays on file, so there is
+   nothing to pick again; replace it whenever you like.
+2. **The job.** Upload the posting (PDF or Word), paste a **link** and let the
+   API fetch and read the page, or type it in. Company, role and seniority are
+   filled in for you. Every posting you practise for is **saved**, so the next
+   interview for the same job is one click.
+3. **Difficulty and pace.** Difficulty changes what Harvey knows: a
+   *Recruiter screen* (Easy) sees only your resume, a *Hiring manager* (Medium)
+   also has the job description, and a *Panel* (Hard) has your whole garden.
+   Pace is *Interview pace* (every question has a time limit, and Harvey moves
+   on when it runs out) or *Take your time* (no clock).
 
 **Spoken, like the real thing.** A short pre-flight checks your microphone and
 speakers while Harvey plans the interview. He then asks each question out loud
 over Gemini Live, listens, asks up to two follow-ups and keeps time. Each
-question has its own time budget, and each follow-up adds 90 seconds to it. He
-cuts in when you stall or run long.
+question has its own time budget. The clock only runs while Harvey is quiet,
+and each follow-up adds the time he judges a good answer needs (30 seconds to 5
+minutes). He cuts in when you stall or run long. You can switch to typing at
+any point.
 
 **A straight report.** Every answer is scored on each rubric dimension
 separately, never as one blended number. Each comes with an ideal answer built
 only from your own garden. When the garden has nothing to build it from, the
 report says so instead of inventing an answer, which shows you exactly what to
-add next.
+add next. **Download** the report as Markdown, or save it as a PDF.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -143,9 +168,10 @@ when to dig deeper, and the API decides what it is allowed to do.
 * **Plans.** Gemini 3.1 Pro writes five questions for the job and situation,
   each with its own time budget (45–300 seconds).
 * **Uses tools on Gemini Live.** Harvey has two tools. `ask_follow_up` asks
-  for permission to probe; the API approves at most two per question and
-  refuses once the clock has ended it. `finish_question` closes the question
-  when the answer is complete.
+  for permission to probe and says how many seconds a good answer needs; the
+  API approves at most two per question, holds the time to 30–300 seconds, and
+  refuses once the clock has ended the question. `finish_question` closes the
+  question when the answer is complete, or when the candidate wants to stop.
 * **Looks things up.** At Panel, Harvey reads a one-line index of your garden
   rather than all of it. When a follow-up needs detail, `ask_follow_up` names up
   to three entries, and the API looks them up and hands them back mid-answer.
@@ -158,6 +184,34 @@ everything every turn. In testing, each model decision added 2–6 seconds to a
 spoken turn and made Harvey harder to predict. The bounded version keeps the
 judgement calls with the model and the rules (follow-up budget, clock, which
 entries exist) in code that can be tested.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+<!-- GUARDRAILS -->
+## Guardrails
+
+Harvey and Donna share the same rules, written into their instructions and
+checked by tests:
+
+* **English only.** Live transcription is set to English. If something sounds
+  like another language, Harvey assumes he misheard and asks again in English;
+  he never switches. Planning, scoring and Donna's answers are in English too.
+* **Protected topics.** Neither asks about, guesses at or scores on age, race,
+  ethnicity, nationality, religion, sex, gender identity, sexual orientation,
+  marital or family status, pregnancy, health or disability, political views or
+  union membership. That holds when the materials hint at one (a graduation
+  year, a gap between dates) and when the candidate brings one up.
+* **Staying in role.** Harvey declines anything that isn't the interview in one
+  sentence and returns to the question; repeat, rephrase and clarify are the
+  only requests he acts on. Donna declines anything that isn't about the garden.
+* **The answer is data.** Scoring treats the answer as something to assess,
+  never as instructions; asking for a high score is not evidence of anything.
+* **Conduct and distress.** Harvey stays professional and answers abuse once,
+  calmly. If the candidate says something that suggests real distress, he drops
+  the persona, says it's fine to stop, points them to someone they trust or to
+  emergency services, and ends the question. Donna follows the same rule.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -228,7 +282,7 @@ Secret Manager, Cloud Logging and Monitoring, and Firebase Hosting.
 
 The diagram is in [docs/architecture.drawio](docs/architecture.drawio) (open it
 in [diagrams.net](https://app.diagrams.net/)), and the reasoning behind each
-choice is in [adr/](adr/), 43 records written as each decision was made.
+choice is in [adr/](adr/), 46 records written as each decision was made.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -240,7 +294,7 @@ choice is in [adr/](adr/), 43 records written as each decision was made.
 |---|---|---|
 | Gemini 3.1 Pro (preview) | Planning the interview, scoring, ideal answers | Judgement calls, where depth matters more than speed |
 | Gemini 3.5 Flash-Lite | Resume extraction, Discover, adapting between questions, transcription | 0.8–1.2 s to first token against 5.6 s for Pro, with the same output quality on these tasks |
-| Gemini 3.8 Flash | The report's fallback, at low effort | 5–10 s at low effort; Pro's preview build sometimes throttles |
+| Gemini 3.8 Flash | The fallback for the report and for resume extraction, at low effort | 5–10 s at low effort; Pro's preview build sometimes throttles |
 | Gemini Live | The spoken interview, with follow-ups | A real conversation, with barge-in and tool calls, instead of turn-by-turn audio |
 | Gemini TTS | Harvey's voice on the turn-based fallback; Donna's voice in Discover | Same platform and identity, so no separate speech API |
 | Gemini Embedding 2 | One vector per garden entry | Same project, same IAM, same identity as the chat models |
@@ -258,14 +312,18 @@ kept repeating the question.
 * **Fallbacks.** If Gemini Live fails, the interview carries on turn by turn
   with text-to-speech; if speech fails, it carries on as text. Report calls get
   two 75-second tries on Pro, then one on Gemini 3.8 Flash, so the worst case
-  is about 3.5 minutes rather than 8 or more.
-* **Errors.** Unknown pages get a custom 404 page with a real 404 status. Page
+  is about 3.5 minutes rather than 8 or more. Resume extraction does the same
+  with one 120-second try, so a stuck section costs about 3 minutes, not 8, and
+  you can cancel an upload at any time.
+* **Error page.** Unknown pages get a custom, branded 404 page with a real 404
+  status and a way back to the app. Page
   loads retry for about 75 seconds, which covers deploys and instance
   replacement, and one warm API instance avoids the ~66-second cold start.
 * **Monitoring.** The app writes one log line per activity (sign-ups,
   interviews started and completed, Discover questions, garden uploads) and one
   per model call. Log-based metrics feed an "AnyView usage" dashboard in Cloud
-  Monitoring, and each sign-up sends the owner an email.
+  Monitoring, so sign-ups, interviews, Discover questions and model calls show
+  as daily charts, and each sign-up sends the owner an email.
 * **Privacy.** A [privacy page](https://anyview.anyapps.cloud/privacy) says what
   is collected, why, where it is kept and for how long. Voice recordings are
   deleted after 30 days, and one click on the Account page erases every file
@@ -294,7 +352,8 @@ kept repeating the question.
 | Ingestion | Inside the browser's request | Cloud Tasks and a private worker | A resume takes ~90 s; the queue adds retries, and a lease stops duplicate runs (0034) |
 | Scaling | Scale to zero | One warm API instance | A cold start took ~66 s, and Cloud Run refused requests meanwhile (0023) |
 | Report | Pro only, 120 s × 4 attempts | Pro 75 s × 2, then 3.8 Flash at low effort | The throttled preview Pro made reports take 8+ minutes; the worst case is now ~3.5 (0039) |
-| Follow-up time | One fixed clock per question | +90 s for each follow-up | Two follow-ups inside the planned time cut candidates off (0040) |
+| Follow-up time | One fixed clock per question | The clock pauses while Harvey speaks; each follow-up adds the time he asks for (30–300 s) | Two follow-ups inside the planned time cut candidates off, and Harvey's own speech used up their clock (0040, 0043) |
+| Extraction | Pro with 120 s × 4 attempts per section | One 120 s try on Pro, then 3.8 Flash; a Cancel button | Of 30 real calls, p95 was 79 s and the slowest 112 s, yet a stuck one could take 8 minutes; the worst case is now ~3 (0045) |
 | Access | Email allow-list | Any verified Google account | The app went live; a usage dashboard and a sign-up email keep watch (0041, 0042) |
 
 Ruled out from the start: AWS (0001); Firestore (0002), because confirming a
@@ -324,6 +383,19 @@ LangChain or a dedicated vector database (the brief).
 
 
 
+<!-- TRY IT -->
+## Try It
+
+Open [anyview.anyapps.cloud](https://anyview.anyapps.cloud) and sign in with
+any Google account. [docs/demo/](docs/demo/) has a mock resume and job
+description (PDF, Word and Markdown) and step-by-step scenarios that walk
+through every feature, so you can try it without using your own CV. To run it
+yourself, see [docs/setup.md](docs/setup.md).
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
 <!-- ROADMAP -->
 ## Roadmap
 
@@ -331,14 +403,15 @@ The build follows six phases from the [brief](BRIEF.md#build-order). Spoken
 interviews on Gemini Live, with follow-ups, arrived ahead of schedule.
 
 - [x] **Phase 0: mock interview MVP.** One page, five tailored questions asked
-  one at a time, a streamed interviewer, a per-dimension scored report.
+  one at a time, a streamed interviewer, a per-dimension scored report you can
+  download.
 - [x] **Phase 1: auth and the Digital Garden.** Sign-in, capture, the review
   queue, the event log, Discover, and ingestion on Cloud Tasks.
 - [ ] **Phase 2: retrieval (in progress).** Done: embeddings, hybrid search,
   and search for the report. Left: Discover's search past its threshold, and a
   golden retrieval test set (question → expected story pairs run as a test).
-- [ ] **Phase 3: formats and probing (partly done).** Done: follow-ups on Live
-  and adaptive planning. Left: HR versus technical formats with per-question
+- [ ] **Phase 3: formats and probing (partly done).** Done: follow-ups on Live,
+  adaptive planning and conversation guardrails. Left: HR versus technical formats with per-question
   rubrics, and one click from a gap in the report to a new garden entry.
 - [ ] **Phase 4: history and cost (partly done).** Done: the usage dashboard
   and sign-up alerts. Left: session history, trends and cost per interview.

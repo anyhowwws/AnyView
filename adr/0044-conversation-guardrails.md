@@ -34,7 +34,7 @@ All of it is prompt text and transcription settings. No new model call, no new
 dependency, no change to the interview's state machine.
 
 - **English only.** Live's input and output transcription take
-  `language_codes=["en-US"]` (`adapter.LIVE_LANGUAGE`, a Vertex-only hint).
+  `language_codes=["en-US"]` (`adapter.LIVE_LANGUAGE`, a Agent Platform-only hint).
   `SpeechConfig.language_code` is left out: native-audio Live models choose their
   own output language. Harvey's instruction carries `prompts.ENGLISH_ONLY`: what
   sounds like another language is assumed to be English heard badly, so he asks
