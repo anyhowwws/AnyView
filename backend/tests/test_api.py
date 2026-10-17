@@ -136,10 +136,10 @@ def test_no_resume_and_no_database_is_a_readable_422(client, setup):
 
 
 def test_oversize_resume_is_a_422(client, setup):
-    body = {"session_id": "sess-0001", "setup": {**setup.model_dump(), "resume": "x" * 15_001}}
+    body = {"session_id": "sess-0001", "setup": {**setup.model_dump(), "resume": "x" * 25_001}}
     r = client.post("/interview/start", json=body)
     assert r.status_code == 422
-    assert "at most 15000 characters" in r.json()["detail"]
+    assert "at most 25000 characters" in r.json()["detail"]
 
 
 @pytest.mark.parametrize("session_id", ["s1", "x" * 65])

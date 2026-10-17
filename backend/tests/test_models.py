@@ -38,7 +38,7 @@ def test_setup_enforces_size_caps(setup):
     with pytest.raises(ValidationError):
         Setup(**{**setup.model_dump(), "resume": "too short"})
     with pytest.raises(ValidationError):
-        Setup(**{**setup.model_dump(), "resume": "x" * 15_001})
+        Setup(**{**setup.model_dump(), "resume": "x" * 25_001})
     with pytest.raises(ValidationError):
         Setup(**{**setup.model_dump(), "seniority": "guru"})
     with pytest.raises(ValidationError):
