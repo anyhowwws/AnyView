@@ -303,6 +303,8 @@ Still to come: Discover's search past its threshold, the golden retrieval test s
 - The page's `AudioContext` can be rebuilt (`resetAudio`, ADR 0041): pre-flight "Speak again", the next safe moment
   after `devicechange` (never mid-clip), and Discover's next click after a failed clip. Players `rebind`, the meter
   reconnects via `onAudioReset`, Live's worklet loads per context. `VoicePlayer.onError` puts failures on screen.
+- `listen`'s `onStart` fires once the stream carries sound (`micLive`, capped at `WARM_UP_CAP_MS`). Say
+  "Listening" only then: Discover opens a fresh mic per question, and words said earlier are never recorded.
 - One mic stream, one `AudioContext`, one `HarveyVoice` for the whole interview (`acquireMicrophone`,
   `audioContext`, `harveyVoice()` in `lib/voice.ts`). Practice remounts per question, so anything
   per-mount was wrong: a fresh `AudioContext` per answer read zeros in Safari (no click for it), and

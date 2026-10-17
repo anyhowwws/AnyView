@@ -500,6 +500,9 @@ export interface ListenHandle {
 
 export interface ListenOptions {
   onLevel: (level: number) => void;
+  /** The recording is running and the microphone is delivering sound: the
+   *  moment to say "listening". Anything said before this is not recorded. */
+  onStart?: () => void;
   onEnd: (recording: Recording, reason: ListenEnd | "manual") => void;
   onError: (message: string) => void;
   /** Dead air went on long enough to be awkward. Fires at most once, and the
@@ -507,6 +510,18 @@ export interface ListenOptions {
    *  turn (ADR 0016). */
   onStall?: () => void;
   limits?: ListenLimits;
+}
+
+/** The longest a freshly opened microphone gets to deliver its first real
+ *  sample before `listen` reports it started anyway. Opening the device takes
+ *  a moment, Safari's first frames after it are exact zeros, and a Bluetooth
+ *  headset switching profile takes longer still: words said then are lost. */
+export const WARM_UP_CAP_MS = 1500;
+
+/** Whether the microphone is live yet: a sample that is not digital silence,
+ *  or the warm-up cap passed (a muted mic reads zeros for ever). */
+export function micLive(level: number, sinceStartMs: number): boolean {
+  return level > 0 || sinceStartMs >= WARM_UP_CAP_MS;
 }
 
 /** Open the microphone and hand back the recording once the candidate stops
@@ -517,6 +532,7 @@ export async function listen({
   onEnd,
   onError,
   onStall,
+  onStart,
   limits = UNTIMED,
 }: ListenOptions): Promise<ListenHandle> {
   const format = pickFormat();
@@ -546,6 +562,7 @@ export async function listen({
   let floorSamples = 0;
   let frame = 0;
   let cancelled = false;
+  let live = false;
 
   function teardown() {
     // The stream stays open for the next question; releaseMicrophone() ends it.
@@ -576,6 +593,10 @@ export async function listen({
     onLevel(level);
 
     const at = performance.now();
+    if (!live && micLive(level, at - startedAt)) {
+      live = true;
+      onStart?.();
+    }
     // The first moments are the room, not the answer: use them to set the bar.
     if (at - startedAt < 400) {
       floor += level;
