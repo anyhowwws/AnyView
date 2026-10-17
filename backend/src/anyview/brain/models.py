@@ -53,7 +53,9 @@ LABEL_PREFIX: dict[EntityKind, str] = {
 
 
 class Draft(BaseModel):
-    key: str = Field(min_length=1, max_length=8)  # temp handle within the patch
+    # Temp handle within the patch. Generous on purpose: the model sometimes
+    # names an update "p13_update", and 8 characters failed the whole upload.
+    key: str = Field(min_length=1, max_length=40)
     existing: str | None = None  # label of the entity this updates, e.g. "R2"
     evidence: str = Field(min_length=1, max_length=1000)
     # True when `evidence` could not be found in the dump (ADR 0019). The draft
