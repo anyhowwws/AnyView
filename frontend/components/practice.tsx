@@ -36,7 +36,8 @@ type Turn = "typing" | "listening" | "sending" | "live";
 /** The Practice surface: one question centred, streaming text, a typing
  *  indicator, a thin progress rail. Speaking is the default — the question is
  *  spoken and the microphone opens when Harvey stops (ADR 0013) — and when the
- *  interview is time-bounded each question carries its own clock (ADR 0016). */
+ *  interview is time-bounded each question has a clock that runs only while
+ *  Harvey is quiet (ADR 0016, 0043). */
 export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, error }: Props) {
   const question = session.questions[session.current];
   const total = session.questions.length;
@@ -60,6 +61,9 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   // its text is already here.
   const reask = useRef(false);
   const [remaining, setRemaining] = useState<number | null>(null);
+  // Harvey's voice is still reading the question on the turn-based path: the
+  // text can finish arriving well before he finishes saying it (ADR 0043).
+  const [harveyAsking, setHarveyAsking] = useState(false);
   // One player for the whole interview, shared across these per-question
   // mounts, so a clip from the last question plays out under the next (ADR 0028).
   const harvey = useRef<VoicePlayer | null>(null);
@@ -69,8 +73,10 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     // A clip that will not play used to fail only in the console (ADR 0041).
     const player = harvey.current;
     if (!player) return;
-    player.onError = () =>
+    player.onError = () => {
+      setHarveyAsking(false);
       setVoiceNote("Harvey's voice didn't play. The question is on screen; reload the page if it keeps happening.");
+    };
     return () => {
       if (player.onError) player.onError = null;
     };
@@ -141,9 +147,14 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     // The voice arriving is what hands the turn over; without it, the end of
     // the text does.
     let audioExpected = speaking;
+    setHarveyAsking(speaking);
     // Not stop(): whatever Harvey is still saying ("let's move on") plays to the
     // end, and this question's clips queue behind it.
-    if (voice) voice.onFinished = () => setTurn("listening");
+    if (voice)
+      voice.onFinished = () => {
+        setHarveyAsking(false);
+        setTurn("listening");
+      };
 
     const timer = setTimeout(() => {
       askQuestion(
@@ -156,6 +167,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           onAudio: (b64) => voice?.play(b64),
           onVoiceOff: (message) => {
             audioExpected = false;
+            setHarveyAsking(false);
             setVoiceNote(message);
           },
         },
@@ -166,11 +178,15 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           setStreaming(false);
           onSpoken(question.id, collected);
           if (audioExpected) voice?.markComplete();
-          else if (wantsVoice.current) setTurn("listening");
+          else {
+            setHarveyAsking(false);
+            if (wantsVoice.current) setTurn("listening");
+          }
         })
         .catch((err: unknown) => {
           if ((err as Error).name === "AbortError") return;
           setStreaming(false);
+          setHarveyAsking(false);
           setStreamError(err instanceof ApiError ? err.message : "Something went wrong.");
         });
     }, 0);
@@ -183,24 +199,33 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [question.id, attempt, spoken, voiceReady]);
 
-  // --- The clock (ADR 0016) -------------------------------------------------
-  // It starts when the candidate's turn does, which is when the question has
-  // finished arriving. Sending a spoken answer is not answering, so it stops —
-  // and neither is deciding whether to walk out, or the answer would be sent
-  // from under the confirmation.
+  // --- The clock (ADR 0016, 0043) -------------------------------------------
+  // It starts when the candidate's turn does: once the question has arrived
+  // and, when spoken, once Harvey has finished saying it. Sending a spoken
+  // answer is not answering, so it stops — and neither is deciding whether to
+  // walk out, or the answer would be sent from under the confirmation. On Live
+  // the conversation keeps the clock itself (`onClock`), because it has to stand
+  // still each time Harvey speaks, follow-ups included.
   const answering =
-    timed && !streaming && !streamError && turn !== "sending" && !busy && !ending;
+    timed &&
+    turn !== "live" &&
+    !streaming &&
+    !harveyAsking &&
+    !streamError &&
+    turn !== "sending" &&
+    !busy &&
+    !ending;
 
   // A pause holds the remainder rather than resetting it: opening the "end
   // interview" confirmation and thinking better of it must not hand out a
-  // fresh two minutes, and must not eat the time either.
+  // fresh clock, and must not eat the time either.
   const held = useRef<number | null>(null);
 
   useEffect(() => {
     held.current = null; // a new question brings a new clock
   }, [question.id]);
 
-  // When the countdown reaches zero, as a ref so a follow-up can move it (ADR 0040).
+  // When the countdown reaches zero.
   const deadlineAt = useRef(0);
 
   useEffect(() => {
@@ -219,14 +244,15 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
       clearInterval(tick);
       held.current = Math.max(0, deadlineAt.current - performance.now());
     };
+    // `turn`: leaving Live for "sending" clears the countdown Live was feeding.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [answering, question.id]);
+  }, [answering, question.id, turn]);
 
-  /** Harvey is following up: give the question more time, on the screen's
-   *  countdown as well as in the cue clock that actually ends it (ADR 0040). */
-  function extendClock(extraMs: number) {
-    deadlineAt.current += extraMs;
-    setRemaining(Math.max(0, Math.ceil((deadlineAt.current - performance.now()) / 1000)));
+  /** Live's clock, which ends the question; the countdown just shows it. */
+  function showLiveClock(ms: number | null) {
+    setRemaining(ms === null ? null : Math.ceil(ms / 1000));
+    // "Type this one instead" carries on from here, not from a fresh clock.
+    held.current = ms;
   }
 
   // Once per question. Without this a failed send looped: `busy` pauses the
@@ -282,6 +308,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     if (!on) {
       harvey.current?.stop();
       wantsVoice.current = false;
+      setHarveyAsking(false);
       setVoiceOn(false);
       setTurn("typing");
       saveVoicePreference(false);
@@ -476,7 +503,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           session={session}
           seconds={timed ? question.seconds : null}
           last={last}
-          onExtend={extendClock}
+          onClock={showLiveClock}
           onAsked={() => {
             setStreaming(false);
             onSpoken(question.id, question.text);

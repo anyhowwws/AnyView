@@ -9,10 +9,19 @@ from starlette.websockets import WebSocketDisconnect
 
 from anyview.api import interview
 from anyview.interview import engine
-from anyview.interview.live import LiveTurn
-from anyview.interview.models import MAX_PROBES, NO_ANSWER, Answer, FollowUp, State
+from anyview.interview.live import LiveTurn, follow_up_seconds
+from anyview.interview.models import (
+    DEFAULT_FOLLOW_UP_SECONDS,
+    MAX_FOLLOW_UP_SECONDS,
+    MAX_PROBES,
+    MIN_FOLLOW_UP_SECONDS,
+    NO_ANSWER,
+    Answer,
+    FollowUp,
+    State,
+)
 from anyview.interview.prompts import live_system, score_user
-from anyview.llm.fake import FAKE_ANSWER_BYTES, FAKE_FOLLOW_UP, FakeModel
+from anyview.llm.fake import FAKE_ANSWER_BYTES, FAKE_FOLLOW_UP, FAKE_FOLLOW_UP_SECONDS, FakeModel
 from anyview.main import app
 
 GARDEN = "## [P1] Billing migration\nCut monthly infra cost 38% by moving to Cloud Run."
@@ -33,6 +42,34 @@ def test_follow_ups_are_capped(session):
     refused = turn.tool("ask_follow_up", {"question": "One more?", "reason": "vague"})
     assert refused["allowed"] is False
     assert turn.follow_ups_used == MAX_PROBES
+
+
+def test_harvey_picks_what_a_follow_up_adds_to_the_clock(session):
+    # ADR 0043: his pick, held to the range; a missing or odd one gets the default.
+    turn = LiveTurn(session)
+    result = turn.tool("ask_follow_up", {"question": "And then?", "reason": "x", "seconds": 120})
+    assert result["seconds"] == 120
+
+
+@pytest.mark.parametrize(
+    ("given", "seconds"),
+    [
+        (None, DEFAULT_FOLLOW_UP_SECONDS),
+        ("soon", DEFAULT_FOLLOW_UP_SECONDS),
+        ("75", 75),
+        (5, MIN_FOLLOW_UP_SECONDS),
+        (1_200, MAX_FOLLOW_UP_SECONDS),
+    ],
+)
+def test_a_stray_follow_up_clock_is_held_to_the_range(given, seconds):
+    assert follow_up_seconds(given) == seconds
+
+
+def test_a_refused_follow_up_adds_no_time(session):
+    turn = LiveTurn(session)
+    turn.end("time_up")
+    result = turn.tool("ask_follow_up", {"question": "And then?", "reason": "x", "seconds": 120})
+    assert "seconds" not in result
 
 
 def test_no_follow_up_once_time_is_up(session):
@@ -213,7 +250,12 @@ def test_a_question_end_to_end_with_one_follow_up(client, fake, session):
         assert {"type": "harvey", "text": session.questions[0].text} in seen
         _answer(ws)
         follow_up, _ = _until(ws, "follow_up")
-        assert follow_up == {"type": "follow_up", "question": FAKE_FOLLOW_UP, "allowed": True}
+        assert follow_up == {
+            "type": "follow_up",
+            "question": FAKE_FOLLOW_UP,
+            "allowed": True,
+            "seconds": FAKE_FOLLOW_UP_SECONDS,
+        }
         _until(ws, "turn_complete")
         _answer(ws)
         done, _ = _until(ws, "done")

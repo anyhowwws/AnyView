@@ -20,7 +20,7 @@ API → browser
     text    {"type": "harvey"|"candidate", "text": "..."}           transcripts, in fragments
     text    {"type": "turn_complete"}                               Harvey stopped talking
     text    {"type": "interrupted"}                                 the candidate cut in
-    text    {"type": "follow_up", "question": "...", "allowed": bool}
+    text    {"type": "follow_up", "question": "...", "allowed": bool, "seconds": int|null}
     text    {"type": "done", "answer": <Answer>}                    then the socket closes
     text    {"type": "error", "message": "...", "fallback": bool}
 
@@ -62,7 +62,9 @@ MAX_AUDIO_FRAME = 64 * 1024
 FIRST_FRAME_TIMEOUT_S = 15
 # After Harvey closes the question, how long to let his last words arrive.
 FINISH_GRACE_S = 4.0
-# Live drops a connection at about ten minutes. A question is over well before.
+# Live drops a connection at about ten minutes, so no question outlasts nine. A
+# timed one can ask for more (its clock, plus what each follow-up adds, counted
+# only while Harvey is quiet: ADR 0043); past this it ends with what was said.
 MAX_TURN_S = 9 * 60
 
 
@@ -99,9 +101,8 @@ async def live(
         ) as harvey:
             await _send(ws, {"type": "ready"})
             await harvey.send_text(turn.begin)
-            limit = min(MAX_TURN_S, turn.question.seconds + 240)
             lookup = _lookup(repo, uid)
-            gone = await _relay(ws, harvey, turn, limit=limit, lookup=lookup)
+            gone = await _relay(ws, harvey, turn, limit=MAX_TURN_S, lookup=lookup)
     except ModelError as exc:
         log.warning("live session failed for %s: %s", session.session_id, exc.user_message)
         await _send(ws, {"type": "error", "message": exc.user_message, "fallback": True})
@@ -253,6 +254,8 @@ async def _from_live(
                         "type": "follow_up",
                         "question": str(event.args.get("question", "")),
                         "allowed": bool(result.get("allowed")),
+                        # What it adds to the clock, Harvey's pick (ADR 0043).
+                        "seconds": result.get("seconds"),
                     },
                 )
             if turn.finished and finish_by is None:

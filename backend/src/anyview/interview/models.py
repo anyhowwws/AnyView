@@ -27,6 +27,13 @@ MIN_ANSWER_SECONDS = 45
 MAX_ANSWER_SECONDS = 300
 DEAD_AIR_SECONDS = 10
 
+# What one follow-up adds to the question's clock on Live, picked by Harvey when
+# he asks it (ADR 0043): a quick clarification needs less than a missing story.
+# The default is for a call that leaves it out; the range holds a stray one.
+DEFAULT_FOLLOW_UP_SECONDS = 90
+MIN_FOLLOW_UP_SECONDS = 30
+MAX_FOLLOW_UP_SECONDS = 300
+
 # Adaptive planning (ADR 0036): between questions, one fast call may reword the
 # next question and keeps a short note of what the candidate has said so far.
 # These bound what comes back, whatever the model writes.
