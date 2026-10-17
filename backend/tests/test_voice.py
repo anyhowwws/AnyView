@@ -433,3 +433,17 @@ def test_the_reader_session_answers_every_line():
     assert config.proactivity is None and config.tools is None
     interviewer = live_config(system="s", tools=[], voice="Charon")
     assert interviewer.proactivity.proactive_audio is True
+
+
+def test_live_transcribes_both_sides_as_english():
+    from anyview.interview.prompts import live_reader
+    from anyview.llm.adapter import LIVE_LANGUAGE, live_config
+
+    assert LIVE_LANGUAGE == "en-US"
+    for config in (
+        live_config(system="s", tools=[], voice="Charon"),
+        live_config(system=live_reader("x"), tools=[], voice="Charon", proactive_audio=False),
+    ):
+        assert config.input_audio_transcription.language_codes == [LIVE_LANGUAGE]
+        assert config.output_audio_transcription.language_codes == [LIVE_LANGUAGE]
+    assert "in English" in live_reader("x")

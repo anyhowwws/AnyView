@@ -49,6 +49,11 @@ interview (ADR 0029). Donna speaks only in Discover: to a question asked out lou
 Don't mix them up in copy, prompts or code: `HARVEY_VOICE`/`harveyVoice()` are the interviewer's,
 `DONNA_VOICE`/`donnaVoice()`/`askDonna`/`role: "donna"` are the garden's.
 
+Both are English only and share guardrails (ADR 0044): Live transcription takes `LIVE_LANGUAGE`
+(`en-US`); `prompts.ENGLISH_ONLY`, `STAY_IN_ROLE`, `PROTECTED_TOPICS` and `CONDUCT` (distress included)
+go into `live_system`, `PROTECTED_TOPICS` into `session_system`; Donna's own versions are in
+`DISCOVER_SYSTEM`. A new prompt that talks to or judges the candidate gets them too; tests check each.
+
 ## Layout
 
 ```

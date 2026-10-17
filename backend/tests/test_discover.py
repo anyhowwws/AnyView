@@ -125,3 +125,13 @@ def test_group_labels_spells_out_ranges_and_refuses_nonsense():
     assert group_labels("A5–A2") == ["A5"]  # backwards
     assert group_labels("A1–P3") == ["A1"]  # across kinds
     assert group_labels("A1–A500") == ["A1"]  # not a citation anyone means
+
+
+def test_donna_answers_in_english_and_only_about_the_garden():
+    # ADR 0044: English only, her own scope, protected topics, distress.
+    from anyview.brain.discover import system_prompt
+
+    text = system_prompt("[P1] Something")
+    assert "Answer in English" in text
+    assert "you can only help with their garden" in text
+    assert "pregnancy" in text and "emergency services" in text

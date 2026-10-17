@@ -607,3 +607,9 @@ def test_list_sections_think_less_and_each_job_is_told_it_is_one_job():
     assert sum("one job from the experience section" in c["user"] for c in reads) == 2
     assert [s for s, _ in seen].count("section_done") == 3
     assert seen[0][0] == "sections" and len(seen[0][1]["sections"]) == 3
+
+
+def test_spoken_answers_are_transcribed_as_english():
+    from anyview.uploads.extract import ANSWER_SYSTEM
+
+    assert "speaking English" in ANSWER_SYSTEM and "never another language" in ANSWER_SYSTEM

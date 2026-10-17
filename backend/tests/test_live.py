@@ -139,6 +139,17 @@ def test_panel_adds_the_garden(session):
     assert "digital_garden" not in bare
 
 
+def test_harvey_keeps_his_guardrails_in_every_room(session):
+    # Live once heard an English answer as Spanish and Harvey carried on in Spanish.
+    # The others are ADR 0044: protected topics, staying in role, conduct and distress.
+    from anyview.interview.prompts import CONDUCT, ENGLISH_ONLY, PROTECTED_TOPICS, STAY_IN_ROLE
+
+    for difficulty in ("recruiter_screen", "hiring_manager", "panel"):
+        text = _system(session, difficulty, garden=GARDEN)
+        for rule in (ENGLISH_ONLY, STAY_IN_ROLE, PROTECTED_TOPICS, CONDUCT):
+            assert rule in text
+
+
 def test_the_planned_question_goes_in_verbatim(session):
     text = _system(session, "hiring_manager")
     assert f"<question>\n{session.questions[0].text}\n</question>" in text
