@@ -40,7 +40,7 @@ export const PACES: { value: boolean; label: string; blurb: string }[] = [
     value: true,
     label: "Interview pace",
     blurb:
-      "Every question has a time limit. Harvey moves on when it runs out, mid-sentence if need be — the way an interviewer working to a schedule does.",
+      "Every question has a time limit, and a follow-up adds to it. The clock stops while Harvey talks; when it runs out he moves on, mid-sentence if need be — the way an interviewer working to a schedule does.",
   },
   {
     value: false,

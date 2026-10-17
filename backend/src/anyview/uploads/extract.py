@@ -140,7 +140,7 @@ def audio_to_text(
     if not text:
         raise ExtractionError("We didn't catch any speech in that recording. Try again.")
     if reply.truncated:
-        raise ExtractionError("That answer was too long to transcribe. Keep it under four minutes.")
+        raise ExtractionError("That answer was too long to transcribe. Keep it under five minutes.")
     return text
 
 

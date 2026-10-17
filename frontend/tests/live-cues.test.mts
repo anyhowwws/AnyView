@@ -12,6 +12,7 @@ import {
   budgetAfterFollowUp,
   hearVoice,
   nextCue,
+  remainingMs,
   substantive,
   voiceThreshold,
   type CueLimits,
@@ -183,4 +184,35 @@ test("two follow-ups are not cut off at the planned seconds", () => {
 test("without the extension the same answer is cut at the planned time", () => {
   const out = run({ ...FRESH, askedAt: 0, lastSoundAt: 0 }, 0, 125_000, TIMED, () => ({ spoke: true }));
   assert.deepEqual(out.actions.map(([, action]) => action), ["time_up"]);
+});
+
+// --- Harvey's talking is not the candidate's time (ADR 0043) ---------------------
+
+test("the clock stands still while Harvey asks a follow-up", () => {
+  // Answering for 100 s, Harvey follows up for 30 s, then the candidate talks on.
+  const { actions } = run(asked, 0, 200_000, TIMED, (t) =>
+    t > 100_000 && t <= 130_000 ? { harvey: true } : { spoke: true },
+  );
+  assert.deepEqual(actions, [[150_000, "time_up"]]);
+});
+
+test("the countdown shows what is left, and holds while Harvey speaks", () => {
+  let out = run(asked, 0, 60_000, TIMED, () => ({ spoke: true }));
+  assert.equal(remainingMs(out.state, TIMED), 60_000);
+  out = run(out.state, 60_250, 80_000, TIMED, () => ({ harvey: true }));
+  assert.equal(remainingMs(out.state, TIMED), 60_000);
+  out = run(out.state, 80_250, 90_000, TIMED, () => ({ spoke: true }));
+  assert.equal(remainingMs(out.state, TIMED), 50_000);
+  assert.equal(remainingMs(out.state, UNTIMED), null);
+});
+
+test("a follow-up adds what Harvey asked for", () => {
+  assert.equal(budgetAfterFollowUp(120_000, 45), 165_000);
+  assert.equal(budgetAfterFollowUp(120_000, 240), 360_000);
+  assert.equal(budgetAfterFollowUp(null, 240), null);
+});
+
+test("a frame without seconds falls back to the default", () => {
+  assert.equal(budgetAfterFollowUp(120_000, null), 120_000 + FOLLOW_UP_EXTRA_MS);
+  assert.equal(budgetAfterFollowUp(120_000, 0), 120_000 + FOLLOW_UP_EXTRA_MS);
 });

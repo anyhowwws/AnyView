@@ -178,6 +178,8 @@ SPOKEN_CHARS_PER_SECOND = 14
 # local walk-through answers itself; tests send exactly this much.
 FAKE_ANSWER_BYTES = 4 * LIVE_INPUT_RATE * 2
 FAKE_FOLLOW_UP = "What was the measurable outcome, in your own words?"
+# What FakeLive asks the follow-up to add to the clock (ADR 0043).
+FAKE_FOLLOW_UP_SECONDS = 60
 
 
 def _between(text: str, start: str, end: str) -> str:
@@ -243,7 +245,11 @@ class FakeLive:
             self._heard = 0
             await self._queue.put(LiveEvent("candidate_text", text=self.answer))
             if self._asked < self.follow_ups:
-                args: dict[str, Any] = {"question": FAKE_FOLLOW_UP, "reason": "no outcome"}
+                args: dict[str, Any] = {
+                    "question": FAKE_FOLLOW_UP,
+                    "reason": "no outcome",
+                    "seconds": FAKE_FOLLOW_UP_SECONDS,
+                }
                 if self.labels:
                     args["labels"] = self.labels
                 await self._call("ask_follow_up", **args)

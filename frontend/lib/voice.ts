@@ -32,9 +32,9 @@ export const DEAD_AIR_MS = 10_000;
  *  yes. Without it a timed question sat in silence until its whole clock ran out. */
 export const GIVE_UP_AFTER_STALL_MS = 15_000;
 export const UNTIMED_DEAD_AIR_MS = 30_000;
-/** A hard cap, well inside the 10 MB upload limit at 32 kbps. A timed question
- *  replaces this with its own, shorter clock. */
-export const MAX_ANSWER_MS = 4 * 60_000;
+/** A hard cap, well inside the 10 MB upload limit at 32 kbps, and as long as the
+ *  longest clock a question can have (300 s, ADR 0016). */
+export const MAX_ANSWER_MS = 5 * 60_000;
 /** A question for Donna is a sentence or two, not an answer (ADR 0030). */
 export const MAX_QUESTION_MS = 60_000;
 const QUESTION_DEAD_AIR_MS = 8_000;

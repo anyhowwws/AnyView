@@ -218,9 +218,12 @@ terraform plan                                                   # terraform.tfv
   `api-fake-slow` (launch.json) gives each fake call 2 s so the progress view can be walked through locally. `scripts/extraction_recall.py <file> --expect achievements=14` runs the real
   pipeline on a document you know the answer for; keep real resumes out of the repo.
 - Each question carries its own `seconds` (ADR 0016), chosen by the model when it plans and
-  clamped by `engine.start` into 45–300. The clock only runs when `setup.time_bounded`.
-  On Live each allowed follow-up adds `FOLLOW_UP_EXTRA_MS` (90 s) to both the cue clock and the on-screen
-  countdown (ADR 0040), so two follow-ups are not cut off at the planned seconds.
+  clamped by `engine.start` into 45–300. The clock only runs when `setup.time_bounded`, and only while
+  Harvey is quiet (ADR 0043): on Live `nextCue` counts the candidate's time (`usedMs`) and skips ticks
+  where he is audible, follow-ups and nudges included, and `onClock` feeds the on-screen countdown; on
+  the fallback path the countdown waits for his voice to finish. Each allowed follow-up adds the
+  `seconds` Harvey passed to `ask_follow_up`, clamped to 30–300 by `live.follow_up_seconds` (90 s if
+  missing). The server still ends a Live question at `MAX_TURN_S` (9 min, Live's connection limit).
 - The report's `score` and `ideal` calls pass `fallback=True` (ADR 0039): 75 s and 2 attempts on the judgement model, then
   once on `gemini-3.8-flash` (`FALLBACK_MODEL_ID`) at **`low`** effort (5-10 s; `medium`/`high` take 37-69 s). The preview
   Pro model throttles (429, then 504 after ~2 min); the old 120 s x 4 attempts turned that into 8+ minute reports.

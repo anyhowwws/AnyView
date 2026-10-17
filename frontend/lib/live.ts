@@ -13,12 +13,12 @@
 
 import { LIVE_URL, signInToken } from "@/lib/api";
 import {
-  FOLLOW_UP_EXTRA_MS,
   FRESH,
   QUIET_ROOM,
   budgetAfterFollowUp,
   hearVoice,
   nextCue,
+  remainingMs,
   substantive,
   type CueState,
   type LiveAction,
@@ -117,9 +117,12 @@ export interface LiveHandlers {
   onCandidate: (text: string) => void;
   /** Harvey has finished asking: the clock starts. */
   onAsked: () => void;
-  /** Harvey was allowed a follow-up. `extraMs` is the time it adds to the clock
-   *  (0 when the interview is untimed); the screen's countdown adds the same. */
-  onFollowUp: (question: string, extraMs: number) => void;
+  /** Harvey was allowed a follow-up; the clock has gained time for it (ADR 0040). */
+  onFollowUp: (question: string) => void;
+  /** What is left of the question's clock, in ms, on every tick once it has
+   *  started; null when untimed. It stands still while Harvey speaks (ADR 0043),
+   *  so the screen's countdown shows this rather than keeping its own. */
+  onClock: (remainingMs: number | null) => void;
   /** Play one of Harvey's fixed lines now: a nudge, or the cut-in that ends the question. */
   onInterject: (line: LiveAction) => void;
   onLevel: (level: number) => void;
@@ -131,7 +134,7 @@ export interface LiveHandlers {
 type Frame =
   | { type: "ready" | "turn_complete" | "interrupted" }
   | { type: "harvey" | "candidate"; text: string }
-  | { type: "follow_up"; question: string; allowed: boolean }
+  | { type: "follow_up"; question: string; allowed: boolean; seconds?: number | null }
   | { type: "done"; answer: Answer }
   | { type: "error"; message: string; fallback: boolean };
 
@@ -233,6 +236,7 @@ export class LiveQuestion {
             if (this.finished || this.cues.askedAt !== null) return;
             this.cues = { ...this.cues, askedAt: performance.now(), lastSoundAt: performance.now() };
             this.handlers.onAsked();
+            this.handlers.onClock(remainingMs(this.cues, { budgetMs: this.budgetMs }));
           }, wait);
         }
         break;
@@ -243,8 +247,8 @@ export class LiveQuestion {
         if (frame.allowed) {
           // A follow-up is more talking, so it gets more time (ADR 0040). The
           // cue clock reads `budgetMs` on every tick, so this takes effect now.
-          this.budgetMs = budgetAfterFollowUp(this.budgetMs);
-          this.handlers.onFollowUp(frame.question, this.budgetMs === null ? 0 : FOLLOW_UP_EXTRA_MS);
+          this.budgetMs = budgetAfterFollowUp(this.budgetMs, frame.seconds);
+          this.handlers.onFollowUp(frame.question);
         }
         break;
       case "done": {
@@ -324,6 +328,9 @@ export class LiveQuestion {
     );
     this.spoke = false;
     this.cues = out.state;
+    if (this.cues.askedAt !== null && !this.ending) {
+      this.handlers.onClock(remainingMs(this.cues, { budgetMs: this.budgetMs }));
+    }
     if (!out.action || this.ending) return;
     if (out.action === "stalled") {
       this.handlers.onInterject("stalled");

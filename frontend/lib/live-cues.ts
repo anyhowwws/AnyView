@@ -82,6 +82,11 @@ export function hearVoice(
 export interface CueState {
   /** When Harvey finished asking the question: the clock starts here. Null until then. */
   askedAt: number | null;
+  /** The candidate's time used so far, in ms. It only runs while Harvey is
+   *  silent: his question, a follow-up or a nudge never eats into the answer. */
+  usedMs: number;
+  /** The tick `usedMs` was last brought up to date at. Null: `askedAt`. */
+  tickAt: number | null;
   /** The last moment that counts as not-silence: a real word from the candidate,
    *  or Harvey speaking. */
   lastSoundAt: number;
@@ -94,21 +99,32 @@ export interface CueState {
 
 export const FRESH: CueState = {
   askedAt: null,
+  usedMs: 0,
+  tickAt: null,
   lastSoundAt: 0,
   nudges: 0,
   nudgedAt: null,
   ended: false,
 };
 
-/** Time a follow-up adds to the question's clock (ADR 0040). Without it, the
- *  planned seconds had to cover the answer, Harvey asking, and up to two more
- *  answers, so a second follow-up could be cut off mid-sentence. */
+/** Time a follow-up adds to the question's clock when the API does not say
+ *  (ADR 0040). Harvey picks it per follow-up (ADR 0043), and the API holds his
+ *  pick to 30–300 s; this covers a frame from an API older than that. */
 export const FOLLOW_UP_EXTRA_MS = 90_000;
 
-/** The question's budget once Harvey has been allowed a follow-up. An untimed
- *  interview has no budget to extend. */
-export function budgetAfterFollowUp(budgetMs: number | null): number | null {
-  return budgetMs === null ? null : budgetMs + FOLLOW_UP_EXTRA_MS;
+/** The question's budget once Harvey has been allowed a follow-up, adding the
+ *  `seconds` he asked for. An untimed interview has no budget to extend. */
+export function budgetAfterFollowUp(
+  budgetMs: number | null,
+  seconds?: number | null,
+): number | null {
+  if (budgetMs === null) return null;
+  return budgetMs + (typeof seconds === "number" && seconds > 0 ? seconds * 1000 : FOLLOW_UP_EXTRA_MS);
+}
+
+/** What is left of the question's budget, in ms; null when untimed. */
+export function remainingMs(state: CueState, limits: CueLimits): number | null {
+  return limits.budgetMs === null ? null : Math.max(0, limits.budgetMs - state.usedMs);
 }
 
 export interface CueLimits {
@@ -128,13 +144,19 @@ export function nextCue(
   let next = spoke || harvey ? { ...state, lastSoundAt: now } : state;
   // They answered the nudge: the next long silence is a fresh one.
   if (spoke && next.nudgedAt !== null) next = { ...next, nudgedAt: null };
-  if (next.askedAt === null) return { state: next, action: null };
+  const askedAt = next.askedAt;
+  if (askedAt === null) return { state: next, action: null };
+
+  // The clock runs only while Harvey is quiet (ADR 0043): the time since the
+  // last tick counts against the answer unless he was talking.
+  const since = next.tickAt ?? askedAt;
+  next = { ...next, usedMs: next.usedMs + (harvey ? 0 : Math.max(0, now - since)), tickAt: now };
 
   const end = (action: LiveAction) => ({ state: { ...next, ended: true }, action });
 
   // The clock beats everything: a timed question ends when it ends, even
   // mid-sentence.
-  if (limits.budgetMs !== null && now - next.askedAt >= limits.budgetMs) return end("time_up");
+  if (limits.budgetMs !== null && next.usedMs >= limits.budgetMs) return end("time_up");
 
   if (next.nudgedAt !== null) {
     // Nudged, and the candidate has not said a word since. The nudge counts as
@@ -143,7 +165,7 @@ export function nextCue(
     return { state: next, action: null };
   }
 
-  const quietFor = now - Math.max(next.lastSoundAt, next.askedAt);
+  const quietFor = now - Math.max(next.lastSoundAt, askedAt);
   const deadAir = limits.budgetMs === null ? LIVE_UNTIMED_DEAD_AIR_MS : LIVE_DEAD_AIR_MS;
   if (quietFor >= deadAir) {
     if (next.nudges >= MAX_NUDGES) return end("move_on");

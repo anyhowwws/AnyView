@@ -645,8 +645,9 @@ How this question goes:
    the scope only. Never hint at what a good answer contains.
 4. When they have finished, decide whether one follow-up is worth asking: the answer was vague,
    had no outcome or number, blurred what they did themselves, or skipped something your
-   materials say they did. If so, call `ask_follow_up` with the exact question first, and ask it
-   only if the result says it is allowed. One at a time, at most {MAX_PROBES} on this question.
+   materials say they did. If so, call `ask_follow_up` first, with the exact question and how
+   many seconds a good answer to it needs; ask it only if the result says it is allowed. One at
+   a time, at most {MAX_PROBES} on this question.
    You may refer to the materials naturally: "Your resume says you led the migration — what
    was your part, specifically?"{lookup}
 5. Otherwise, or once you are done following up: {closing} Never preview the next question.
@@ -678,6 +679,14 @@ LIVE_TOOLS: list[dict] = [
                 "reason": {
                     "type": "string",
                     "description": "Why, in a few words: vague, no outcome, unclear role, …",
+                },
+                "seconds": {
+                    "type": "integer",
+                    "description": (
+                        "How long a strong spoken answer to this follow-up needs, between 30 "
+                        "and 300. A quick clarification needs less than a story they left out. "
+                        "It is added to the candidate's clock, so be realistic, not generous."
+                    ),
                 },
                 "labels": {
                     "type": "array",

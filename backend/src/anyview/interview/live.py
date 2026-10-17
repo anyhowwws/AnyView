@@ -23,8 +23,11 @@ from typing import Any
 
 from anyview.interview import engine
 from anyview.interview.models import (
+    DEFAULT_FOLLOW_UP_SECONDS,
     MAX_ANSWER_CHARS,
+    MAX_FOLLOW_UP_SECONDS,
     MAX_PROBES,
+    MIN_FOLLOW_UP_SECONDS,
     NO_ANSWER,
     Answer,
     FollowUp,
@@ -50,6 +53,16 @@ END_REASONS = frozenset({"time_up", "move_on", "manual"})
 _LABEL = re.compile(r"^\[?([A-Za-z])(\d{1,4})\]?$")
 # What one lookup may add to the conversation, which Live re-bills every turn.
 MAX_ENTRY_CHARS = 1_500
+
+
+def follow_up_seconds(given: Any) -> int:
+    """The time a follow-up adds to the clock (ADR 0043): what Harvey asked for,
+    held to the range, or the default when he gave nothing usable."""
+    try:
+        seconds = int(given)
+    except (TypeError, ValueError):
+        return DEFAULT_FOLLOW_UP_SECONDS
+    return max(MIN_FOLLOW_UP_SECONDS, min(MAX_FOLLOW_UP_SECONDS, seconds))
 
 
 @dataclass
@@ -137,7 +150,11 @@ class LiveTurn:
         if not question:
             return {"allowed": False, "reason": "Say which question you want to ask."}
         self.parts.append(_Part(asked=question))
-        return {"allowed": True, "follow_ups_left": MAX_PROBES - self.follow_ups_used}
+        return {
+            "allowed": True,
+            "follow_ups_left": MAX_PROBES - self.follow_ups_used,
+            "seconds": follow_up_seconds(args.get("seconds")),
+        }
 
     def wants(self, args: dict[str, Any], result: dict[str, Any]) -> list[str]:
         """The garden labels to look up for an `ask_follow_up` call (ADR 0037):
