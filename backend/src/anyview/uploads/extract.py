@@ -107,7 +107,11 @@ ANSWER_SYSTEM = (
     "plain prose with ordinary punctuation and paragraph breaks where they pause. Keep "
     "every fact, name, and number as spoken. Remove only stammers and filler words "
     "('um', 'uh', 'you know'). Do not summarise, correct, rephrase, translate, or add "
-    "commentary. If the recording contains no speech, return nothing at all."
+    "commentary. If the recording contains no speech, return nothing at all. "
+    # English only, like the interview: what sounds like another language is
+    # almost always English heard badly, and a Spanish transcript once followed.
+    "The speaker is speaking English: write what they said in English. Where a stretch is "
+    "unclear, write the closest English it could be, or [inaudible]; never another language."
 )
 
 

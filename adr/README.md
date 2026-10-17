@@ -63,3 +63,4 @@ record of having been wrong is the useful part.
 | [0040](0040-a-follow-up-adds-time.md) | A follow-up adds time to the question's clock | Accepted, amended by 0043 |
 | [0041](0041-recoverable-audio.md) | Recoverable audio: a fresh context on retry and on device change, and failures on screen | Accepted |
 | [0043](0043-harvey-times-his-follow-ups.md) | The clock pauses while Harvey speaks, and he times his own follow-ups | Accepted |
+| [0044](0044-conversation-guardrails.md) | Conversation guardrails: English only, protected topics, staying in role | Accepted |

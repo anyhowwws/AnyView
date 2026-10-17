@@ -134,6 +134,13 @@ LiveKind = Literal[
 # The microphone audio a Live session takes: raw 16-bit little-endian PCM, mono.
 LIVE_INPUT_RATE = 16_000
 LIVE_OUTPUT_RATE = 24_000
+# Interviews are English only. Left to detect the language itself, Live's
+# transcription once heard an English answer as Spanish, and Harvey carried on
+# in Spanish. This is a hint to the transcriber (a Vertex-only setting); the
+# instruction (`prompts.ENGLISH_ONLY`) is what keeps Harvey speaking English.
+# `SpeechConfig.language_code` is left out: native-audio Live models choose
+# their own output language and do not take it.
+LIVE_LANGUAGE = "en-US"
 
 
 @dataclass(frozen=True)
@@ -715,8 +722,8 @@ def live_config(
         ]
         if tools
         else None,
-        input_audio_transcription=types.AudioTranscriptionConfig(),
-        output_audio_transcription=types.AudioTranscriptionConfig(),
+        input_audio_transcription=types.AudioTranscriptionConfig(language_codes=[LIVE_LANGUAGE]),
+        output_audio_transcription=types.AudioTranscriptionConfig(language_codes=[LIVE_LANGUAGE]),
         # Interview answers are full of thinking pauses. A low end-of-speech
         # sensitivity and a long silence before "they stopped" keep Harvey
         # from jumping in mid-thought; proactive audio lets him stay quiet
