@@ -99,6 +99,70 @@ def test_a_new_attempt_starts_its_progress_again(repo):
     assert repo.job(UID, job.id).progress == []
 
 
+# --- Cancelling a job ------------------------------------------------------------
+
+
+class _CancelsOn(FakeModel):
+    """A fake model that cancels the job the first time `call` is made, as a
+    user clicking Cancel while Donna reads."""
+
+    def __init__(self, repo, job_id, call):
+        super().__init__()
+        self._repo, self._job_id, self._call, self._done = repo, job_id, call, False
+
+    def generate(self, **kwargs):
+        if kwargs["call"] == self._call and not self._done:
+            self._done = True
+            self._repo.cancel_job(UID, self._job_id)
+        return super().generate(**kwargs)
+
+
+def test_cancelling_a_queued_job_means_its_task_finds_nothing_to_do(repo):
+    job = repo.create_job(UID, text=DUMP)
+    cancelled = repo.cancel_job(UID, job.id)
+    assert cancelled.status == "failed" and cancelled.error == "Cancelled."
+    assert cancelled.error_status == 499
+    assert _run(repo, job.id) == "gone"  # Cloud Tasks delivers it anyway; nothing runs
+    assert repo.pending_proposals(UID) == []
+
+
+def test_a_job_cancelled_while_reading_stops_and_keeps_nothing(repo):
+    job = repo.create_job(UID, text=DUMP)
+    assert _run(repo, job.id, _CancelsOn(repo, job.id, "propose")) == "gone"
+    ended = repo.job(UID, job.id)
+    assert ended.status == "failed" and ended.error == "Cancelled." and ended.proposal is None
+    assert repo.pending_proposals(UID) == []
+
+
+def test_a_job_cancelled_during_the_last_step_leaves_no_proposal(repo):
+    # `link` is the last model call: the proposal is built after the final progress
+    # frame, so only finish_job can notice the cancel.
+    job = repo.create_job(UID, text=DUMP)
+    model = _CancelsOn(repo, job.id, "link")
+    assert _run(repo, job.id, model) == "gone"
+    assert any(c["call"] == "link" for c in model.calls)  # the cancel really came late
+    assert repo.job(UID, job.id).status == "failed"
+    assert repo.pending_proposals(UID) == []
+
+
+def test_nothing_revives_or_rewrites_a_cancelled_job(repo):
+    job = repo.create_job(UID, text=DUMP)
+    repo.claim_job(job.id, lease=ingest.LEASE)
+    repo.cancel_job(UID, job.id)
+    repo.requeue_job(job.id)  # a retry handler running late
+    repo.fail_job(job.id, "Something else", 500)
+    ended = repo.job(UID, job.id)
+    assert ended.status == "failed" and ended.error == "Cancelled."
+    assert repo.report_job_progress(job.id, {"stage": "read"}) is False
+
+
+def test_cancelling_a_finished_job_changes_nothing(repo):
+    job = repo.create_job(UID, text=DUMP)
+    assert _run(repo, job.id) == "done"
+    assert repo.cancel_job(UID, job.id).status == "done"
+    assert len(repo.pending_proposals(UID)) == 1
+
+
 # --- The worker's HTTP face: what Cloud Tasks sees -----------------------------
 
 

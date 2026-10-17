@@ -51,6 +51,12 @@ Effort = Literal["low", "medium", "high"]
 # 120 s x 4 attempts turned into minutes of waiting.
 TIGHT_TIMEOUT_MS = 75_000
 TIGHT_ATTEMPTS = 2
+# Extraction reads whole documents, so its healthy calls run longer: of 30 real
+# `propose` calls, p95 was 79 s and the slowest 112 s, which 75 s would cut off.
+# A call that passes `deadline_ms` gets one try of that length, then the fallback.
+# One try, not two: Agent Platform gives up on a stuck call at ~115 s, so a retry
+# on the same model would spend another two minutes on the same answer.
+EXTRACT_DEADLINE_MS = 120_000
 FALLBACK_MODEL = "gemini-3.8-flash"
 # The fallback thinks at `low`. Measured on the real scoring prompt: Flash takes
 # 5-10 s at `low` (no thinking) and 37-69 s at `medium`/`high` (5-9k thinking
@@ -185,6 +191,7 @@ class Model(Protocol):
         attachment: tuple[bytes, str] | None = None,
         fast: bool = False,
         fallback: bool = False,
+        deadline_ms: int | None = None,
     ) -> Reply: ...
 
     def stream(
@@ -438,17 +445,24 @@ class VertexGemini:
         return config
 
     def _generate(
-        self, model: str, contents: Any, config: types.GenerateContentConfig, *, tight: bool
+        self,
+        model: str,
+        contents: Any,
+        config: types.GenerateContentConfig,
+        *,
+        tight: bool,
+        deadline_ms: int | None = None,
     ) -> Any:
         """One `generate_content`, on the client's defaults or, with `tight`, with
-        this call's own timeout and retry (the SDK reads both from the config)."""
+        this call's own timeout and retry (the SDK reads both from the config).
+        `deadline_ms` swaps the tight timeout for a longer one and drops the retry."""
         if tight:
             config = config.model_copy(
                 update={
                     "http_options": types.HttpOptions(
-                        timeout=TIGHT_TIMEOUT_MS,
+                        timeout=deadline_ms or TIGHT_TIMEOUT_MS,
                         retry_options=types.HttpRetryOptions(
-                            attempts=TIGHT_ATTEMPTS,
+                            attempts=1 if deadline_ms else TIGHT_ATTEMPTS,
                             initial_delay=1.0,
                             max_delay=4.0,
                             http_status_codes=[429, 500, 502, 503, 504],
@@ -471,6 +485,7 @@ class VertexGemini:
         attachment: tuple[bytes, str] | None = None,
         fast: bool = False,
         fallback: bool = False,
+        deadline_ms: int | None = None,
     ) -> Reply:
         # `attachment` is (bytes, mime type) — a PDF the model reads natively.
         # `fast` sends a mechanical call (finding a dump's sections, ADR 0019)
@@ -478,6 +493,8 @@ class VertexGemini:
         # `fallback` is for a call that must not wait on a struggling model
         # (the report, ADR 0039): a tight timeout and one retry, then one try on
         # `fallback_model`. The usage row names the model that answered.
+        # `deadline_ms` (with `fallback`) is for a call whose healthy runs are
+        # long, like extraction: one try that long, then the fallback.
         model = self.fast_model if fast else self.model
         # Sent inline; uploads are capped at 10 MB, well inside the request limit.
         contents: Any = user
@@ -489,7 +506,9 @@ class VertexGemini:
         )
         started = time.monotonic()
         try:
-            response = self._generate(model, contents, config, tight=fallback)
+            response = self._generate(
+                model, contents, config, tight=fallback, deadline_ms=deadline_ms
+            )
         except Exception as exc:  # translated below; SDK types are not allowed out
             error = _translate(exc)
             if not (fallback and error.retryable):

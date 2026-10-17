@@ -36,6 +36,10 @@ UPLOAD_SUFFIXES = (".pdf", ".docx")
 LEASE = dt.timedelta(seconds=120)
 
 
+class JobCancelled(Exception):
+    """The user cancelled the job while it was running: stop, quietly."""
+
+
 class IngestFailed(Exception):
     """A failure that retrying will not fix: the input is the problem."""
 
@@ -128,11 +132,18 @@ def run_job(job_id: str, *, repo: Repository, model, store, final: bool) -> Outc
     job = claimed
 
     def tell(stage: str, data: dict) -> None:
-        repo.report_job_progress(job.id, {"stage": stage, **data})
+        # A progress frame is also the cancel check: the update only lands on a
+        # running job, so a cancelled one stops here instead of finishing work
+        # nobody wants. A model call already in flight still runs to its end.
+        if not repo.report_job_progress(job.id, {"stage": stage, **data}):
+            raise JobCancelled
 
     try:
         dump = _dump_for(job, repo=repo, model=model, store=store, tell=tell)
         proposal = propose_for(repo, model, job.uid, dump, on_progress=tell)
+    except JobCancelled:
+        log.info("ingest job %s cancelled by the user", job.id)
+        return "gone"
     except IngestFailed as exc:
         repo.fail_job(job.id, exc.message, exc.status)
         return "failed"
@@ -152,7 +163,10 @@ def run_job(job_id: str, *, repo: Repository, model, store, final: bool) -> Outc
             job.id, "Something went wrong while Donna was reading. Please try again.", 500
         )
         return "failed"
-    repo.finish_job(job.id, proposal.id)
+    if not repo.finish_job(job.id, proposal.id):
+        # Cancelled while the last step ran: leave nothing in the review queue.
+        repo.discard_proposal(job.uid, proposal.id)
+        return "gone"
     return "done"
 
 

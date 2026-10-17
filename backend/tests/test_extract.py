@@ -135,6 +135,13 @@ def test_existing_of_the_right_kind_is_kept():
     assert patch.roles[0].existing == "R3"
 
 
+def test_every_extraction_call_fails_fast_instead_of_waiting_on_a_stuck_model():
+    model = FakeModel()
+    propose(RESUME, brain_index="", model=model, session_id="s")
+    by_call = {c["call"]: c for c in model.calls if c["call"] in ("propose", "dedupe", "link")}
+    assert by_call and all(c.get("fallback") for c in by_call.values())
+
+
 def test_a_long_key_on_an_update_does_not_fail_the_upload():
     # A feedback upload came back with "p13_update" style keys on every update,
     # and an 8-character cap rejected the whole proposal as malformed.

@@ -78,6 +78,7 @@ def near_duplicates(
             output_schema=_schema(keys, [*keys, *garden_skills]),
             effort="low",
             max_tokens=2048,
+            fallback=True,  # fail fast: this step is optional (ADR 0039)
         )
     except ModelError as exc:
         log.warning("skill dedupe failed, skills left as extracted: %s", exc)

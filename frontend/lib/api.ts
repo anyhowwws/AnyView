@@ -140,6 +140,13 @@ export const queueUpload = (resumeObject: string) =>
 /** Jobs still running, newest first: what a reloaded page picks back up. */
 export const activeJobs = () => request<IngestJob[]>("GET", "/brain/jobs");
 
+/** Stop a job that is queued or running. Whatever it was reading is thrown
+ *  away; the polling that follows it ends with a 499 ApiError ("Cancelled."). */
+export const cancelJob = (id: string) => post<IngestJob>(`/brain/jobs/${id}/cancel`, {});
+
+/** The status a cancelled job fails with: not an error, the user's own choice. */
+export const CANCELLED = 499;
+
 const POLL_MS = 1500;
 
 /** Poll a job until it ends. Every poll hands its progress frames to

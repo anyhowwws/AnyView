@@ -80,6 +80,7 @@ class FakeModel:
         attachment: tuple[bytes, str] | None = None,
         fast: bool = False,
         fallback: bool = False,
+        deadline_ms: int | None = None,
     ) -> Reply:
         # The entry itself, not `calls[-1]`: scoring calls this from several threads.
         entry = self._record(call, session_id, system, user)
