@@ -99,7 +99,8 @@ Rules:
   in the index.
 - Give every draft a short `key` ("r1", "p1", "s1", "k1", "a1", "e1", "l1", "f1", numbered within
   this patch) and use keys or existing labels to link: a project's `role`, a story's
-  `role`/`project`, a feedback entry's `role`/`project`.
+  `role`/`project`, a feedback entry's `role`/`project`. A draft that updates an existing
+  entity gets a short key of its own too ("p1"); the label goes only in `existing`.
 - A skill's `projects`, `roles` and `achievements` may name only labels already in the brain
   index, and only when the dump itself ties the skill to that entry. Leave them empty
   otherwise: links to this patch's own drafts are made by a separate step.

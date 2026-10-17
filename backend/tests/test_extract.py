@@ -135,6 +135,23 @@ def test_existing_of_the_right_kind_is_kept():
     assert patch.roles[0].existing == "R3"
 
 
+def test_a_long_key_on_an_update_does_not_fail_the_upload():
+    # A feedback upload came back with "p13_update" style keys on every update,
+    # and an 8-character cap rejected the whole proposal as malformed.
+    scripted = {
+        **DEFAULTS["propose"],
+        "roles": [{**DEFAULTS["propose"]["roles"][0], "key": "r13_update", "existing": "R3"}],
+    }
+    patch = propose(
+        RESUME,
+        brain_index="[R3] Acme — SRE",
+        model=FakeModel({"propose": scripted}),
+        session_id="s",
+    )
+    assert patch.roles[0].key == "r13_update"
+    assert patch.roles[0].existing == "R3"
+
+
 def test_evidence_check_is_whitespace_and_case_tolerant():
     scripted = {**DEFAULTS["propose"]}
     scripted["skills"] = [
