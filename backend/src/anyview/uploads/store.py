@@ -15,16 +15,32 @@ import datetime as dt
 import logging
 from typing import Protocol
 
+from anyview.uploads.extract import MAX_UPLOAD_BYTES
+
 log = logging.getLogger(__name__)
 
 SIGNED_URL_TTL = dt.timedelta(minutes=15)  # keep in step with extract.SIGNED_URL_TTL_SECONDS
+
+# Signed into every PUT URL. Cloud Storage refuses a body outside this range, so
+# the 10 MB limit holds even for a browser that lies about `size_bytes`. The
+# browser must send the header exactly as signed; the ticket tells it to.
+SIZE_HEADER = {"x-goog-content-length-range": f"0,{MAX_UPLOAD_BYTES}"}
+
+
+class UploadTooLarge(Exception):
+    """The object is over MAX_UPLOAD_BYTES, so it is never read into memory."""
 
 
 class UploadStore(Protocol):
     def signed_put_url(self, object_name: str, content_type: str) -> str: ...
 
+    def put_headers(self) -> dict[str, str]:
+        """Headers the browser must send with its PUT, besides Content-Type."""
+        ...
+
     def read(self, object_name: str) -> bytes | None:
-        """The object's bytes, or None if it does not exist."""
+        """The object's bytes, or None if it does not exist. Raises
+        UploadTooLarge for an object over MAX_UPLOAD_BYTES."""
         ...
 
     def delete_prefix(self, prefix: str) -> int:
@@ -64,14 +80,23 @@ class GcsUploadStore:
             expiration=SIGNED_URL_TTL,
             method="PUT",
             content_type=content_type,
+            headers=SIZE_HEADER,
             service_account_email=self._signer,
             access_token=self._access_token(),
         )
 
+    def put_headers(self) -> dict[str, str]:
+        return dict(SIZE_HEADER)
+
     def read(self, object_name: str) -> bytes | None:
-        blob = self._bucket.blob(object_name)
-        if not blob.exists():
+        # get_blob() fetches the metadata (size included) in the one request
+        # exists() used to make, so the size check costs nothing extra. Objects
+        # uploaded before the size header was signed could be any size.
+        blob = self._bucket.get_blob(object_name)
+        if blob is None:
             return None
+        if (blob.size or 0) > MAX_UPLOAD_BYTES:
+            raise UploadTooLarge(object_name)
         return blob.download_as_bytes()
 
     def delete_prefix(self, prefix: str) -> int:
@@ -97,11 +122,17 @@ class MemoryUploadStore:
         # frontend resolves a leading "/" against the API base.
         return f"/uploads/memory/{object_name}"
 
+    def put_headers(self) -> dict[str, str]:
+        return {}  # the fake-mode route checks the size itself
+
     def put(self, object_name: str, data: bytes) -> None:
         self.objects[object_name] = data
 
     def read(self, object_name: str) -> bytes | None:
-        return self.objects.get(object_name)
+        data = self.objects.get(object_name)
+        if data is not None and len(data) > MAX_UPLOAD_BYTES:
+            raise UploadTooLarge(object_name)
+        return data
 
     def delete_prefix(self, prefix: str) -> int:
         doomed = [name for name in self.objects if name.startswith(prefix)]

@@ -9,7 +9,8 @@ from fastapi.testclient import TestClient
 from anyview.api import interview
 from anyview.llm.fake import FakeModel
 from anyview.main import app
-from anyview.uploads.extract import DOCX, PDF, docx_to_text
+from anyview.uploads.extract import DOCX, MAX_UPLOAD_BYTES, PDF, docx_to_text
+from anyview.uploads.store import GcsUploadStore, UploadTooLarge
 
 UID = "uid-jordan"  # matches conftest.FAKE_TOKENS["good"]
 
@@ -183,3 +184,88 @@ def test_a_recording_is_transcribed_on_the_fast_model():
         "I led the migration."
     )
     assert fake.calls[0]["call"] == "transcribe" and fake.calls[0]["fast"] is True
+
+
+# --- The 10 MB limit holds after the ticket too ------------------------------
+
+
+def test_ticket_tells_the_browser_which_headers_to_send(client):
+    # The in-memory store signs nothing; the real one signs the size range.
+    assert _ticket(client).json()["upload_headers"] == {}
+
+
+def test_fake_mode_put_refuses_more_than_10_mb(client):
+    name = _ticket(client).json()["object_name"]
+    r = client.put(f"/uploads/memory/{name}", content=b"x" * (MAX_UPLOAD_BYTES + 1))
+    assert r.status_code == 413
+
+
+def test_an_oversize_object_is_never_read(client, store):
+    # A browser that lied about size_bytes, against a URL signed before the
+    # size header existed: refused when read, before any model call.
+    name = f"uploads/{UID}/big.pdf"
+    store.put(name, b"%PDF" + b"x" * MAX_UPLOAD_BYTES)
+    r = client.post(
+        "/interview/start",
+        json={
+            "session_id": "sess-0001",
+            "setup": {
+                "company": "Initech",
+                "role": "SRE",
+                "seniority": "senior",
+                "resume_object": name,
+            },
+        },
+    )
+    assert r.status_code == 413
+    assert client.fake.calls == []
+
+
+class _Blob:
+    def __init__(self, size):
+        self.size = size
+
+    def download_as_bytes(self):
+        return b"data"
+
+
+class _Bucket:
+    def __init__(self, blobs):
+        self.blobs = blobs
+        self.signed = None
+
+    def get_blob(self, name):
+        return self.blobs.get(name)
+
+    def blob(self, name):
+        bucket = self
+
+        class _Signer:
+            def generate_signed_url(self, **kw):
+                bucket.signed = kw
+                return "https://storage.example/signed"
+
+        return _Signer()
+
+
+def _gcs(blobs):
+    gcs = GcsUploadStore.__new__(GcsUploadStore)  # skip __init__: no Google client
+    gcs._bucket = _Bucket(blobs)
+    gcs._signer = "anyview-api@example.iam.gserviceaccount.com"
+    gcs._access_token = lambda: "token"
+    return gcs
+
+
+def test_gcs_signs_the_size_range_into_the_url():
+    gcs = _gcs({})
+    gcs.signed_put_url("uploads/u/x.pdf", PDF)
+    assert gcs._bucket.signed["headers"] == {"x-goog-content-length-range": f"0,{MAX_UPLOAD_BYTES}"}
+    assert gcs.put_headers() == gcs._bucket.signed["headers"]
+
+
+def test_gcs_read_checks_the_size_before_downloading():
+    gcs = _gcs({"ok": _Blob(10), "big": _Blob(MAX_UPLOAD_BYTES + 1)})
+    assert gcs.read("ok") == b"data"
+    assert gcs.read("missing") is None
+    with pytest.raises(UploadTooLarge):
+        gcs.read("big")

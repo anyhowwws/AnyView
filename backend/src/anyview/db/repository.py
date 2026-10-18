@@ -106,6 +106,7 @@ ERASE_ORDER = (
     "usage_events",
     "saved_jobs",
     "entity_embeddings",
+    "daily_usage",
     "users",
 )
 
@@ -1193,6 +1194,38 @@ class Repository:
         return {label: blocks[label] for label in labels if label in blocks}
 
     # --- usage --------------------------------------------------------------------
+
+    # --- Daily limits (ADR 0047) ------------------------------------------------
+
+    def take_daily(self, uid: str, action: str, limit: int) -> bool:
+        """Count one `action` against today's limit. False, and nothing counted,
+        when the user has already had `limit` today. Days are UTC."""
+        with self.engine.begin() as c:
+            # One statement: the first of the day inserts 1; later ones add 1
+            # only while under the limit. At the limit the WHERE fails, no row
+            # comes back, and the count stays where it was.
+            row = c.execute(
+                _q(
+                    "INSERT INTO daily_usage (user_id, day, action, count) "
+                    "VALUES (:uid, (now() AT TIME ZONE 'utc')::date, :action, 1) "
+                    "ON CONFLICT (user_id, day, action) DO UPDATE "
+                    "SET count = daily_usage.count + 1 WHERE daily_usage.count < :limit "
+                    "RETURNING count"
+                ),
+                {"uid": uid, "action": action, "limit": limit},
+            ).first()
+        return row is not None
+
+    def give_back_daily(self, uid: str, action: str) -> None:
+        """Undo one `take_daily`, for work that failed before it cost anything."""
+        with self.engine.begin() as c:
+            c.execute(
+                _q(
+                    "UPDATE daily_usage SET count = count - 1 WHERE user_id = :uid "
+                    "AND day = (now() AT TIME ZONE 'utc')::date AND action = :action AND count > 0"
+                ),
+                {"uid": uid, "action": action},
+            )
 
     def write_usage(self, record: dict[str, Any], *, uid: str | None) -> None:
         with self.engine.begin() as c:

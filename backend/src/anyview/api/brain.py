@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from anyview.activity import record
 from anyview.api.auth import CurrentUser, current_user
 from anyview.api.interview import ModelDep, SettingsDep, Transcript
+from anyview.api.limits import daily
 from anyview.api.sse import stream_response
 from anyview.api.uploads import StoreDep, transcribe_recording
 from anyview.brain.discover import DiscoverRequest, ReadAloudRequest, answer, read_aloud
@@ -77,12 +78,12 @@ class EventOut(BaseModel):
 def _propose(
     repo: Repository, model, user: CurrentUser, *, kind: str, text: str, object_name: str | None
 ) -> Proposal:
-    repo.ensure_user(user.uid, user.email)
-    dump = repo.create_dump(user.uid, kind=kind, text=text, object_name=object_name)
-    try:
-        return propose_for(repo, model, user.uid, dump)
-    except IngestFailed as exc:
-        raise HTTPException(exc.status, exc.message) from exc
+    with daily(repo, user, "upload"):  # ADR 0047
+        dump = repo.create_dump(user.uid, kind=kind, text=text, object_name=object_name)
+        try:
+            return propose_for(repo, model, user.uid, dump)
+        except IngestFailed as exc:
+            raise HTTPException(exc.status, exc.message) from exc
 
 
 def _silent(stage: str, data: dict) -> None:
@@ -133,14 +134,16 @@ def create_job(body: JobRequest, user: CurrentUser, repo: RepoDep, queue: QueueD
             check_upload(body.resume_object, user.uid)  # answered now, not after the queue
         except IngestFailed as exc:
             raise HTTPException(exc.status, exc.message) from exc
-    repo.ensure_user(user.uid, user.email)
-    job = repo.create_job(user.uid, text=body.text, object_name=body.resume_object)
-    try:
-        queue.enqueue(job.id)
-    except QueueError as exc:
-        log.error("could not queue ingest job %s: %s", job.id, exc)
-        repo.fail_job(job.id, "Donna couldn't start reading. Please try again.", 503)
-        raise HTTPException(503, "Donna couldn't start reading. Please try again.") from exc
+    # One of today's uploads (ADR 0047), given back if the job can't be queued.
+    # Once queued it counts, whatever happens to it on the worker.
+    with daily(repo, user, "upload"):
+        job = repo.create_job(user.uid, text=body.text, object_name=body.resume_object)
+        try:
+            queue.enqueue(job.id)
+        except QueueError as exc:
+            log.error("could not queue ingest job %s: %s", job.id, exc)
+            repo.fail_job(job.id, "Donna couldn't start reading. Please try again.", 503)
+            raise HTTPException(503, "Donna couldn't start reading. Please try again.") from exc
     record("garden_upload")
     # An inline queue may already have finished it; read it back either way.
     return repo.job(user.uid, job.id)
