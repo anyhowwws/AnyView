@@ -14,6 +14,9 @@ interface Props {
   seconds: number | null;
   /** What is left of that clock in ms, read once when the conversation opens. */
   timeLeftMs: () => number;
+  /** Harvey has already asked this question on Live: he says a short cue
+   *  instead of asking it again. Read once when the conversation opens. */
+  resumed: boolean;
   /** The interview's last question: the button says "Finish". */
   last: boolean;
   /** Harvey has finished asking; the clock starts. */
@@ -38,6 +41,7 @@ export function LiveAnswer({
   session,
   seconds,
   timeLeftMs,
+  resumed,
   last,
   onAsked,
   onClock,
@@ -57,8 +61,26 @@ export function LiveAnswer({
   const [line, setLine] = useState("");
   const conversation = useRef<LiveQuestion | null>(null);
   // The callbacks change on every render of the parent; the socket must not.
-  const props = useRef({ timeLeftMs, onAsked, onClock, onInterject, onAnswer, onFallback, onError });
-  props.current = { timeLeftMs, onAsked, onClock, onInterject, onAnswer, onFallback, onError };
+  const props = useRef({
+    timeLeftMs,
+    resumed,
+    onAsked,
+    onClock,
+    onInterject,
+    onAnswer,
+    onFallback,
+    onError,
+  });
+  props.current = {
+    timeLeftMs,
+    resumed,
+    onAsked,
+    onClock,
+    onInterject,
+    onAnswer,
+    onFallback,
+    onError,
+  };
 
   useEffect(() => {
     setAsked(false);
@@ -88,6 +110,7 @@ export function LiveAnswer({
       // What is left, not `seconds`: typing part of the answer and switching
       // back must not start the clock again.
       seconds === null ? null : props.current.timeLeftMs(),
+      props.current.resumed,
     );
     conversation.current = question;
     // Next tick, so React's dev-mode double effect never opens a paid session.

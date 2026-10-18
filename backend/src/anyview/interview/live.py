@@ -83,7 +83,7 @@ class _Part:
 
 
 class LiveTurn:
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, resumed: bool = False) -> None:
         engine.require_state(session, State.ASK)
         question = session.current_question
         if question is None:
@@ -97,6 +97,7 @@ class LiveTurn:
             answers=session.answers,
             index=session.current,
             notes=session.notes,
+            resumed=resumed,
         )
         self.parts: list[_Part] = [_Part(asked=None)]
         self.harvey: list[str] = []

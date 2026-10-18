@@ -83,6 +83,9 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   }, []);
   // Which (question, attempt) the Live conversation was opened for.
   const liveKey = useRef<string | null>(null);
+  // Harvey has finished asking this question on Live once. Coming back from
+  // typing, he then says a short cue instead of the whole question again.
+  const [askedOnLive, setAskedOnLive] = useState(false);
 
   useEffect(() => {
     // Speaking is the default, so this normally just unlocks audio. Getting
@@ -341,9 +344,10 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
         setVoiceOn(true);
         saveVoicePreference(true);
         setVoiceNote(null);
-        // Ask this question again, aloud. It costs one more short call, and
-        // opening the microphone on a question Harvey never said left people
-        // waiting for Harvey to speak — until Harvey asked whether to move on.
+        // Harvey speaks before the microphone opens: opening it on a question
+        // he never said left people waiting for him — until he asked whether to
+        // move on. On Live, a question he has already asked gets a short cue
+        // (`askedOnLive`); otherwise he asks it, which costs one more short call.
         harvey.current?.stop();
         reask.current = true;
         setAttempt((n) => n + 1);
@@ -518,9 +522,11 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
           session={session}
           seconds={timed ? question.seconds : null}
           timeLeftMs={timeLeftMs}
+          resumed={askedOnLive}
           last={last}
           onClock={showLiveClock}
           onAsked={() => {
+            setAskedOnLive(true);
             setStreaming(false);
             onSpoken(question.id, question.text);
           }}
