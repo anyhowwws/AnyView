@@ -321,9 +321,9 @@ choice is in [adr/](adr/), 46 records written as each decision was made.
 
 | Model | Used for | Why this one |
 |---|---|---|
-| Gemini 3.1 Pro (preview) | Planning the interview, scoring, ideal answers | Judgement calls, where depth matters more than speed |
-| Gemini 3.5 Flash-Lite | Resume extraction, Discover, adapting between questions, transcription | 0.8–1.2 s to first token against 5.6 s for Pro, with the same output quality on these tasks |
-| Gemini 3.8 Flash | The fallback for the report and for resume extraction, at low effort | 5–10 s at low effort; Pro's preview build sometimes throttles |
+| Gemini 3.1 Pro (preview) | Planning the interview, reading resumes into the garden, scoring, ideal answers | Judgement calls, where depth matters more than speed |
+| Gemini 3.5 Flash-Lite | Splitting a resume into sections, Discover, adapting between questions, transcription | 0.8–1.2 s to first token against 5.6 s for Pro, with the same output quality on these tasks |
+| Gemini 3.8 Flash | The fallback for the report and for reading resumes, at low effort | 5–10 s at low effort; Pro's preview build sometimes throttles |
 | Gemini Live | The spoken interview, with follow-ups | A real conversation, with barge-in and tool calls, instead of turn-by-turn audio |
 | Gemini TTS | Harvey's voice on the turn-based fallback; Donna's voice in Discover | Same platform and identity, so no separate speech API |
 | Gemini Embedding 2 | One vector per garden entry | Same project, same IAM, same identity as the chat models |
@@ -375,7 +375,7 @@ kept repeating the question.
 | Area | Started with | Now | Why (ADR) |
 |---|---|---|---|
 | Model | Claude on Gemini Enterprise Agent Platform (the brief) | Gemini 3.1 Pro and 3.5 Flash-Lite | Claude's quota in the project stayed at zero; Gemini had a default quota (0004 → 0007) |
-| Fast calls | Pro for every call | Flash-Lite for extraction, Discover and adapting | 0.8–1.2 s to first token against 5.6 s on Pro, same output quality (0007) |
+| Fast calls | Pro for every call | Flash-Lite for splitting resumes, Discover and adapting | 0.8–1.2 s to first token against 5.6 s on Pro, same output quality (0007) |
 | Interviewer | An agentic loop, considered; text-to-speech turn by turn | Gemini Live with two bounded tools | A model decision every turn added 2–6 s; Live gives real follow-ups, and TTS stays as the fallback (0028, 0031) |
 | Retrieval | The whole garden in every prompt | Embeddings and filter-then-similarity SQL | A garden grows without bound; the report searches once it passes 20,000 characters (0017, 0038) |
 | Ingestion | Inside the browser's request | Cloud Tasks and a private worker | A resume takes ~90 s; the queue adds retries, and a lease stops duplicate runs (0034) |
