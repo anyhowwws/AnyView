@@ -74,7 +74,7 @@ export function Preflight({ sessionId, ready, error, onBegin, onBack }: Props) {
   /** The hearing test. `again` is "Speak again" after "Did you hear Harvey?":
    *  if the first clip was silent, the likeliest cause is an audio context still
    *  bound to an output that is gone (headphones that disconnected, a tab that
-   *  slept), so the retry builds a fresh one first (ADR 0041). The level meter
+   *  slept), so the retry builds a fresh one first (ADR 0046). The level meter
    *  moves to it by itself. */
   async function speakToMe(again = false) {
     if (again) resetAudio();

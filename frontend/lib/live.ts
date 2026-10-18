@@ -168,7 +168,7 @@ export class LiveQuestion {
     try {
       token = await signInToken();
       // Between questions nothing else is using the context, so this is a safe
-      // moment to rebuild it if headphones came or went (ADR 0041).
+      // moment to rebuild it if headphones came or went (ADR 0046).
       refreshAudioIfDevicesChanged();
       this.ctx = audioContext();
       if (this.ctx.state !== "running") await this.ctx.resume();
