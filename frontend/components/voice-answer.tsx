@@ -21,6 +21,8 @@ interface Props {
   sessionId: string;
   /** This question's clock, or null when the interview is untimed. */
   seconds: number | null;
+  /** What is left of that clock in ms, read once when the microphone opens. */
+  timeLeftMs: () => number;
   onTranscript: (text: string, reason: ListenEnd | "manual") => void;
   onError: (message: string) => void;
   /** Harvey needs to say something: the clock ran out, or the silence got long. */
@@ -34,6 +36,7 @@ interface Props {
 export function VoiceAnswer({
   sessionId,
   seconds,
+  timeLeftMs,
   onTranscript,
   onError,
   onInterject,
@@ -74,7 +77,9 @@ export function VoiceAnswer({
     }
 
     void listen({
-      limits: seconds === null ? UNTIMED : timedLimits(seconds),
+      // What is left, not `seconds`, so the recorder stops when the countdown
+      // on screen does, after time spent typing or on Live.
+      limits: seconds === null ? UNTIMED : timedLimits(timeLeftMs() / 1000),
       onLevel: (l) => live && setLevel(l),
       onStall: () => {
         if (!live) return;
