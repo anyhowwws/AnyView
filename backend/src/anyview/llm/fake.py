@@ -22,6 +22,7 @@ from collections.abc import AsyncIterator, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Any
 
+from anyview.interview.prompts import RESUMED_CUE
 from anyview.llm.adapter import (
     EMBEDDING_DIMENSIONS,
     LIVE_INPUT_RATE,
@@ -206,6 +207,8 @@ class FakeLive:
         # As 3.8 sometimes does: speak, and send no transcript of it.
         self.untranscribed = False
         self.last = "This is the last question" in system
+        # Back from typing on a question already asked: cue them in instead.
+        self.resumed = "You have already asked it" in system
         # At Panel, read the first entry of the garden index before following up (ADR 0037).
         index = _between(system, "<garden_index>\n", "</garden_index>")
         self.labels = [index.split("]", 1)[0].lstrip("[")] if index.startswith("[") else []
@@ -269,7 +272,7 @@ class FakeLive:
                 await self._say(self.misread or self.line)
             return
         if text.startswith("[begin]"):
-            await self._say(self.question)
+            await self._say(RESUMED_CUE if self.resumed else self.question)
             self._listening = True
 
     async def send_tool_result(self, call_id: str, name: str, result: dict[str, Any]) -> None:

@@ -90,6 +90,8 @@ Backend modules:
 - `anyview/api/live.py` — `WS /interview/live`: token in the first frame (no headers on a
   WebSocket), `Origin` checked against the CORS list, one Live session per question relayed both
   ways, `done` carries the `Answer`. The browser posts it to `/interview/answer` as usual.
+  `resumed: true` in the first frame (back from typing on a question Harvey already asked on Live) makes
+  him say `prompts.RESUMED_CUE` instead of asking it again.
 - `anyview/interview/{models,rubric,prompts,engine}.py` — Pydantic models; rubric anchors as data; prompt builders; the state machine (intake → plan → ask → answer → probe(≤2) → next | wrap → score → report). Transport-agnostic; follow-ups happen on Live and arrive on the `Answer`.
   `prompts.py` also owns **difficulty** (ADR 0014): `recruiter_screen` (Easy: resume only, no job description) / `hiring_manager` (Medium: + job
   description) / `panel` (Hard: + garden) decide what the interviewer knows, in planning and on

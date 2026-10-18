@@ -195,6 +195,21 @@ def test_bridges_change_shape_from_question_to_question(session):
     assert "kept you busy" not in "".join(BRIDGES)
 
 
+def test_back_from_typing_harvey_cues_in_instead_of_asking_again(session):
+    from anyview.interview.prompts import RESUMED_CUE
+
+    first = _system(session, "hiring_manager")
+    s = session
+    text = live_system(
+        s.setup, questions=s.questions, answers=s.answers, index=s.current, resumed=True
+    )
+    assert RESUMED_CUE in text and "Do not ask the question" in text
+    assert "Ask it word for word" not in text
+    # The question still rides along, so he can repeat it when asked to.
+    assert f"<question>\n{s.questions[0].text}\n</question>" in text
+    assert RESUMED_CUE not in first
+
+
 def test_the_last_question_says_goodbye(session):
     last = len(session.questions) - 1
     text = live_system(session.setup, questions=session.questions, answers=[], index=last)
@@ -281,6 +296,17 @@ def test_a_question_end_to_end_with_one_follow_up(client, fake, session):
     # The browser posts it as it would a typed answer.
     after = engine.submit_answer(session, answer)
     assert after.current == 1
+
+
+def test_a_resumed_question_opens_on_the_cue(client, fake, session):
+    from anyview.interview.prompts import RESUMED_CUE
+
+    first = {"token": "good", "session": session.model_dump(mode="json"), "resumed": True}
+    with client.websocket_connect("/interview/live") as ws:
+        ws.send_text(json.dumps(first))
+        _, seen = _until(ws, "turn_complete")
+    said = [f["text"] for f in seen if f["type"] == "harvey"]
+    assert said == [RESUMED_CUE]
 
 
 @pytest.mark.parametrize(
