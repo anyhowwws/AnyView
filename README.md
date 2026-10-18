@@ -257,7 +257,7 @@ Secret Manager, Cloud Logging and Monitoring, and Firebase Hosting.
 
 The diagram is in [docs/architecture.drawio](docs/architecture.drawio) (open it
 in [diagrams.net](https://app.diagrams.net/)), and the reasoning behind each
-choice is in [adr/](adr/), 43 records written as each decision was made.
+choice is in [adr/](adr/), 46 records written as each decision was made.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -267,9 +267,9 @@ choice is in [adr/](adr/), 43 records written as each decision was made.
 
 | Model | Used for | Why this one |
 |---|---|---|
-| Gemini 3.1 Pro (preview) | Planning the interview, scoring, ideal answers | Judgement calls, where depth matters more than speed |
-| Gemini 3.5 Flash-Lite | Resume extraction, Discover, adapting between questions, transcription | 0.8–1.2 s to first token against 5.6 s for Pro, with the same output quality on these tasks |
-| Gemini 3.8 Flash | The report's fallback, at low effort | 5–10 s at low effort; Pro's preview build sometimes throttles |
+| Gemini 3.1 Pro (preview) | Planning the interview, reading resumes into the garden, scoring, ideal answers | Judgement calls, where depth matters more than speed |
+| Gemini 3.5 Flash-Lite | Splitting a resume into sections, Discover, adapting between questions, transcription | 0.8–1.2 s to first token against 5.6 s for Pro, with the same output quality on these tasks |
+| Gemini 3.8 Flash | The fallback for the report and for reading resumes, at low effort | 5–10 s at low effort; Pro's preview build sometimes throttles |
 | Gemini Live | The spoken interview, with follow-ups | A real conversation, with barge-in and tool calls, instead of turn-by-turn audio |
 | Gemini TTS | Harvey's voice on the turn-based fallback; Donna's voice in Discover | Same platform and identity, so no separate speech API |
 | Gemini Embedding 2 | One vector per garden entry | Same project, same IAM, same identity as the chat models |
