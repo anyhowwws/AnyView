@@ -33,7 +33,7 @@ writes simple scripts). So:
 | Frontend | Next.js App Router, TS, Tailwind v4, shadcn/ui, Framer Motion; static export → Firebase Hosting (static files only) | brief |
 | Files | Cloud Storage bucket `<project>-uploads`, `uploads/<uid>/…`, V4 signed PUT URLs (never transit the API); PDF read by the model, DOCX by `python-docx`. Resumes **and** job descriptions take the same path; a job can also be a link the API fetches | 0010, 0014, 0027 |
 | Async | **Cloud Tasks** queue `anyview-ingest` → private Cloud Run service `anyview-worker` (same image, `APP_MODULE=anyview.worker:app`, invoked only by `anyview-tasks` via OIDC). Ingestion is a job row the browser polls | brief, 0034 |
-| Auth | Identity Platform: Google sign-in only, email allow-list (`ALLOWED_EMAILS`; `*` = any verified Google account, ADR 0041), Firebase ID token verified by `google-auth` on every `/interview/*` route | 0009, 0041 |
+| Auth | Identity Platform: Google sign-in only, email allow-list (`ALLOWED_EMAILS`; `*` = any verified Google account, ADR 0041; ten interviews and ten uploads per user per day, ADR 0047), Firebase ID token verified by `google-auth` on every `/interview/*` route | 0009, 0041 |
 | Secrets | Secret Manager, Terraform provisions the *parameter*, never the value | brief |
 | IaC | Terraform, everything; console-clicked resources do not exist. The `aws` provider manages **only** Route 53 records for `anyview.anyapps.cloud` | brief, 0008 |
 | CI/CD | GitHub Actions → WIF → GCP. No stored keys. Terraform plans on PRs, applies automatically on main | brief, 0024 |
@@ -102,6 +102,7 @@ Backend modules:
   tells the model to open with "tell me about yourself" and to set each question's `seconds`.
 - `anyview/api/{auth,interview,uploads,sse}.py` — the sign-in gate (`current_user`), interview routes, upload tickets, and the SSE frame writer.
   `account.py` serves `POST /account/erase` (ADR 0018): deletes the user's files, then every row, via `Repository.erase_user`.
+  `limits.py` is the daily cap per user on interviews and uploads (ADR 0047).
   `interview.py` also serves `GET /interview/resume` (the resume on file), `POST /interview/job/parse` (an uploaded JD → text + pre-filled fields, or the saved job when that posting is already saved), `POST /interview/job/parse-link` (the same from a pasted URL, ADR 0027), `GET`/`DELETE /interview/jobs` (saved jobs, ADR 0025) and `POST /interview/say` (one of Harvey's fixed interjections, by key — never free text).
 - `anyview/uploads/link.py` — fetches a job posting from a pasted link (ADR 0027): every hop checked for public
   addresses and fetched from the checked IP (SSRF, DNS rebinding); JSON-LD `JobPosting` preferred, else text from `<h1>`.
@@ -300,7 +301,7 @@ Still to come: Discover's search past its threshold, the golden retrieval test s
   planning runs: it opens the microphone (so the permission prompt lands there), plays Harvey's
   `hello` line, and prefetches the `time_up`/`stalled` clips. Its **Begin** click is the user gesture
   that unlocks audio (`unlockAudio()`); a browser's click permission lapses long before planning ends.
-- The page's `AudioContext` can be rebuilt (`resetAudio`, ADR 0041): pre-flight "Speak again", the next safe moment
+- The page's `AudioContext` can be rebuilt (`resetAudio`, ADR 0046): pre-flight "Speak again", the next safe moment
   after `devicechange` (never mid-clip), and Discover's next click after a failed clip. Players `rebind`, the meter
   reconnects via `onAudioReset`, Live's worklet loads per context. `VoicePlayer.onError` puts failures on screen.
 - `listen`'s `onStart` fires once the stream carries sound (`micLive`, capped at `WARM_UP_CAP_MS`). Say
@@ -352,10 +353,20 @@ Still to come: Discover's search past its threshold, the golden retrieval test s
   The real one needs `GOOGLE_CLOUD_PROJECT` set (token audience).
 - The Google provider is provisioned by the Firebase CLI from `firebase-auth.json`, not
   Terraform. `authDomain` is the custom domain in production.
-- Phase 0 is **stateless**: the browser carries the whole session and posts it on each turn.
-  No in-memory session store — Cloud Run instances don't share memory.
-- Usage rows in Phase 0 are JSON log lines (`anyview.usage` logger), one per model call.
-  Phase 1 moves them to a table with the same fields.
+- An interview is **stateless** on the server: the browser carries the whole session and posts it on
+  each turn. No in-memory session store — Cloud Run instances don't share memory.
+- Every model call writes one `anyview.usage` JSON log line (what the dashboard counts, ADR 0042) and,
+  when there is a database, a `usage_events` row with the same fields (`main.py`, `Repository.write_usage`).
+- **Daily limits (ADR 0047).** `api/limits.py:daily()` wraps `/interview/start`, `POST /brain/jobs` and the
+  `/brain/dumps` routes: ten interviews and ten uploads per user per UTC day (`DAILY_LIMIT`), counted in
+  `daily_usage` by one SQL statement, given back when the work raises, 429 at the limit. No database, no
+  limit. Form entries, edits, Discover and the report are not counted.
+- **Upload size (ADR 0047).** The signed PUT URL signs `x-goog-content-length-range` (`store.SIZE_HEADER`);
+  the ticket returns it as `upload_headers` and `putTicket` must send it as-is, and the bucket's CORS rule
+  must allow it. `store.read` checks the size before downloading and raises `UploadTooLarge` (413).
+- **Demo kit** (`docs/demo/`): one fictional candidate, Mike Rose (resume + feedback PDFs), and a matching
+  job description whose `.docx`/`.pdf` are built from `job-description.md` (python-docx, bullets as literal
+  `•`, then LibreOffice to PDF). `demo-scenarios.md` is the judges' guide; keep it in step with the app.
 - `gcloud config get-value project` on this machine points at a *different*
   project. Always pass `--project` or rely on `terraform.tfvars`.
 - Frontend is a static export: no server components that fetch at request time,

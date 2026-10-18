@@ -12,14 +12,27 @@
     Grow your career into a Digital Garden, then practise interviews against it.
     <br />
     <a href="https://anyview.anyapps.cloud"><strong>Open the live app »</strong></a>
+    &middot;
+    <a href="https://www.youtube.com/watch?v=ePrAzZOZDHw"><strong>Watch the demo »</strong></a>
     <br />
     <br />
+    <a href="#a-judges-five-minute-path">Five-minute path</a>
+    &middot;
+    <a href="docs/demo/demo-scenarios.md">Full demo guide</a>
+    &middot;
     <a href="BRIEF.md">Product brief</a>
     &middot;
     <a href="adr/">Decision records</a>
     &middot;
     <a href="docs/setup.md">Run it yourself</a>
   </p>
+
+  <a href="https://github.com/anyhowwws/AnyView/actions/workflows/ci.yml"><img src="https://github.com/anyhowwws/AnyView/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI and deploy" /></a>
+
+  <br />
+  <br />
+
+  <a href="https://www.youtube.com/watch?v=ePrAzZOZDHw"><img src="https://img.youtube.com/vi/ePrAzZOZDHw/hqdefault.jpg" alt="AnyView demo video on YouTube" width="560" /></a>
 </div>
 
 
@@ -29,22 +42,24 @@
   <summary>Table of Contents</summary>
   <ol>
     <li><a href="#about-the-project">About The Project</a></li>
-    <li><a href="#try-it-with-the-sample-data">Try It With The Sample Data</a></li>
+    <li><a href="#a-judges-five-minute-path">A Judge's Five-Minute Path</a></li>
     <li><a href="#the-digital-garden">The Digital Garden</a></li>
     <li><a href="#practice-against-your-garden">Practice Against Your Garden</a></li>
     <li><a href="#harvey-a-bounded-agent-with-tools">Harvey: A Bounded Agent With Tools</a></li>
     <li><a href="#guardrails">Guardrails</a></li>
     <li><a href="#searching-the-garden-vectors-and-similarity">Searching The Garden: Vectors And Similarity</a></li>
     <li><a href="#how-it-meets-the-challenge">How It Meets The Challenge</a></li>
+    <li><a href="#evaluation">Evaluation</a></li>
     <li><a href="#how-its-built">How It's Built</a>
       <ul>
+        <li><a href="#architecture">Architecture</a></li>
         <li><a href="#models-and-why">Models And Why</a></li>
         <li><a href="#safeguards-and-operations">Safeguards And Operations</a></li>
         <li><a href="#decisions-we-changed-and-why">Decisions We Changed, And Why</a></li>
         <li><a href="#built-with">Built With</a></li>
       </ul>
     </li>
-    <li><a href="#try-it">Try It</a></li>
+    <li><a href="#written-with-claude-code">Written With Claude Code</a></li>
     <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#license">License</a></li>
   </ol>
@@ -76,29 +91,37 @@ interviewer.
 
 
 
-<!-- TRY IT -->
-## Try It With The Sample Data
+<!-- FIVE-MINUTE PATH -->
+## A Judge's Five-Minute Path
 
-There is no shared test account, on purpose. The repo is public, so credentials
-in it could be tampered with, and a fresh account lets you walk the whole path
-yourself: upload, extraction, review queue, garden.
+Everything uses one fictional candidate, **Mike Rose**, a cloud solutions
+architect. There is no shared test account, on purpose: the repo is public, and a
+fresh account lets you walk the whole path yourself.
 
-1. Open [anyview.anyapps.cloud](https://anyview.anyapps.cloud) and sign in with
-   any Google account ([ADR 0041](adr/0041-open-sign-in.md)).
-2. In **Digital Garden**, upload the sample resume
+1. **Sign in.** Open [anyview.anyapps.cloud](https://anyview.anyapps.cloud) and
+   sign in with any Google account ([ADR 0041](adr/0041-open-sign-in.md)).
+2. **Grow the garden.** In **Digital Garden**, upload
    [`docs/demo/mike-rose-resume.pdf`](docs/demo/mike-rose-resume.pdf). Donna
-   reads it and proposes roles, projects, stories, skills and achievements, each
-   with its quote. Nothing is saved until you confirm it.
-3. Upload [`docs/demo/mike-rose-feedback.pdf`](docs/demo/mike-rose-feedback.pdf)
-   the same way. It adds feedback entries linked to the roles and projects they
-   concern.
-4. Confirm the drafts, then open the garden to see it connected and the
-   competency coverage.
-5. Ask Donna a question in Discover, or start a practice interview from
-   **Practice** (Panel difficulty reads the garden).
+   reads it in the background and shows each step as it finishes (a few minutes
+   for this five-page resume). Open the review queue: every draft quotes the line
+   it came from. Press **Confirm all**.
+3. **Add what others said.** Upload
+   [`docs/demo/mike-rose-feedback.pdf`](docs/demo/mike-rose-feedback.pdf) and
+   confirm it. Feedback entries link to the roles and projects they concern.
+4. **Look around.** **Explore your experience** has the Graph (try *By role*),
+   the competency Coverage heatmap, and **Discover**: ask "What's my best evidence
+   for leadership?", then "Have I ever worked with Oracle databases?" to see Donna
+   say the garden has nothing on it.
+5. **Get interviewed.** In **Practice**, upload
+   [`docs/demo/job-description.pdf`](docs/demo/job-description.pdf), choose
+   **Panel** and **Interview pace**, and press **Begin** after the microphone
+   check. Answer a question or two out loud, stay silent for ten seconds to hear
+   Harvey nudge, then switch to typing to finish quickly. The report scores each
+   answer on four separate dimensions, with an ideal answer built from the garden.
 
-Mike Rose is a fictional candidate. You can use your own resume instead; it works
-the same way.
+The [full demo guide](docs/demo/demo-scenarios.md) has strong and weak answers
+to try, and the moments worth seeing (the hard stop, barge-in, the close). Each
+account can start ten interviews and ten uploads a day.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -289,6 +312,36 @@ Secret Manager, Cloud Logging and Monitoring, and Firebase Hosting.
 
 
 
+<!-- EVALUATION -->
+## Evaluation
+
+Each number below was measured on the real models while building, and the
+decision record named in the last column says how.
+
+| What was measured | Result | Record |
+|---|---|---|
+| Resume extraction recall, on a real resume checked by hand (`scripts/extraction_recall.py`) | All 14 certifications, both roles with 9 responsibilities, 8 projects, and 36 skill links each checked against a quote | [0019](adr/0019-sectioned-extraction-and-evidenced-links.md) |
+| Extraction call time, 30 real calls on Gemini 3.1 Pro | p95 79 s, slowest 112 s. A stuck call now gives up after one 120 s try and falls back, so the worst case per call is about 3 minutes, not 8 | [0045](adr/0045-extraction-fails-fast-and-uploads-can-be-cancelled.md) |
+| Report time while the preview Pro model throttled (the report's ten parallel calls drew 13 `429` responses in 12 s) | Worst case from over 8 minutes to about 3.5; the fallback answers in 5–10 s at `low` effort, against 53–69 s at `high` | [0039](adr/0039-the-report-fails-fast-and-falls-back.md) |
+| Time to first token on the interviewer's prompt | Flash-Lite 0.8–1.2 s, 3.8 Flash 4 s, 3.1 Pro 5.6 s; Flash-Lite's output matched Pro's on these tasks | [0007](adr/0007-gemini-on-vertex.md) |
+| A fully agentic interviewer, one model decision per turn | Added 2–6 s to every spoken turn and made Harvey harder to predict, so tools are bounded instead | [0031](adr/0031-harvey-on-gemini-live.md) |
+| Cold start of the API on Cloud Run | About 66 s, refusing requests meanwhile (29 in one week), so one instance stays warm | [0023](adr/0023-one-warm-api-instance.md) |
+
+**What the tests hold in place.** 475 backend tests (run against Postgres with
+pgvector in CI) and 94 frontend tests run on every pull request, with
+`terraform validate` and a plan. Among them: replaying the event log rebuilds
+exactly the same garden; a draft whose quote is missing from the document is
+flagged, never dropped; every prompt that talks to or judges the candidate
+carries the guardrails; a follow-up beyond the budget is refused; and erasing an
+account leaves no row in any table.
+
+**Not measured yet.** A golden retrieval set (questions with the stories that
+should come back) is on the roadmap, so search quality is not yet a number.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
 <!-- HOW IT'S BUILT -->
 ## How It's Built
 
@@ -309,9 +362,64 @@ Secret Manager, Cloud Logging and Monitoring, and Firebase Hosting.
   Firebase Hosting; the API streams to the browser over server-sent events and
   a WebSocket, with no proxy in between to buffer them.
 
-The diagram is in [docs/architecture.drawio](docs/architecture.drawio) (open it
-in [diagrams.net](https://app.diagrams.net/)), and the reasoning behind each
-choice is in [adr/](adr/), 46 records written as each decision was made.
+The reasoning behind each choice is in [adr/](adr/), 47 records written as each
+decision was made.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+
+### Architecture
+
+```mermaid
+flowchart LR
+  user(["Candidate<br/>browser + microphone"])
+  r53["Route 53 (AWS)<br/>one CNAME"]
+  gha["GitHub Actions<br/>lint · test · plan · apply · deploy"]
+
+  subgraph gcp["Google Cloud · every resource in Terraform"]
+    hosting["Firebase Hosting<br/>Next.js static export"]
+    idp["Identity Platform<br/>Google sign-in"]
+    api["Cloud Run: anyview-api<br/>FastAPI · REST, SSE, WebSocket"]
+    tasks["Cloud Tasks<br/>anyview-ingest"]
+    worker["Cloud Run: anyview-worker<br/>private ingress"]
+    sql[("Cloud SQL Postgres + pgvector<br/>event log · garden · vectors")]
+    gcs[("Cloud Storage<br/>resumes · job posts · audio")]
+    obs["Logging + Monitoring<br/>usage dashboard · alerts"]
+    wif["Workload Identity Federation<br/>no stored keys"]
+    ar["Artifact Registry<br/>one image"]
+    subgraph ap["Gemini Enterprise Agent Platform · IAM only, no API key"]
+      pro["Gemini 3.1 Pro<br/>falls back to 3.8 Flash"]
+      lite["Gemini 3.5 Flash-Lite"]
+      live["Gemini Live"]
+      tts["Gemini TTS"]
+      emb["Gemini Embedding 2"]
+    end
+  end
+
+  r53 -->|CNAME| hosting
+  user -->|"① load the app"| hosting
+  user -->|"② sign in"| idp
+  user -->|"③ API calls, ID token"| api
+  user -->|"④ signed PUT, max 10 MB"| gcs
+  api --> ap
+  api --> sql
+  api -->|enqueue| tasks
+  tasks -->|OIDC| worker
+  worker --> ap
+  worker --> sql
+  worker -->|read| gcs
+  api -.->|log lines| obs
+  gha -->|OIDC| wif
+  wif -->|push| ar
+  ar -->|deploy| api
+  ar -->|deploy| worker
+```
+
+The browser talks to Cloud Run directly: Firebase Hosting serves static files
+only, because its rewrites buffer streams. The editable version of this diagram
+is [docs/architecture.drawio](docs/architecture.drawio) (open it in
+[diagrams.net](https://app.diagrams.net/)).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -359,6 +467,12 @@ kept repeating the question.
   and every row.
 * **Access.** Sign-in is Google only, open to any verified Google account, with
   the Firebase ID token checked on every signed-in request to the API.
+* **Daily limits.** Each account can start ten interviews and ten uploads a day
+  (UTC), counted in one SQL statement so two requests cannot both take the last
+  one. A failed attempt does not count ([ADR 0047](adr/0047-a-daily-limit-per-user.md)).
+* **Upload size.** The 10 MB limit is signed into each upload URL, so Cloud
+  Storage refuses a bigger file, and the API checks an object's size before it
+  reads it.
 * **Custom domain.** The `anyapps.cloud` zone lives in AWS Route 53. Terraform
   writes one CNAME, `anyview.anyapps.cloud` to Firebase Hosting, in its own
   small stack so a stale AWS session can never block a GCP deploy. Firebase
@@ -412,14 +526,17 @@ LangChain or a dedicated vector database (the brief).
 
 
 
-<!-- TRY IT -->
-## Try It
+<!-- CLAUDE CODE -->
+## Written With Claude Code
 
-Open [anyview.anyapps.cloud](https://anyview.anyapps.cloud) and sign in with
-any Google account. [docs/demo/](docs/demo/) has a mock resume and job
-description (PDF, Word and Markdown) and step-by-step scenarios that walk
-through every feature, so you can try it without using your own CV. To run it
-yourself, see [docs/setup.md](docs/setup.md).
+The code in this repository was written by Claude, using
+[Claude Code](https://claude.com/claude-code). The owner, a cloud solutions
+architect, set the product and the architecture, made the calls recorded in
+[adr/](adr/); Claude wrote the code,
+the tests and the Terraform to match. [CLAUDE.md](CLAUDE.md) is the working
+brief Claude reads at the start of every session: the decided stack, the
+conventions and the gotchas learned along the way. Commits Claude made carry a
+`Co-Authored-By: Claude` line.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -448,8 +565,6 @@ interviews on Gemini Live, with follow-ups, arrived ahead of schedule.
   Discover questions and read-aloud answers. Left: voice brain dumps, and
   replaying your own recorded answers.
 
-See the [open issues][issues-url] for known bugs and smaller work.
-
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
@@ -467,7 +582,6 @@ without permission. See [LICENSE](LICENSE), and contact
 
 
 <!-- MARKDOWN LINKS & IMAGES -->
-[issues-url]: https://github.com/anyhowwws/AnyView/issues
 [Python.id]: https://img.shields.io/badge/Python_3.12-3776AB?style=for-the-badge&logo=python&logoColor=white
 [Python-url]: https://www.python.org/
 [FastAPI.id]: https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white

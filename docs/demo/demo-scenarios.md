@@ -1,135 +1,161 @@
-# AnyView demo kit
+# AnyView demo kit: a guide for judges
 
-Files in this folder:
+Everything here uses one fictional candidate, **Mike Rose**, a cloud solutions architect in
+Singapore. You can follow it on the live app with any Google account, in about five minutes for
+the short path or twenty for everything.
 
-| File | For |
+| File | What it is |
 |---|---|
-| `mike-rose-resume.pdf` / `mike-rose-feedback.pdf` | The sample data named in the README and the submission deck: upload both into a fresh account's Digital Garden (resume, then feedback). Fictional candidate |
-| `jordan-lee-resume.docx` / `.pdf` | The mock resume for judges to upload. Prefer the **.docx**: it is read as-is, with no transcription step |
-| `job-description.docx` / `.pdf` | A matching fictional posting (Staff Platform Engineer, Northstar Wallet) for Hiring Manager and Panel difficulty |
-| `*.md` | Editable sources. Rebuild the .docx with bullets written as literal `•` characters (see "Why the resume looks like this") |
+| [`mike-rose-resume.pdf`](mike-rose-resume.pdf) | The sample resume. Five pages: three roles, fifteen projects, fourteen "key moments" (stories), fourteen certifications, education and languages |
+| [`mike-rose-feedback.pdf`](mike-rose-feedback.pdf) | Eighteen pieces of feedback from colleagues, reviewers and a client, each naming the role or project it is about |
+| [`job-description.pdf`](job-description.pdf) / [`.docx`](job-description.docx) | A matching fictional posting: Senior Cloud Solutions Architect, Northstar Cloud Partners. [`job-description.md`](job-description.md) is its source |
 
-## What the resume produces
+Each account can start **ten interviews and ten uploads a day** ([ADR 0047](../../adr/0047-a-daily-limit-per-user.md)).
+Everything below fits inside that.
 
-Checked against the real pipeline on Agent Platform (`scripts/extraction_recall.py`, run three times, 110–210 s per run):
+## 1. Build the garden (about 5 minutes)
 
-| Kind | Count | Notes |
-|---|---|---|
-| Roles | 3 | Kitebridge Payments (R1), Harbourline Logistics (R2), Meridian Health Group (R3), each with responsibilities |
-| Projects | 5 | Data centre exit, Paved Road, Build pipeline consolidation, Warehouse telemetry, Appointment reminders, each linked to its role |
-| Stories | 7 | All linked to a role, all with a result |
-| Skills | ~22 | Each linked to the project/role it was used in, with a quote; nothing comes from the skills list alone |
-| Achievements | 5 | 4 credentials (each linked to its skill: Google Cloud, Kubernetes, Terraform, AWS) + 1 award |
-| Education / Languages / Feedback | 1 / 2 / 2 | Both feedback quotes linked to their roles |
+1. Open [anyview.anyapps.cloud](https://anyview.anyapps.cloud) and sign in with Google.
+2. In **Digital Garden**, upload `mike-rose-resume.pdf`. Donna reads it as a background job and
+   shows each step as it finishes. A one-page resume takes about 90 seconds; this one is five
+   pages, so allow a few minutes. You can keep using the app meanwhile, or press **Cancel**.
+3. Open the review queue. Every draft quotes the line of the resume it came from. Skills are linked
+   to the projects and roles that show them, and certifications to the skills they attest to.
+   Press **Confirm all** (or edit or discard any draft first).
+4. Upload `mike-rose-feedback.pdf` the same way and confirm it. Feedback entries link to the role or
+   project they concern.
 
-No draft was flagged unverified. **Coverage: all 11 competencies are filled, and every filled cell is "strong"**:
+**What to look for**
 
-| Story | Role | Competencies |
-|---|---|---|
-| Black Friday checkout slowdown | Kitebridge | failure, ownership, leadership |
-| Pushing back on a six-week migration deadline | Kitebridge | influence, conflict, communication |
-| Building the platform team | Kitebridge | leadership, ownership |
-| Five warehouses, five different asks | Harbourline | customer focus, ambiguity, delivery, ownership |
-| Getting security and developers onto one pipeline | Harbourline | collaboration, influence, communication, delivery |
-| Reminders before flu season | Meridian | delivery, technical depth |
-| Explaining a scheduling outage to clinic managers | Meridian | conflict, communication, customer focus |
+- **Evidence.** Open any skill (for example *Terraform*): the quote is from a project, never from the
+  skills list alone. A draft whose quote cannot be found in the document is marked *unverified*
+  rather than dropped or accepted.
+- **Graph.** The *Constellation*, *By role* and *By kind* views show how the work connects, using
+  only links you confirmed.
+- **Coverage.** The heatmap shows which interview competencies have strong, weak or no evidence, role
+  by role.
+- **Re-upload.** Upload the resume again: entries already confirmed are not proposed a second time
+  (ADR 0015).
 
-Competency tags are the model's call, so a run may differ by a tag or two. Two skills are inferred from the text rather than named in it ("Cloud Migration", "Platform Engineering"); judges can untick them or leave them.
+The competency tags and the exact number of drafts are the model's call, so two runs can differ by
+a tag or an entry.
 
-**Judges' flow:** upload the .docx in the Digital Garden → wait about 2 minutes → **Confirm all** in the review queue. No edits needed.
+## 2. Ask Donna (Discover)
 
----
+Typed, or spoken with the microphone (a question asked out loud is answered out loud):
 
-## Run sheet: interview scenarios
+- "What's my best evidence for leadership?" The answer cites garden entries as chips, such as the
+  six landing-zone workstreams he took over and the Databricks client session.
+- "Which certifications back up my security skills?" (AWS Certified Security – Specialty.)
+- "Have I ever worked with Kubernetes?" Amazon EKS on the file-transfer platform.
+- **Honesty check:** "Have I ever worked with Oracle databases?" The garden has an Oracle *cloud*
+  certification but no Oracle database work, so Donna should say there is nothing on it rather than
+  invent something.
 
-Setup for all of these: upload the resume, paste or upload the job description, choose **Panel** (Harvey has the garden) and **turn on the time limit**. Harvey asks 5 questions; question 1 is always some version of "tell me about yourself".
+## 3. Practise an interview
 
-Timing rules worth knowing before you're on stage:
+Setup: the resume is already on file. For the job, upload `job-description.pdf` (or paste the text);
+company, role and seniority fill in. Choose a difficulty:
 
-- **Silence**: after **10 s** of silence Harvey nudges you (30 s if the interview is untimed). After **15 s** more of silence he moves on.
-- **The clock**: each question has its own budget (45–300 s, set by the model when it plans the interview), shown as the on-screen countdown. When it runs out, Harvey cuts in mid-sentence.
-- **Each follow-up Harvey asks adds 90 s** to that question's clock. To show the hard stop, use a question where he hasn't asked a follow-up yet.
-- Filler sounds ("umm", "uhh") don't count as speaking, so the silence timer keeps running through them.
+| Difficulty | Harvey knows |
+|---|---|
+| Recruiter screen (Easy) | The resume only |
+| Hiring manager (Medium) | The resume and the job description |
+| Panel (Hard) | Both, plus the whole garden, which he can look up mid-answer |
 
-### 1. The perfect opener (question 1)
+Choose **Interview pace** to see the clock, or **Take your time** for none. A pre-flight checks the
+microphone and speakers while Harvey plans five questions; press **Begin** when it's ready.
+Question 1 is always a version of "tell me about yourself".
 
-About 220 words, **about 85–90 s** at a natural pace. Read it out loud once to check it fits inside the countdown.
+**How the clock works**
 
-> I'm a cloud platform engineer, and for nine years I've worked on the same problem in three industries: getting production systems onto the cloud without customers noticing, and making it easier for engineers to ship.
+- The clock runs only while Harvey is quiet, and each question has its own budget (45 to 300 s, set
+  when the interview is planned).
+- Each follow-up adds the time Harvey judges a good answer needs (30 to 300 s; 90 s if he names
+  none). At most two follow-ups per question.
+- After **10 s** of silence Harvey nudges you (30 s when untimed). After **15 s** more he moves on,
+  and the question is recorded as *(no answer given)*. Filler sounds ("umm") don't count as speaking.
+- When the budget runs out he cuts in mid-sentence. You can interrupt him at any time; he never
+  talks over you.
+
+### Answers to try
+
+**A strong opener (about 80 seconds):**
+
+> I'm a cloud solutions architect, and for five years I've led cloud engagements end to end for
+> customers on AWS, Google Cloud and Azure: from requirements and effort estimates through delivery
+> and L3 support.
 >
-> I started at Meridian Health Group as a software engineer. There I built an SMS reminder service that cut outpatient no-shows from 18 percent to 11 percent across nine clinics.
+> At Accenture I built and ran landing zones. On one AWS renewal I was Service Delivery Manager for
+> six enhancement workstreams, and when the team shrank I took over the hands-on build as well, so
+> all six were delivered while I coordinated more than ten people offshore. When the offshore team
+> for a Google Cloud landing zone was offboarded, I designed and built it myself in Terraform: ten
+> projects and more than forty policies. I also cut deployment cycle time from a week to a day across
+> a hundred CloudFormation stacks.
 >
-> At Harbourline Logistics I moved into DevOps. I consolidated three build tools into GitLab CI/CD, which took builds from 38 minutes down to 11, and I built a streaming pipeline on Kinesis that got warehouse data onto dashboards in 30 seconds instead of 15 minutes.
+> Since April I've been a multi-cloud architect at Lenovo PCCW Solutions, where I architected an
+> AI-powered assessment platform that checks 664 rules across AWS and Azure and writes remediation
+> guidance with Amazon Bedrock.
 >
-> For the last three and a half years I've been at Kitebridge Payments, where I lead a platform team of four. My biggest piece of work there was our data centre exit. I designed the target architecture and led 42 payment services onto Kubernetes on Google Cloud, with zero customer-facing downtime, 31 percent lower infrastructure cost, and deploys going from two days to 25 minutes.
->
-> Next, I want a bigger platform with more teams on it. That's why this role caught my eye: you're growing the platform team and building on Google Cloud, which is exactly where I've spent the last few years.
+> I'm looking for a role where I keep owning engagements end to end across clouds, and that's what
+> this one is.
 
-(For **Recruiter Screen** difficulty, with no job description, end with: "…so I'm looking for a staff-level platform role where I can do that at a larger scale.")
+Expect high **specificity**, **quantified outcome** and **ownership**. **STAR completeness** may come
+out lower: the rubric applies STAR to the opener too, and a career walkthrough is not one story.
+This is a known limitation, listed on the roadmap (per-question rubrics).
 
-**What the report should show:** high **specificity** (named systems and companies), high **quantified outcome** (before/after numbers), high **ownership** ("I designed", "I led"). **STAR completeness may still come out at 2–3**: the rubric applies STAR to the opener too, and a walkthrough of a career isn't one story (a known limitation, CLAUDE.md "Gotchas"). Say this on stage before anyone else spots it. Harvey will probably not ask a follow-up, or ask only one.
+**A weak opener, for contrast:**
 
-### 2. The weak opener (a contrast for the same question)
+> Hi, so I've been in cloud for a few years, mostly AWS but some Google and Azure. We did landing
+> zones and migrations and that kind of thing, and it went pretty well. I like solving problems and
+> working with customers, and I'm looking for a new challenge.
 
-> Hi, yeah, so I've been working in tech for a while now, mostly on the cloud side. We did a lot of migrations and DevOps stuff, worked with Kubernetes, Terraform, the usual. At my current company we moved a bunch of things to the cloud and it went pretty well. I like working with people and solving problems, and I'm looking for a new challenge where I can grow.
+Harvey is likely to follow up on what *you* did or what the result was. Answer vaguely again and the
+report scores **specificity**, **quantified outcome** and **ownership** low ("we", "pretty well"),
+then shows an ideal answer built from the garden: what Mike *could* have said.
 
-**What should happen:** Harvey follows up, probably asking what *you* did or what the result was. If you answer the follow-up vaguely as well, the report shows **specificity 0–1** (nothing a listener could retell), **quantified outcome 0–1** ("went pretty well" has no measure), **ownership 0–1** (only "we") and **STAR 0–1**. The ideal answer under it draws on the garden (the data centre exit, 42 services, 31%), so the report shows what Jordan *could* have said. That is a good moment to show on screen.
+**A failure question, strong (about 60 seconds):**
 
-### 3. A good answer missing one thing (behavioural)
+> On my bill-splitting app, AnySplit, I merged and deployed multi-currency support, and a code
+> review I ran afterwards found two data-corruption bugs I'd shipped. A Japanese yen price typed as
+> "3,270" was saved as 3, and a client could store an invalid currency code that broke every later
+> display of that bill. I fixed both the same day, verified them against the exact reproductions and
+> all nine test receipts, and closed the review's seven other findings in follow-up changes. Every
+> test receipt still reconciled exactly, and the fixes shipped within a day of finding the bugs.
 
-Panel-level Harvey reads the garden, so expect questions that lead into the Black Friday or deadline stories. If the question is about **a mistake or failure**:
+**The same, flawed (no result, and "we" throughout):**
 
-**Strong version (about 60 s):**
-> At Kitebridge, before Black Friday 2022, I approved an autoscaling change that set our payment gateway's scale-up threshold too high. On the day, traffic hit four times normal and checkout was degraded for 18 minutes. I took incident command, rolled the change back, and then wrote and presented the postmortem myself, naming my own approval as the root cause. I also made a load test at five times peak a required gate before any scaling change. Through the next two peak seasons we had no repeat, and p99 checkout latency stayed under 300 milliseconds at four times traffic.
+> We had a bug with currencies in one of the apps. Some prices were saved wrong. We fixed it after a
+> review and added some tests.
 
-**Flawed version: no result, and "we" throughout:**
-> At Kitebridge we had a problem on Black Friday. An autoscaling change went in with the wrong threshold and checkout got slow. We jumped on the incident, rolled it back, did a postmortem, and we added load testing to the process after that.
+Expect a follow-up such as "what was your part?" or "what happened afterwards?". If the answer stays
+vague, the report marks STAR completeness, quantified outcome and ownership down.
 
-**Report on the flawed version:** STAR **2–3** (no result), quantified outcome **0–1** (no numbers, not even the 18 minutes), ownership **0–1** ("we" throughout, and the candidate's own approval is never mentioned). Specificity stays around 2, because it does name a system and a decision. Harvey will likely ask "what happened afterwards?" or "what was your part?". **Don't answer with the result** if you want the gap to show in the report.
+For a **pushback or conflict** question, the garden's story about challenging the database
+specialist's MariaDB configuration is the strong answer; "I told them it was wrong and we fixed it"
+is the flawed one.
 
-If the question is about **disagreeing with someone more senior / pushing back**, the strong answer is the "Pushing back on a six-week migration deadline" story in the resume; the flawed version is "I told the VP it was too risky and in the end we did it in phases": no risk model, no numbers, no outcome.
+### Moments worth seeing
 
-### 4. Silence: Harvey prompts (any question)
+- **Silence.** Say nothing after a question for 10 seconds: Harvey nudges. Start answering and the
+  silence timer starts again; stay quiet 15 seconds more and he moves on.
+- **The hard stop.** With Interview pace on, keep talking past the countdown on a question where he
+  hasn't asked a follow-up yet. He cuts in ("Let me stop you there. We've got a clock to beat."),
+  and the next question opens without the usual thanks.
+- **Barge-in.** Start talking while Harvey is still asking. He stops and listens.
+- **The close.** When question 5 ends on the clock or on silence, Harvey closes with "That's all the
+  time we have. Thanks for your time today — we'll be in touch."
 
-When the question finishes, **say nothing for 10 seconds**. Harvey cuts in with one of his nudges ("Take a moment if you need it. Or shall we move on to the next one?"). Then either:
+## 4. The report
 
-- **start answering**: the nudge counts as answered, and the silence timer starts from zero; or
-- **stay silent for 15 more seconds**: Harvey says "let's leave that one there and move on", and the question is recorded as *(no answer given)*. The report scores it at the bottom, which is a quick way to show that a non-answer scores honestly.
+Each answer is scored on four rubric dimensions separately (never one blended number), with an ideal
+answer built only from the garden. Where the garden has nothing to build from, the report says so.
+A *(no answer given)* scores at the bottom. Download it as Markdown or save it as a PDF.
 
-Good choice for question 2 or 3, after the opener has gone well.
+Once a garden passes 20,000 characters, the ideal answers find their material by vector search over
+the garden instead of reading all of it.
 
-### 5. The hard stop (time limit)
+## 5. Your data
 
-Pick a question where Harvey **hasn't asked a follow-up yet**, and keep talking past the on-screen countdown: repeat the story, add detail, don't wrap up. At zero, Harvey cuts in mid-sentence ("Let me stop you there. We've got a clock to beat."), whatever you're saying. The answer is marked as cut off, and the next question opens without the usual "thanks".
-
-Fastest way to get there: the opener with the perfect answer read twice, or the weak opener padded out. Or say nothing for 9 seconds, speak one sentence, and repeat, which keeps the nudge away while the clock runs.
-
-### 6. Interrupting Harvey (barge-in)
-
-Start talking while Harvey is still asking a question. He stops and listens. It only works one way: you can interrupt Harvey, but he never talks over you (except when the clock runs out).
-
-### 7. The last question
-
-Let question 5 end on the clock or on silence. Harvey closes with "That's all the time we have. Thanks for your time today — we'll be in touch." instead of "let's move on".
-
----
-
-## Garden scenarios (Donna)
-
-- **Review queue**: after upload, open a skill such as Kubernetes. It shows the quote from the data centre exit and its link to the CKA credential. Point out that every card quotes the resume word for word.
-- **Coverage heatmap**: all 11 competencies, with a strong cell in at least one role each. Most of the stronger stories are under Kitebridge.
-- **Upload the same resume again**: Donna finds nothing new and nothing is queued (confirmed entries aren't proposed twice, ADR 0015).
-- **Discover, typed**: "What's my best evidence for leadership?" The answer cites the platform team and Black Friday stories as chips.
-- **Discover, spoken**: ask out loud "Which certifications back up my Kubernetes and Terraform skills?" Donna answers out loud (CKA, Terraform Associate), and the label chips appear on screen without being spoken.
-- **Discover honesty check**: "Have I ever worked with Azure?" Donna should say the garden has nothing on it rather than invent something.
-
-## Why the resume looks like this
-
-Rules to keep if you edit it, each learned from a run:
-
-1. **Stories ("Key moments") and feedback sit inside each job.** Each job is read in its own model call; a story in a separate section at the end can't be linked to a role, and the coverage heatmap counts stories by role.
-2. **Every story ends with "Result: …".** A story without a result shows as *weak* on the heatmap.
-3. **Skills and Certifications come before Experience.** A role's text runs on until the next role starts, so a skills list after the last job was counted as evidence for that job.
-4. **Bullets are literal `•` characters**, not Word's list style. Word's bullets vanish when the text is extracted, so the end of a project can't be found and its text runs into the next one.
-5. **Skill names in the skills list match the wording in the jobs** ("Kubernetes", "Google Cloud", "GitLab CI/CD"), and each certification title contains its skill's name, which is how certifications get linked.
-6. Avoid stray words that the model takes for skills: "CI/CD" on its own (it became a separate skill from GitLab CI/CD), and "SQL" (it matched "Cloud SQL").
+The **Account** page erases every file and every row for your account in one step. Voice recordings
+are deleted after 30 days regardless.
