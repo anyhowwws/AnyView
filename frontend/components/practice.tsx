@@ -225,8 +225,9 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     held.current = null; // a new question brings a new clock
   }, [question.id]);
 
-  // When the countdown reaches zero.
+  // When the countdown reaches zero, and whether it is counting down now.
   const deadlineAt = useRef(0);
+  const clockRunning = useRef(false);
 
   useEffect(() => {
     if (!answering) {
@@ -234,6 +235,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
       return;
     }
     deadlineAt.current = performance.now() + (held.current ?? question.seconds * 1000);
+    clockRunning.current = true;
     setRemaining(Math.ceil((deadlineAt.current - performance.now()) / 1000));
     const tick = setInterval(() => {
       const left = Math.max(0, Math.ceil((deadlineAt.current - performance.now()) / 1000));
@@ -242,11 +244,21 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
     }, 250);
     return () => {
       clearInterval(tick);
+      clockRunning.current = false;
       held.current = Math.max(0, deadlineAt.current - performance.now());
     };
     // `turn`: leaving Live for "sending" clears the countdown Live was feeding.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answering, question.id, turn]);
+
+  /** What is left of this question's clock, in ms, for a microphone opening
+   *  now. Switching to typing and back carries on from here instead of handing
+   *  out a fresh clock. Read once, when Live or the recorder starts: a value
+   *  that changed every tick would restart them every tick. */
+  function timeLeftMs(): number {
+    if (clockRunning.current) return Math.max(0, deadlineAt.current - performance.now());
+    return held.current ?? question.seconds * 1000;
+  }
 
   /** Live's clock, which ends the question; the countdown just shows it. */
   function showLiveClock(ms: number | null) {
@@ -309,6 +321,9 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
       harvey.current?.stop();
       wantsVoice.current = false;
       setHarveyAsking(false);
+      // Live may not have finished asking, and nothing else will say it has: the
+      // question's text is already on screen, so the typed box opens now.
+      if (turn === "live") setStreaming(false);
       setVoiceOn(false);
       setTurn("typing");
       saveVoicePreference(false);
@@ -502,6 +517,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
         <LiveAnswer
           session={session}
           seconds={timed ? question.seconds : null}
+          timeLeftMs={timeLeftMs}
           last={last}
           onClock={showLiveClock}
           onAsked={() => {
@@ -517,16 +533,14 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
             setStreaming(false);
             setTurn("typing");
           }}
-          onTypeInstead={() => {
-            setStreaming(false);
-            // Same as the "Answer by typing" toggle: stays typed until switched back.
-            chooseVoice(false);
-          }}
+          // Same as the "Answer by typing" toggle: stays typed until switched back.
+          onTypeInstead={() => chooseVoice(false)}
         />
       ) : voiceOn && turn === "listening" && !streaming && !streamError ? (
         <VoiceAnswer
           sessionId={session.session_id}
           seconds={timed ? question.seconds : null}
+          timeLeftMs={timeLeftMs}
           onTranscript={onTranscript}
           onInterject={(line) => void interject(line)}
           onError={(message) => {
