@@ -70,7 +70,7 @@ export function Practice({ session, spoken, onSpoken, onAnswer, onEnd, busy, err
   if (harvey.current === null && typeof window !== "undefined") harvey.current = harveyVoice();
 
   useEffect(() => {
-    // A clip that will not play used to fail only in the console (ADR 0041).
+    // A clip that will not play used to fail only in the console (ADR 0046).
     const player = harvey.current;
     if (!player) return;
     player.onError = () => {

@@ -24,6 +24,7 @@ from anyview.brain.models import Proposal, RawDump
 from anyview.db.repository import JobWork, NotFound, Repository
 from anyview.llm.adapter import ModelError
 from anyview.uploads.extract import ExtractionError, docx_to_text, pdf_to_text
+from anyview.uploads.store import UploadTooLarge
 
 log = logging.getLogger(__name__)
 
@@ -61,7 +62,10 @@ def check_upload(object_name: str, uid: str) -> None:
 def read_upload(object_name: str, uid: str, *, model, store, tell: Progress) -> tuple[str, str]:
     """The uploaded file as (dump kind, text)."""
     check_upload(object_name, uid)
-    data = store.read(object_name)
+    try:
+        data = store.read(object_name)
+    except UploadTooLarge as exc:
+        raise IngestFailed("That file is over 10 MB. Please upload a smaller one.", 413) from exc
     if data is None:
         raise IngestFailed("The uploaded file wasn't found. Please upload it again.", 404)
     tell("reading", {"file": object_name.rsplit(".", 1)[-1]})

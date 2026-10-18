@@ -1,32 +1,35 @@
-# Staff Platform Engineer — Cloud Infrastructure
+# Senior Cloud Solutions Architect — Multi-Cloud
 
-Northstar Wallet · Singapore (hybrid) · Full time
+Northstar Cloud Partners · Singapore (hybrid) · Full time
 
 *Fictional job posting for the AnyView demo.*
 
 ## About the team
 
-Northstar Wallet runs a consumer payments app used by 6 million people across Southeast Asia. The Platform team of eight builds the cloud foundation that 20 product teams ship on: Kubernetes clusters, infrastructure as code, CI/CD and observability.
+Northstar Cloud Partners is a cloud consultancy serving banks, insurers and public-sector agencies across Southeast Asia. Our Architecture practice of twelve designs and delivers secure landing zones, platform modernisation and AI-assisted operations on AWS, Google Cloud and Microsoft Azure, and stays with each customer from the first workshop to run-state support.
 
 ## What you'll do
 
-- Lead the design of our next-generation platform on Google Cloud, from network to developer experience.
-- Own platform reliability: set SLOs, lead incident response and run blameless postmortems.
-- Build self-service golden paths so product teams can ship a new service without a ticket.
-- Bring down cloud spend without slowing teams down.
-- Mentor engineers and help grow the Platform team from eight to twelve.
-- Work with Security, Risk and Compliance to keep us inside payments regulation while still shipping weekly.
+- Lead discovery with customer stakeholders, turn their requirements into a scope of work, and produce effort estimates that hold up in delivery.
+- Design multi-cloud architectures (landing zones, networking, identity and security controls) that meet regulatory and compliance requirements.
+- Lead delivery hands-on: write and review Terraform, set up keyless CI/CD, and troubleshoot what other teams cannot.
+- Shape new business: run assessments, contribute to RFP responses and present solutions to customer leadership.
+- Build reusable assets for the practice: reference architectures, golden templates and assessment frameworks.
+- Bring generative AI into our offerings responsibly, from retrieval-augmented assistants to automated compliance checks.
+- Mentor consultants and help grow the practice.
 
 ## What we're looking for
 
-- 7+ years in platform, SRE or DevOps roles, with production ownership of a regulated or high-traffic system.
-- Deep, hands-on Kubernetes and Terraform.
-- Experience leading a large migration to the cloud.
-- Clear writing and the ability to push back on a deadline with data rather than opinion.
-- Experience hiring and mentoring engineers.
+- 5+ years in cloud architecture or infrastructure consulting, with customer-facing ownership of engagements end to end.
+- Deep, hands-on experience on AWS and at least one of Google Cloud or Microsoft Azure.
+- Infrastructure as code with Terraform, and CI/CD without long-lived credentials.
+- Experience in regulated or public-sector environments (for example IM8, MAS TRM or CIS Benchmarks).
+- Clear communication with both engineers and executives, including pushing back on scope or deadlines with evidence.
+- Experience mentoring or leading engineers.
 
 ## Nice to have
 
-- Payments or fintech background.
-- Google Cloud Professional Cloud Architect or CKA certification.
-- Experience with streaming systems.
+- AWS Certified Solutions Architect – Professional, or Google Cloud Professional Cloud Architect.
+- Kubernetes in production (Amazon EKS or GKE).
+- Hands-on generative AI on a cloud platform (Amazon Bedrock or Gemini Enterprise Agent Platform).
+- FinOps or cloud cost optimisation experience.

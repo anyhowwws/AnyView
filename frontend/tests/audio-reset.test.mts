@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 // Just enough of the browser for lib/voice.ts: a context that records what is
-// done to it, and a mediaDevices that can fire "devicechange" (ADR 0041).
+// done to it, and a mediaDevices that can fire "devicechange" (ADR 0046).
 class FakeContext {
   static made: FakeContext[] = [];
   state: "running" | "suspended" | "closed" = "suspended";

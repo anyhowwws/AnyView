@@ -33,7 +33,7 @@ from anyview.uploads.extract import (
     ExtractionError,
     audio_to_text,
 )
-from anyview.uploads.store import MemoryUploadStore, UploadStore
+from anyview.uploads.store import MemoryUploadStore, UploadStore, UploadTooLarge
 
 router = APIRouter(prefix="/uploads", tags=["uploads"], dependencies=[Depends(current_user)])
 
@@ -55,6 +55,8 @@ class UploadTicket(BaseModel):
     object_name: str
     upload_url: str
     expires_in_seconds: int
+    # Sent with the PUT as-is: the size limit is signed into the URL (store.SIZE_HEADER).
+    upload_headers: dict[str, str] = {}
 
 
 def object_prefix(uid: str) -> str:
@@ -91,7 +93,10 @@ def transcribe_recording(
     mime = EXTENSION_TYPES.get(suffix)
     if mime is None:
         raise HTTPException(415, "That recording format isn't supported.")
-    data = store.read(object_name)
+    try:
+        data = store.read(object_name)
+    except UploadTooLarge as exc:
+        raise HTTPException(413, "That recording is over 10 MB.") from exc
     if data is None:
         raise HTTPException(404, "The recording wasn't found. Please record it again.")
     try:
@@ -117,6 +122,7 @@ def create_upload(body: UploadRequest, user: CurrentUser, store: StoreDep) -> Up
         object_name=object_name,
         upload_url=store.signed_put_url(object_name, body.content_type),
         expires_in_seconds=SIGNED_URL_TTL_SECONDS,
+        upload_headers=store.put_headers(),
     )
 
 
@@ -134,5 +140,8 @@ async def memory_put(
         raise HTTPException(404, "Not found.")
     if not object_name.startswith((object_prefix(user.uid), audio_prefix(user.uid))):
         raise HTTPException(403, "That upload isn't yours.")
-    store.put(object_name, await request.body())
+    data = await request.body()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "That file is over 10 MB. Please upload a smaller one.")
+    store.put(object_name, data)
     return Response(status_code=204)

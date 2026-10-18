@@ -1,10 +1,16 @@
 # Project Brief
 
+> The brief AnyView was started from, kept as the statement of intent. Where the
+> build changed course, the decision records in [adr/](adr/) say why; the model
+> choice is the main one (ADR 0004, then 0007: the brief's first model had no
+> quota in the project, so AnyView runs on Gemini). Everything below is as first written, except the
+> model and repository lines, which were updated to match the build.
+
 ## Required
 - **What it does:** AnyView is a web app that helps a job-seeker prepare for interviews. It holds a "second brain": a structured, user-confirmed knowledge base of everything the user has done (roles, projects, stories, skills, achievements) built from free-text brain dumps and uploaded resumes. It runs mock interviews, HR/screening or technical, tailored to a target company, role and seniority, streams the interviewer's responses live, scores answers per rubric dimension, and generates an ideal answer built only from the user's own brain so gaps in the brain are surfaced and fed back into it.
 - **UI:** Yes — web app
 - **Cloud:** GCP
-- **Repository:** Private
+- **Repository:** Public (for hackathon judging; see [LICENSE](LICENSE))
 
 ## Core Features
 - Brain capture: a persistent free-text "dump something" box; the model extracts structured entities and proposes them as a patch; nothing is committed until the user confirms in a review queue
@@ -28,14 +34,14 @@
 
 ## Preferences
 - **Project name:** AnyView
-- **Stack:** Backend Python 3.12 on Cloud Run with FastAPI, streaming via hand-rolled server-sent events (no streaming-UI SDK). Frontend Next.js App Router, TypeScript, Tailwind, shadcn/ui, Framer Motion, deployed to Firebase Hosting. LLM and embeddings via Gemini Enterprise Agent Platform Claude models using the official Anthropic Python SDK's Agent Platform client. Infrastructure entirely in Terraform from the first commit. CI/CD via GitHub Actions authenticating to GCP through Workload Identity Federation with no stored keys.
+- **Stack:** Backend Python 3.12 on Cloud Run with FastAPI, streaming via hand-rolled server-sent events (no streaming-UI SDK). Frontend Next.js App Router, TypeScript, Tailwind, shadcn/ui, Framer Motion, deployed to Firebase Hosting. LLM and embeddings via Gemini models on Gemini Enterprise Agent Platform through the `google-genai` SDK, IAM only. Infrastructure entirely in Terraform from the first commit. CI/CD via GitHub Actions authenticating to GCP through Workload Identity Federation with no stored keys.
 - **Data / storage:** Cloud SQL for PostgreSQL (db-g1-small, single zone, no HA) with the pgvector extension in the same database; accessed from Cloud Run through the Cloud SQL connector with a deliberately small connection pool. Cloud Storage with signed URLs for uploads and raw dumps so files never transit the API. Cloud Tasks for asynchronous ingestion. Secret Manager for any secret, provisioned by Terraform (the parameter, never the value).
 - **Auth:** Identity Platform
 - **Model access:** All model interaction sits behind one thin adapter module exposing generate(), stream() and a tools parameter, returning plain Python types; no SDK objects leak into application code. The adapter is an indirection layer, not a framework. No API key exists anywhere: model access is governed by the Cloud Run service account's IAM role.
 - **Data access:** All database access sits behind one repository module with app-meaningful methods (stories_for_competency, roles_for_user, search_brain), not a generic query interface.
 - **Least privilege:** Every service account gets only the roles it needs, scoped as narrowly as the API allows; the scoping must be readable in the .tf files.
 - **Cost:** GCP budget alert at USD 50 on day one. Agent Platform token spend tracked as its own line item.
-- **Architecture records:** Keep an adr/ directory. Write a short ADR (context, options considered, decision, tradeoffs) for every significant choice as it is made, not retroactively. The first five, before any application code: cloud selection (GCP over AWS, documenting the AWS alternative and that direct Claude access on Agent Platform removed the ungoverned API-key problem, Python streaming without an adapter layer, and embeddings from the same provider); datastore (Postgres over Firestore, noting Firestore vector pre-filtering does not support inequality filters, the join/denormalization cost, and that Postgres→Firestore is the cheap migration direction); retrieval (explicitly superseding the earlier no-RAG decision now that the corpus is unbounded and user-authored); LLM access via Agent Platform (IAM-governed access, platform invocation logging, data inside the project boundary); streaming (hand-rolled SSE over an SDK, because the adapter already provides provider abstraction).
+- **Architecture records:** Keep an adr/ directory. Write a short ADR (context, options considered, decision, tradeoffs) for every significant choice as it is made, not retroactively. The first five, before any application code: cloud selection (GCP over AWS, documenting the AWS alternative and that model access on Agent Platform through IAM removed the ungoverned API-key problem, Python streaming without an adapter layer, and embeddings from the same provider); datastore (Postgres over Firestore, noting Firestore vector pre-filtering does not support inequality filters, the join/denormalization cost, and that Postgres→Firestore is the cheap migration direction); retrieval (explicitly superseding the earlier no-RAG decision now that the corpus is unbounded and user-authored); LLM access via Agent Platform (IAM-governed access, platform invocation logging, data inside the project boundary); streaming (hand-rolled SSE over an SDK, because the adapter already provides provider abstraction).
 - **Commits:** Small, focused, real messages; pushed regularly, not in one batch. .env in .gitignore from the first commit. Secret values never in Terraform files, environment variables in plaintext, git history, or anything committed.
 - **Working style:** The owner is a Cloud/Solutions Architect, strong on infrastructure, with limited Python fluency: can read it and write simple scripts. Explain non-obvious Python as it is written. Prefer boring, readable code over clever code: no metaclasses, no heavy abstraction layers, minimal dependencies, every dependency justified in writing. Do not dumb down the architecture. When a real fork in the road appears, stop and ask rather than picking. This project is a portfolio piece; infrastructure quality matters as much as it working.
 - **Visual design:** Three surfaces. Brain: capture box pinned at the top, entities grouped by role, review queue with a badge count, competency coverage heatmap as the hero visual. Practice: deliberately sparse; one question centred, streaming text, typing indicator, subtle progress rail, nothing else on screen. Report: side-by-side answer versus brain-grounded ideal, per-dimension scores, gap list with add-to-brain buttons, trend view across sessions. Polished, modern, motion used for small transitions only.
@@ -55,7 +61,7 @@
 - Any dedicated vector database or managed vector search service; vectors live in Postgres
 - Chunking raw documents for retrieval; raw documents are read once at ingestion and are never a retrieval target
 - Scraping Glassdoor, Blind or similar; questions are generated from public durable sources only
-- Any API key for model access; no direct Anthropic API path
+- Any API key for model access; no model provider's API reached outside Agent Platform
 - Third-party hosted Postgres outside the GCP project
 - Firestore
 - Framework sprawl; no dependency without a written justification

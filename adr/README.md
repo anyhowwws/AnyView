@@ -68,7 +68,10 @@ the identifiers Google kept (`vertexai=True` in the SDK, `aiplatform.googleapis.
 | [0038](0038-garden-embeddings-embedded-first.md) | Garden embeddings: four kinds, 768 dimensions, embedded before the write | Accepted |
 | [0039](0039-the-report-fails-fast-and-falls-back.md) | The report fails fast and falls back; transcription moves to the fast model | Accepted |
 | [0040](0040-a-follow-up-adds-time.md) | A follow-up adds time to the question's clock | Accepted, amended by 0043 |
-| [0041](0041-recoverable-audio.md) | Recoverable audio: a fresh context on retry and on device change, and failures on screen | Accepted |
+| [0041](0041-open-sign-in.md) | Sign-in opens to any verified Google account | Accepted, amended by 0047 |
+| [0042](0042-usage-monitoring-from-log-lines.md) | Usage monitoring from log lines | Accepted |
 | [0043](0043-harvey-times-his-follow-ups.md) | The clock pauses while Harvey speaks, and he times his own follow-ups | Accepted |
 | [0044](0044-conversation-guardrails.md) | Conversation guardrails: English only, protected topics, staying in role | Accepted |
 | [0045](0045-extraction-fails-fast-and-uploads-can-be-cancelled.md) | Extraction fails fast and falls back; an upload can be cancelled | Accepted |
+| [0046](0046-recoverable-audio.md) | Recoverable audio: a fresh context on retry and on device change, and failures on screen (first filed as a second 0041) | Accepted |
+| [0047](0047-a-daily-limit-per-user.md) | A daily limit per user: ten interviews and ten uploads | Accepted |

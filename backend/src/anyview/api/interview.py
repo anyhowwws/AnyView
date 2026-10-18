@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from anyview.activity import record
 from anyview.api.auth import CurrentUser, current_user, get_settings
+from anyview.api.limits import daily
 from anyview.api.sse import stream_response, tokens
 from anyview.api.uploads import get_store, object_prefix, transcribe_recording
 from anyview.brain.extract import ExtractionFailed, drop_unchanged, propose
@@ -56,7 +57,7 @@ from anyview.uploads.extract import (
 )
 from anyview.uploads.link import Page, page_to_text
 from anyview.uploads.link import fetch as fetch_page
-from anyview.uploads.store import UploadStore
+from anyview.uploads.store import UploadStore, UploadTooLarge
 
 log = logging.getLogger(__name__)
 
@@ -120,7 +121,10 @@ def _extract(
     theirs to read."""
     if not object_name.startswith(object_prefix(user_uid)):
         raise HTTPException(403, "That upload isn't yours.")
-    data = store.read(object_name)
+    try:
+        data = store.read(object_name)
+    except UploadTooLarge as exc:
+        raise HTTPException(413, "That file is over 10 MB. Please upload a smaller one.") from exc
     if data is None:
         raise HTTPException(404, "The uploaded file wasn't found. Please upload it again.")
     try:
@@ -267,13 +271,21 @@ class AnswerRequest(BaseModel):
 def start(
     body: StartRequest, user: CurrentUser, model: ModelDep, store: StoreDep, repo: RepoDep
 ) -> Session:
+    # One of today's interviews (ADR 0047), given back if planning fails.
+    with daily(repo, user, "interview"):
+        session = _start(body, user, model=model, store=store, repo=repo)
+    record("interview_started")
+    _save_job(repo, user, body.setup)
+    return session
+
+
+def _start(
+    body: StartRequest, user: CurrentUser, *, model: Model, store: UploadStore, repo: Any
+) -> Session:
     setup = resolve_setup(body, user_uid=user.uid, store=store, model=model, repo=repo)
 
     if not (setup.resume_object and repo is not None):
-        session = engine.start(setup, session_id=body.session_id, model=model)
-        record("interview_started")
-        _save_job(repo, user, body.setup)
-        return session
+        return engine.start(setup, session_id=body.session_id, model=model)
 
     # The same text feeds two independent model calls — plan the interview and
     # propose what the resume adds to the garden — so run them side by side
@@ -289,8 +301,6 @@ def start(
         except ExtractionFailed as exc:
             # The interview is what the user asked for; the garden entry is a bonus.
             log.warning("filing the resume failed for %s: %s", body.session_id, exc.user_message)
-    record("interview_started")
-    _save_job(repo, user, body.setup)
     return session
 
 

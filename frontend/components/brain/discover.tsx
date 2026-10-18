@@ -81,7 +81,7 @@ export function Discover({ brain, onOpen }: Props) {
   // reading checks it and stays silent, so "Stop" really stops her.
   const utterance = useRef(0);
   // A clip failed to play: the next click that plays Donna rebuilds the page's
-  // audio first, the way a fresh window did (ADR 0041).
+  // audio first, the way a fresh window did (ADR 0046).
   const audioFailed = useRef(false);
 
   /** Before a click plays Donna: rebuild the audio if it failed last time, or if

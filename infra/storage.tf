@@ -30,11 +30,12 @@ resource "google_storage_bucket" "uploads" {
     }
   }
 
-  # The browser PUTs directly to the bucket from the app's origins.
+  # The browser PUTs directly to the bucket from the app's origins. The size limit
+  # is a signed header (uploads/store.py:SIZE_HEADER), so the preflight must allow it.
   cors {
     origin          = concat(var.cors_origins, ["http://localhost:3000"])
     method          = ["PUT"]
-    response_header = ["Content-Type"]
+    response_header = ["Content-Type", "x-goog-content-length-range"]
     max_age_seconds = 3600
   }
 

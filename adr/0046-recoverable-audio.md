@@ -1,8 +1,9 @@
-# 0041 — Recoverable audio: a fresh context on retry and on device change, and failures on screen
+# 0046 — Recoverable audio: a fresh context on retry and on device change, and failures on screen
 
 - **Status:** Accepted
 - **Date:** 2026-10-16
 - **Amends:** 0028 (one audio context for the interview)
+- **Note:** first filed as a second 0041 by mistake; renumbered on 2026-10-18 with no change to its content
 
 ## Context
 

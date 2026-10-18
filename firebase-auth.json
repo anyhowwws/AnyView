@@ -5,7 +5,7 @@
       "emailPassword": false,
       "googleSignIn": {
         "oAuthBrandDisplayName": "AnyView",
-        "supportEmail": "howyi.10@gmail.com",
+        "supportEmail": "anyview@anyapps.cloud",
         "authorizedRedirectUris": [
           "https://anyview.anyapps.cloud"
         ]

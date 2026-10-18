@@ -227,6 +227,8 @@ interface UploadTicket {
   object_name: string;
   upload_url: string;
   expires_in_seconds: number;
+  /** Signed into the URL (the 10 MB size limit), so they must be sent as-is. */
+  upload_headers?: Record<string, string>;
 }
 
 /** PUTs bytes to the URL a ticket handed back. Normally that is a signed
@@ -235,7 +237,10 @@ interface UploadTicket {
  *  auth header; a signed URL carries its own credentials and must not. */
 async function putTicket(ticket: UploadTicket, body: Blob, contentType: string): Promise<string> {
   const relative = ticket.upload_url.startsWith("/");
-  const headers: Record<string, string> = { "Content-Type": contentType };
+  const headers: Record<string, string> = {
+    "Content-Type": contentType,
+    ...(ticket.upload_headers ?? {}),
+  };
   let res: Response;
   try {
     res = await fetch(relative ? `${BASE}${ticket.upload_url}` : ticket.upload_url, {

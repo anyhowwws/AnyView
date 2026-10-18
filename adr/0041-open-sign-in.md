@@ -1,6 +1,6 @@
 # 0041 — Sign-in opens to any verified Google account
 
-- **Status:** Accepted
+- **Status:** Accepted, amended by 0047 (a daily limit per user)
 - **Date:** 2026-10-16
 - **Amends:** 0009 (who is allowed in)
 
