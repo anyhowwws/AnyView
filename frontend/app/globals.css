@@ -361,7 +361,8 @@ li[data-state="failed"] .preflight-icon { background: var(--destructive); color:
 .saved-job { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--background); padding: 4px 14px 4px 4px; }
 .saved-job[data-active="true"] { border-color: var(--primary); background: var(--accent); box-shadow: inset 0 0 0 1px var(--primary); }
 .saved-job-pick { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; border-radius: 9px; padding: 10px 12px; text-align: left; }
-.saved-job-pick strong { overflow: hidden; color: var(--foreground); font-size: 14px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+/* Long titles wrap instead of ending in "…": iOS Safari ignores the ellipsis inside a <button> and the title ran out of the card, over "Remove". */
+.saved-job-pick strong { color: var(--foreground); font-size: 14px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
 .saved-job-pick span { color: var(--muted-foreground); font-size: 12px; }
 .saved-job-remove { flex: none; min-height: 32px; color: var(--muted-foreground); font-size: 12px; text-decoration: underline; text-underline-offset: 4px; }
 .saved-job-remove:hover { color: var(--destructive); }
