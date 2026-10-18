@@ -7,7 +7,12 @@ per question: the context stays small (Live re-bills it every turn), and no
 socket outlives Live's ten-minute connection limit.
 
 Browser → API
-    text    {"token": "<Firebase ID token>", "session": <Session>}   first frame, once
+    text    {"token": "<Firebase ID token>", "session": <Session>, "resumed": bool}
+                                                                    first frame, once; `resumed`
+                                                                    (optional): the candidate has
+                                                                    heard this question on Live
+                                                                    already, so Harvey cues them
+                                                                    in instead of asking it again
     binary  microphone audio, 16 kHz 16-bit mono PCM                continuously
     text    {"type": "end", "reason": "time_up"|"move_on"|"manual"}  close the question now
 
@@ -129,13 +134,14 @@ async def _open(
         first = json.loads(await asyncio.wait_for(ws.receive_text(), FIRST_FRAME_TIMEOUT_S))
         token = str(first["token"])
         session = Session.model_validate(first["session"])
+        resumed = first.get("resumed") is True
     except (TimeoutError, KeyError, TypeError, ValueError, ValidationError) as exc:
         raise _Refused("The interview couldn't start. Please try again.") from exc
     except WebSocketDisconnect as exc:
         raise _Refused("The connection closed.") from exc
     try:
         user = user_from_token(token, verifier, settings)
-        return LiveTurn(session), session, user.uid
+        return LiveTurn(session, resumed=resumed), session, user.uid
     except HTTPException as exc:
         raise _Refused(str(exc.detail)) from exc
     except EngineError as exc:

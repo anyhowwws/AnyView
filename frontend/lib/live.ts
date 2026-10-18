@@ -161,6 +161,9 @@ export class LiveQuestion {
     private handlers: LiveHandlers,
     /** The question's clock in ms, or null when the interview is untimed. */
     private budgetMs: number | null,
+    /** The candidate already heard this question on Live and is back from typing:
+     *  Harvey cues them in instead of asking it again. */
+    private resumed = false,
   ) {}
 
   async start(): Promise<void> {
@@ -182,7 +185,8 @@ export class LiveQuestion {
     const ws = new WebSocket(LIVE_URL);
     ws.binaryType = "arraybuffer";
     this.ws = ws;
-    ws.onopen = () => ws.send(JSON.stringify({ token, session: this.session }));
+    ws.onopen = () =>
+      ws.send(JSON.stringify({ token, session: this.session, resumed: this.resumed }));
     ws.onmessage = (event) => {
       if (typeof event.data === "string") this.frame(JSON.parse(event.data) as Frame);
       else this.play(event.data as ArrayBuffer);
