@@ -11,7 +11,7 @@ Files in this folder:
 
 ## What the resume produces
 
-Checked against the real pipeline on Vertex (`scripts/extraction_recall.py`, run three times, 110–210 s per run):
+Checked against the real pipeline on Agent Platform (`scripts/extraction_recall.py`, run three times, 110–210 s per run):
 
 | Kind | Count | Notes |
 |---|---|---|

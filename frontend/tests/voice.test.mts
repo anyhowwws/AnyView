@@ -9,7 +9,9 @@ import {
   SILENCE_MS,
   SPEECH_MS,
   UNTIMED,
+  WARM_UP_CAP_MS,
   hearing,
+  micLive,
   pickFormat,
   timedLimits,
   type ListenLimits,
@@ -157,4 +159,22 @@ test("asking Donna out loud: eight seconds of nothing closes the microphone", ()
 
 test("asking Donna out loud: a question is capped at a minute", () => {
   assert.equal(speak(Array(MAX_QUESTION_MS / 50 + 1).fill(LOUD), QUESTION).ended, "limit");
+});
+
+// A spoken question in Discover lost its first words ("my greatest strength"
+// for "What is my greatest strength?"): "Listening" was on screen while the
+// microphone was still opening. `listen` now reports a start only once the
+// stream carries sound, and Discover says "Listening" only then.
+test("a fresh microphone's digital silence is not yet listening", () => {
+  assert.equal(micLive(0, 0), false);
+  assert.equal(micLive(0, WARM_UP_CAP_MS - 1), false);
+});
+
+test("the first real sample means the microphone is live", () => {
+  assert.equal(micLive(QUIET, 120), true);
+  assert.equal(micLive(LOUD, 0), true);
+});
+
+test("a microphone that stays at zero is called live after the cap", () => {
+  assert.equal(micLive(0, WARM_UP_CAP_MS), true);
 });
